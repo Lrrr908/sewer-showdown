@@ -5943,6 +5943,11 @@ function update(dt) {
             var tny = t.y + ndy * t.pxPerSecond * dt;
             if (!checkTurtleCollision(tnx, t.y)) t.x = tnx;
             if (!checkTurtleCollision(t.x, tny)) t.y = tny;
+
+            var _fFacing = ndx < 0 ? 'w' : ndx > 0 ? 'e' : ndy < 0 ? 'n' : 's';
+            if (typeof MP !== 'undefined' && MP.isConnected()) {
+                MP.sendInput(Math.round(ndx), Math.round(ndy), _fFacing);
+            }
         }
         t.moving = isMoving;
         if (isMoving) {
@@ -5979,6 +5984,12 @@ function update(dt) {
         } else {
             if (!checkCollision(newX, p.y)) p.x = newX;
             if (!checkCollision(p.x, newY)) p.y = newY;
+        }
+
+        // Send movement to server
+        var _facing = dx < 0 ? 'w' : dx > 0 ? 'e' : dy < 0 ? 'n' : 's';
+        if (typeof MP !== 'undefined' && MP.isConnected()) {
+            MP.sendInput(Math.round(dx), Math.round(dy), _facing);
         }
     }
     
@@ -7674,6 +7685,32 @@ function draw() {
         }
 
         drawTownProps(startX, startY, endX, endY);
+
+        // Draw remote multiplayer players
+        if (typeof MP !== 'undefined' && MP.isConnected()) {
+            MP.drawRemotePlayers(ctx, game.camera.x, game.camera.y, function(ctx, p, sx, sy) {
+                // Draw remote player as a party wagon tinted differently
+                var sprite = game.sprites.partyWagon;
+                if (sprite && sprite.complete) {
+                    ctx.globalAlpha = 0.85;
+                    ctx.drawImage(sprite, sx, sy, TILE_SIZE, TILE_SIZE);
+                    ctx.globalAlpha = 1.0;
+                } else {
+                    ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
+                    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+                }
+                // Name tag above
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                var label = (p.displayName || p.id || '').substring(0, 12);
+                var tw = ctx.measureText(label).width;
+                ctx.fillRect(sx + TILE_SIZE/2 - tw/2 - 2, sy - 12, tw + 4, 10);
+                ctx.fillStyle = '#58d8f8';
+                ctx.font = '8px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(label, sx + TILE_SIZE/2, sy - 4);
+                ctx.textAlign = 'left';
+            });
+        }
     }
     
     // Draw player for WORLD mode only (region player already drawn in y-sort above)
@@ -8009,6 +8046,7 @@ function gameLoop(now) {
     const dt = Math.min(rawDt, 0.05);
     
     update(dt);
+    if (typeof MP !== 'undefined' && MP.isConnected()) MP.updateRender();
     draw();
     requestAnimationFrame(gameLoop);
 }
