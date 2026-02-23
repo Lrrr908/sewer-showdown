@@ -2834,6 +2834,7 @@ async function loadBootData() {
 function applyMapData(mapData) {
     if (mapData.world) {
         TILE_SIZE    = mapData.world.tileSize    || 64;
+        if (typeof MP !== 'undefined' && MP.setTileSize) MP.setTileSize(TILE_SIZE);
         WORLD_WIDTH  = mapData.world.widthTiles  || 60;
         WORLD_HEIGHT = mapData.world.heightTiles || 40;
     }

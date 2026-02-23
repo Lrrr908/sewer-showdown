@@ -16,7 +16,7 @@ var MP = (function () {
     var PROTOCOL_VERSION = 1;
     var DEFAULT_ZONE = 'world:na';
     var MAX_RECONNECT_DELAY = 30000;
-    var TILE_SIZE = 32;
+    var TILE_SIZE = 64; // synced from game via setTileSize; default matches game.js
     var SNAP_DIST_PX = 64;
     var SMOOTH_FACTOR = 0.35;
 
@@ -642,6 +642,8 @@ var MP = (function () {
         set onTransferBegin(fn) { onTransferBegin = fn; },
         set onTransferCommit(fn) { onTransferCommit = fn; },
 
+        setTileSize: function(s) { TILE_SIZE = s; },
+        getTileSize: function() { return TILE_SIZE; },
         tileToPixel: tileToPixel,
 
         PROTOCOL_VERSION: PROTOCOL_VERSION,
