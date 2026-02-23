@@ -510,6 +510,19 @@ var MP = (function () {
         }));
     }
 
+    function sendSpawnPos(tileX, tileY) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        inputSeq++;
+        ws.send(JSON.stringify({ t: 'action', seq: inputSeq, action: 'spawn_pos', x: tileX, y: tileY }));
+        predTile.x = tileX;
+        predTile.y = tileY;
+        authTile.x = tileX;
+        authTile.y = tileY;
+        localRenderPx.x = tileX * TILE_SIZE;
+        localRenderPx.y = tileY * TILE_SIZE;
+        console.log('[mp] sendSpawnPos tile (' + tileX + ', ' + tileY + ')');
+    }
+
     function sendAction(actionType, data) {
         if (!ws || ws.readyState !== 1 || !authenticated || inputFrozen) return;
         inputSeq++;
@@ -606,6 +619,7 @@ var MP = (function () {
         logout: logout,
 
         sendInput: sendInput,
+        sendSpawnPos: sendSpawnPos,
         sendAction: sendAction,
         requestTransfer: requestTransfer,
         requestCollision: requestCollision,

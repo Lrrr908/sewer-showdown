@@ -272,6 +272,14 @@ function initWsServer(wss) {
       console.log(`[ws] ${entityId} transferred ${fromZoneId} -> ${toZoneId}`);
     }
 
+    function handleSpawnPos(msg) {
+      if (typeof msg.x !== 'number' || typeof msg.y !== 'number') return;
+      const zone = sim.getZoneForAccount(accountId);
+      if (!zone) return;
+      zone.teleportEntity(accountId, msg.x, msg.y);
+      console.log(`[ws] ${entityId} spawn_pos -> (${msg.x}, ${msg.y})`);
+    }
+
     function handleCollisionRequest(ws, msg) {
       const zone = sim.getZoneForAccount(accountId);
       if (!zone) return;

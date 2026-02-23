@@ -112,6 +112,20 @@ class Zone {
     };
   }
 
+  teleportEntity(accountId, tx, ty) {
+    const entityId = this.byAccount.get(accountId);
+    if (!entityId) return false;
+    const entity = this.entities.get(entityId);
+    if (!entity) return false;
+    const cx = Math.max(0, Math.min(this.boundsW - 1, Math.round(tx)));
+    const cy = Math.max(0, Math.min(this.boundsH - 1, Math.round(ty)));
+    entity.x = cx;
+    entity.y = cy;
+    entity.intent = null;
+    this.dirtyUpserts.add(entityId);
+    return true;
+  }
+
   tick() {
     this.tickId++;
     this.dirtyUpserts.clear();

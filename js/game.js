@@ -8462,6 +8462,11 @@ async function completeEnterRegion(regionId) {
     game.mode = 'REGION';
     game.currentRegionId = regionId;
     game.state = 'OVERWORLD';
+    if (typeof MP !== 'undefined' && MP.sendSpawnPos) {
+        var spTileX = Math.round(spawnPos.x / TILE_SIZE);
+        var spTileY = Math.round(spawnPos.y / TILE_SIZE);
+        MP.sendSpawnPos(spTileX, spTileY);
+    }
     game.controllerEntity = 'van';
     game.activeBuildingId = null;
     game.activeNodeId = null;
@@ -10700,6 +10705,11 @@ async function init() {
     game.player.y = spawnPos.y;
     game.mode = 'REGION';
     game.currentRegionId = 'na';
+    if (typeof MP !== 'undefined' && MP.sendSpawnPos) {
+        var spTileX = Math.round(spawnPos.x / TILE_SIZE);
+        var spTileY = Math.round(spawnPos.y / TILE_SIZE);
+        MP.sendSpawnPos(spTileX, spTileY);
+    }
     updateMobileActionVisibility();
     requestAnimationFrame(gameLoop);
     console.log(BRAND.title + ' v' + BRAND.version + ' — COWABUNGA! World ready, loading sprites...');
