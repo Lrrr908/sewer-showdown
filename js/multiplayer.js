@@ -56,6 +56,7 @@ var MP = (function () {
     // collisionHash: hash of current grid for cache key.
     var collisionGrid = null;
     var collisionHash = null;
+    var pendingSpawnPos = null;
 
     var ugcCache = {};
 
@@ -378,6 +379,9 @@ var MP = (function () {
                     serverInfo = msg.server;
                 }
                 lastResumeResult = msg.resume || null;
+                if (pendingSpawnPos) {
+                    _flushSpawnPos(pendingSpawnPos.x, pendingSpawnPos.y);
+                }
                 if (onHelloOk) onHelloOk(msg);
                 break;
 
@@ -511,16 +515,25 @@ var MP = (function () {
     }
 
     function sendSpawnPos(tileX, tileY) {
-        if (!ws || ws.readyState !== 1 || !authenticated) return;
-        inputSeq++;
-        ws.send(JSON.stringify({ t: 'action', seq: inputSeq, action: 'spawn_pos', x: tileX, y: tileY }));
         predTile.x = tileX;
         predTile.y = tileY;
         authTile.x = tileX;
         authTile.y = tileY;
         localRenderPx.x = tileX * TILE_SIZE;
         localRenderPx.y = tileY * TILE_SIZE;
-        console.log('[mp] sendSpawnPos tile (' + tileX + ', ' + tileY + ')');
+        if (!ws || ws.readyState !== 1 || !authenticated) {
+            pendingSpawnPos = { x: tileX, y: tileY };
+            console.log('[mp] sendSpawnPos queued (not connected yet) tile (' + tileX + ', ' + tileY + ')');
+            return;
+        }
+        _flushSpawnPos(tileX, tileY);
+    }
+
+    function _flushSpawnPos(tileX, tileY) {
+        inputSeq++;
+        ws.send(JSON.stringify({ t: 'action', seq: inputSeq, action: 'spawn_pos', x: tileX, y: tileY }));
+        pendingSpawnPos = null;
+        console.log('[mp] sendSpawnPos sent tile (' + tileX + ', ' + tileY + ')');
     }
 
     function sendAction(actionType, data) {
