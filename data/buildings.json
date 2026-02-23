@@ -1,0 +1,558 @@
+{
+  "buildings": [
+    {
+      "id": "b_21_daze",
+      "artistId": "21_daze",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_2ndtimearoundtoysandcomics",
+      "artistId": "2ndtimearoundtoysandcomics",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_3dsorcery",
+      "artistId": "3dsorcery",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_9to5warriors",
+      "artistId": "9to5warriors",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_al_tres_de",
+      "artistId": "al_tres_de",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_ale_jediknigth",
+      "artistId": "ale_jediknigth",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_andy_makes_stuff",
+      "artistId": "andy_makes_stuff",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_andrare_official",
+      "artistId": "andrare_official",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_attempts_were_made1",
+      "artistId": "attempts_were_made1",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_artebotetano",
+      "artistId": "artebotetano",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_arthurgreem",
+      "artistId": "arthurgreem",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_aurelio_mazzara",
+      "artistId": "aurelio_mazzara",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_bad_chad",
+      "artistId": "bad_chad",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_bastardsofthemultiverse",
+      "artistId": "bastardsofthemultiverse",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_black_omen_design",
+      "artistId": "black_omen_design",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_blood_empire",
+      "artistId": "blood_empire",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_blueleederdesigns",
+      "artistId": "blueleederdesigns",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_bootlegtoyco",
+      "artistId": "bootlegtoyco",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_bygabozeta",
+      "artistId": "bygabozeta",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_captaincozmic84",
+      "artistId": "captaincozmic84",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_castle_clayskull",
+      "artistId": "castle_clayskull",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_charliescustomtoyshop",
+      "artistId": "charliescustomtoyshop",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_cronest_customs",
+      "artistId": "cronest_customs",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_dafoot_toys",
+      "artistId": "dafoot_toys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_dano_brown",
+      "artistId": "dano_brown",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_digitalhorseplay",
+      "artistId": "digitalhorseplay",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_dresease",
+      "artistId": "dresease",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_dungeon_sweeper",
+      "artistId": "dungeon_sweeper",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_duzmachines84",
+      "artistId": "duzmachines84",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_eddieanaya_",
+      "artistId": "eddieanaya_",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_elcustomweno",
+      "artistId": "elcustomweno",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_emberswist",
+      "artistId": "emberswist",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_epoxy_crusader",
+      "artistId": "epoxy_crusader",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_erinfist",
+      "artistId": "erinfist",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_fanguygrams",
+      "artistId": "fanguygrams",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_flellotoys",
+      "artistId": "flellotoys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_frans_labyrinth85",
+      "artistId": "frans_labyrinth85",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_gabrieleduardoart",
+      "artistId": "gabrieleduardoart",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_goingturtlecrazy83",
+      "artistId": "goingturtlecrazy83",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_gorehoundztoys",
+      "artistId": "gorehoundztoys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_hobotoyz",
+      "artistId": "hobotoyz",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_ikin_619",
+      "artistId": "ikin_619",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_inmortal_studio",
+      "artistId": "inmortal_studio",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_invisiblemike89",
+      "artistId": "invisiblemike89",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_james_overstreet_imagery",
+      "artistId": "james_overstreet_imagery",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_jimmyfolklore",
+      "artistId": "jimmyfolklore",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_joshuahfx",
+      "artistId": "joshuahfx",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_kevycoldcuts",
+      "artistId": "kevycoldcuts",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_kriptorrata",
+      "artistId": "kriptorrata",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_lamatitamuscaria",
+      "artistId": "lamatitamuscaria",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_lazyrobots",
+      "artistId": "lazyrobots",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_left_hand_freak",
+      "artistId": "left_hand_freak",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_lrh_bootlegs",
+      "artistId": "lrh_bootlegs",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_mannycartoonstudio",
+      "artistId": "mannycartoonstudio",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_markocomix",
+      "artistId": "markocomix",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_morehorrific",
+      "artistId": "morehorrific",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_nick_nightmare_studios",
+      "artistId": "nick_nightmare_studios",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_ninjatoitles",
+      "artistId": "ninjatoitles",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_nuke_tan",
+      "artistId": "nuke_tan",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_nxtsndyad",
+      "artistId": "nxtsndyad",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_oneiromancytoyworks",
+      "artistId": "oneiromancytoyworks",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_plastic_flashback",
+      "artistId": "plastic_flashback",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_polyboxcg",
+      "artistId": "polyboxcg",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_powderghg",
+      "artistId": "powderghg",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_poy_son",
+      "artistId": "poy_son",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_rbl3d",
+      "artistId": "rbl3d",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_recyclegalaxy",
+      "artistId": "recyclegalaxy",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_remy1353",
+      "artistId": "remy1353",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_rultron",
+      "artistId": "rultron",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_rusty_bucket_ink",
+      "artistId": "rusty_bucket_ink",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_sanfordarts_bad_chad",
+      "artistId": "sanfordarts_bad_chad",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_sebastiangomeztoys",
+      "artistId": "sebastiangomeztoys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_shellshockedstudio",
+      "artistId": "shellshockedstudio",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_sickemil",
+      "artistId": "sickemil",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_sincitycustomcreations",
+      "artistId": "sincitycustomcreations",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_sir_one_collectibles",
+      "artistId": "sir_one_collectibles",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_slimecitytoys",
+      "artistId": "slimecitytoys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_snztoys",
+      "artistId": "snztoys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_stilarts",
+      "artistId": "stilarts",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_tarcacreations",
+      "artistId": "tarcacreations",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_the_retro_saint",
+      "artistId": "the_retro_saint",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_theadultnerd",
+      "artistId": "theadultnerd",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_theoriginalcashbrand",
+      "artistId": "theoriginalcashbrand",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_thetmntcollector",
+      "artistId": "thetmntcollector",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_tndtoybox",
+      "artistId": "tndtoybox",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_tmnt_tcg",
+      "artistId": "tmnt_tcg",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_tomski_figures",
+      "artistId": "tomski_figures",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_vileconsumption",
+      "artistId": "vileconsumption",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_whackonaut",
+      "artistId": "whackonaut",
+      "buildingType": "gallery",
+      "priority": 0
+    }
+  ],
+  "defaults": {
+    "collisionRect": {
+      "ox": -32,
+      "oy": -64,
+      "w": 128,
+      "h": 128
+    },
+    "enterRect": {
+      "ox": -56,
+      "oy": -88,
+      "w": 176,
+      "h": 176
+    },
+    "exitRect": {
+      "ox": -88,
+      "oy": -120,
+      "w": 240,
+      "h": 240
+    }
+  }
+}

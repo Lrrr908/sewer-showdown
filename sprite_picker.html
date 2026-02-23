@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TMNT Sprite Picker</title>
+    <style>
+        body {
+            background: #1a1a2e;
+            color: #fff;
+            font-family: monospace;
+            padding: 20px;
+        }
+        h1 { color: #4ade80; }
+        .container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .sheet {
+            border: 2px solid #444;
+            margin: 10px 0;
+        }
+        .sheet-container {
+            position: relative;
+            display: inline-block;
+            overflow: auto;
+            max-width: 90vw;
+            max-height: 70vh;
+            border: 2px solid #4ade80;
+        }
+        .sheet-wrapper {
+            position: relative;
+            transform-origin: 0 0;
+        }
+        .sheet-container img {
+            display: block;
+            cursor: crosshair;
+        }
+        .info {
+            background: #000;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #4ade80;
+        }
+        .coords {
+            font-size: 18px;
+            color: #fbbf24;
+        }
+        .zoom-info {
+            font-size: 24px;
+            color: #4ade80;
+            margin-left: 20px;
+        }
+        .preview {
+            border: 2px solid #fbbf24;
+            background: #000;
+            margin: 10px 0;
+            image-rendering: pixelated;
+        }
+        canvas {
+            image-rendering: pixelated;
+            border: 1px solid #666;
+        }
+        button {
+            background: #4ade80;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover { background: #22c55e; }
+        select, input {
+            background: #333;
+            color: #fff;
+            border: 1px solid #666;
+            padding: 5px;
+            font-family: monospace;
+        }
+        .selection-box {
+            position: absolute;
+            border: 1px solid #ff0;
+            background: rgba(255,255,0,0.05);
+            box-shadow: 0 0 2px #ff0;
+            cursor: move;
+        }
+        .selection-box.hidden {
+            display: none;
+        }
+        /* Resize handles - tiny for small sprites */
+        .resize-handle {
+            position: absolute;
+            background: #ff0;
+        }
+        .resize-handle.edge {
+            background: transparent;
+        }
+        .resize-handle.corner {
+            width: 4px;
+            height: 4px;
+            background: #ff0;
+            border: 1px solid #000;
+        }
+        .resize-handle.top { top: -1px; left: 3px; right: 3px; height: 2px; cursor: n-resize; }
+        .resize-handle.bottom { bottom: -1px; left: 3px; right: 3px; height: 2px; cursor: s-resize; }
+        .resize-handle.left { left: -1px; top: 3px; bottom: 3px; width: 2px; cursor: w-resize; }
+        .resize-handle.right { right: -1px; top: 3px; bottom: 3px; width: 2px; cursor: e-resize; }
+        .resize-handle.top-left { top: -2px; left: -2px; cursor: nw-resize; }
+        .resize-handle.top-right { top: -2px; right: -2px; cursor: ne-resize; }
+        .resize-handle.bottom-left { bottom: -2px; left: -2px; cursor: sw-resize; }
+        .resize-handle.bottom-right { bottom: -2px; right: -2px; cursor: se-resize; }
+        .zoom-controls {
+            display: inline-block;
+            margin-left: 20px;
+        }
+        .zoom-controls button {
+            padding: 5px 15px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1>TMNT Sprite Picker Tool</h1>
+    <p>Click and drag to select. <strong>SCROLL WHEEL to ZOOM</strong>. Coordinates are in original pixels.</p>
+    
+    <div class="info">
+        <label>Select sprite sheet: </label>
+        <select id="sheetSelect">
+            <option value="sprites/turtles.png">turtles.png (Party Wagon here!)</option>
+            <option value="sprites/area1.png">area1.png (Overworld)</option>
+            <option value="sprites/enemies.png">enemies.png</option>
+            <option value="sprites/items.png">items.png</option>
+            <option value="sprites/title.png">title.png</option>
+            <option value="sprites/shredder.png">shredder.png</option>
+        </select>
+        <button onclick="loadSheet()">Load</button>
+        
+        <span class="zoom-controls">
+            <button onclick="setZoom(zoom - 1)">-</button>
+            <span class="zoom-info">Zoom: <span id="zoomLevel">1</span>x</span>
+            <button onclick="setZoom(zoom + 1)">+</button>
+            <button onclick="setZoom(1)">Reset</button>
+        </span>
+    </div>
+    
+    <div class="info">
+        <p class="coords">
+            Mouse: X=<span id="mouseX">0</span>, Y=<span id="mouseY">0</span> (original coords)
+        </p>
+        <p class="coords">
+            Selection: X=<span id="selX">0</span>, Y=<span id="selY">0</span>, 
+            W=<span id="selW">0</span>, H=<span id="selH">0</span>
+        </p>
+        <p>
+            <button onclick="copyCoords()">Copy Coordinates</button>
+            <button onclick="extractSelection()">Extract Selection</button>
+            <button onclick="downloadSelection()">Download PNG</button>
+        </p>
+    </div>
+    
+    <div class="container">
+        <div>
+            <h3>Sprite Sheet (scroll to zoom, drag to select)</h3>
+            <div class="sheet-container" id="sheetContainer">
+                <div class="sheet-wrapper" id="sheetWrapper">
+                    <canvas id="sheetCanvas"></canvas>
+                    <div class="selection-box hidden" id="selectionBox">
+                        <!-- Edge handles -->
+                        <div class="resize-handle edge top" data-handle="top"></div>
+                        <div class="resize-handle edge bottom" data-handle="bottom"></div>
+                        <div class="resize-handle edge left" data-handle="left"></div>
+                        <div class="resize-handle edge right" data-handle="right"></div>
+                        <!-- Corner handles -->
+                        <div class="resize-handle corner top-left" data-handle="top-left"></div>
+                        <div class="resize-handle corner top-right" data-handle="top-right"></div>
+                        <div class="resize-handle corner bottom-left" data-handle="bottom-left"></div>
+                        <div class="resize-handle corner bottom-right" data-handle="bottom-right"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div>
+            <h3>Preview (4x scale)</h3>
+            <canvas id="previewCanvas" class="preview" width="128" height="128"></canvas>
+            <p id="previewInfo"></p>
+        </div>
+    </div>
+    
+    <div class="info">
+        <h3>Extracted Sprites</h3>
+        <div id="extractedList"></div>
+    </div>
+
+    <script>
+        const sheetCanvas = document.getElementById('sheetCanvas');
+        const sheetCtx = sheetCanvas.getContext('2d');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const previewCtx = previewCanvas.getContext('2d');
+        const selectionBox = document.getElementById('selectionBox');
+        const sheetWrapper = document.getElementById('sheetWrapper');
+        const sheetContainer = document.getElementById('sheetContainer');
+        
+        let currentImage = null;
+        let zoom = 1;
+        const MIN_ZOOM = 1;
+        const MAX_ZOOM = 10;
+        
+        // Selection state
+        let sel = { x: 0, y: 0, w: 0, h: 0 };
+        let hasSelection = false;
+        
+        // Interaction state
+        let mode = 'none'; // 'none', 'drawing', 'moving', 'resizing'
+        let activeHandle = null;
+        let dragStart = { x: 0, y: 0 };
+        let selStart = { x: 0, y: 0, w: 0, h: 0 };
+        
+        sheetCtx.imageSmoothingEnabled = false;
+        previewCtx.imageSmoothingEnabled = false;
+        
+        function setZoom(newZoom, mouseX = null, mouseY = null) {
+            const oldZoom = zoom;
+            zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+            document.getElementById('zoomLevel').textContent = zoom;
+            sheetWrapper.style.transform = `scale(${zoom})`;
+            
+            // If mouse position provided, adjust scroll to keep mouse point stationary
+            if (mouseX !== null && mouseY !== null && oldZoom !== zoom) {
+                const zoomRatio = zoom / oldZoom;
+                
+                // Current scroll position
+                const scrollLeft = sheetContainer.scrollLeft;
+                const scrollTop = sheetContainer.scrollTop;
+                
+                // Mouse position relative to container viewport
+                const rect = sheetContainer.getBoundingClientRect();
+                const viewX = mouseX - rect.left;
+                const viewY = mouseY - rect.top;
+                
+                // Position in the content before zoom
+                const contentX = scrollLeft + viewX;
+                const contentY = scrollTop + viewY;
+                
+                // New scroll position to keep mouse point stationary
+                sheetContainer.scrollLeft = contentX * zoomRatio - viewX;
+                sheetContainer.scrollTop = contentY * zoomRatio - viewY;
+            }
+        }
+        
+        function loadSheet() {
+            const src = document.getElementById('sheetSelect').value;
+            const img = new Image();
+            img.onload = () => {
+                currentImage = img;
+                sheetCanvas.width = img.width;
+                sheetCanvas.height = img.height;
+                sheetCtx.imageSmoothingEnabled = false;
+                sheetCtx.drawImage(img, 0, 0);
+                setZoom(1);
+                clearSelection();
+                console.log(`Loaded: ${src} (${img.width}x${img.height})`);
+            };
+            img.src = src;
+        }
+        
+        function clearSelection() {
+            sel = { x: 0, y: 0, w: 0, h: 0 };
+            hasSelection = false;
+            selectionBox.classList.add('hidden');
+            updateCoordDisplay();
+        }
+        
+        function updateSelectionBox() {
+            if (!hasSelection || sel.w <= 0 || sel.h <= 0) {
+                selectionBox.classList.add('hidden');
+                return;
+            }
+            selectionBox.classList.remove('hidden');
+            selectionBox.style.left = sel.x + 'px';
+            selectionBox.style.top = sel.y + 'px';
+            selectionBox.style.width = sel.w + 'px';
+            selectionBox.style.height = sel.h + 'px';
+            updateCoordDisplay();
+            updatePreview();
+        }
+        
+        function updateCoordDisplay() {
+            document.getElementById('selX').textContent = sel.x;
+            document.getElementById('selY').textContent = sel.y;
+            document.getElementById('selW').textContent = sel.w;
+            document.getElementById('selH').textContent = sel.h;
+        }
+        
+        // Scroll wheel zoom - centered on mouse position
+        sheetContainer.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            setZoom(zoom + (e.deltaY < 0 ? 1 : -1), e.clientX, e.clientY);
+        });
+        
+        function getOriginalCoords(e) {
+            const rect = sheetCanvas.getBoundingClientRect();
+            const scaleX = sheetCanvas.width / rect.width;
+            const scaleY = sheetCanvas.height / rect.height;
+            return {
+                x: Math.floor((e.clientX - rect.left) * scaleX),
+                y: Math.floor((e.clientY - rect.top) * scaleY)
+            };
+        }
+        
+        function isInsideSelection(x, y) {
+            return hasSelection && 
+                   x >= sel.x && x <= sel.x + sel.w &&
+                   y >= sel.y && y <= sel.y + sel.h;
+        }
+        
+        // Handle clicks on resize handles
+        selectionBox.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            const handle = e.target.dataset.handle;
+            const coords = getOriginalCoords(e);
+            dragStart = coords;
+            selStart = { ...sel };
+            
+            if (handle) {
+                // Clicked on a resize handle
+                mode = 'resizing';
+                activeHandle = handle;
+            } else {
+                // Clicked inside selection - move it
+                mode = 'moving';
+            }
+        });
+        
+        // Handle clicks on canvas
+        sheetCanvas.addEventListener('mousedown', (e) => {
+            const coords = getOriginalCoords(e);
+            dragStart = coords;
+            
+            if (hasSelection && isInsideSelection(coords.x, coords.y)) {
+                // Clicked inside existing selection - do nothing, let selectionBox handle it
+                return;
+            }
+            
+            // Clicked outside - start new selection
+            mode = 'drawing';
+            sel = { x: coords.x, y: coords.y, w: 0, h: 0 };
+            hasSelection = true;
+            updateSelectionBox();
+        });
+        
+        // Mouse move - handle drawing, moving, resizing
+        document.addEventListener('mousemove', (e) => {
+            const coords = getOriginalCoords(e);
+            
+            // Update mouse position display
+            document.getElementById('mouseX').textContent = coords.x;
+            document.getElementById('mouseY').textContent = coords.y;
+            
+            if (mode === 'none') return;
+            
+            const dx = coords.x - dragStart.x;
+            const dy = coords.y - dragStart.y;
+            
+            if (mode === 'drawing') {
+                // Drawing new selection
+                if (dx >= 0) {
+                    sel.x = dragStart.x;
+                    sel.w = dx;
+                } else {
+                    sel.x = coords.x;
+                    sel.w = -dx;
+                }
+                if (dy >= 0) {
+                    sel.y = dragStart.y;
+                    sel.h = dy;
+                } else {
+                    sel.y = coords.y;
+                    sel.h = -dy;
+                }
+            }
+            else if (mode === 'moving') {
+                // Moving selection
+                sel.x = Math.max(0, selStart.x + dx);
+                sel.y = Math.max(0, selStart.y + dy);
+                // Clamp to image bounds
+                if (currentImage) {
+                    sel.x = Math.min(sel.x, currentImage.width - sel.w);
+                    sel.y = Math.min(sel.y, currentImage.height - sel.h);
+                }
+            }
+            else if (mode === 'resizing') {
+                // Resizing from handle
+                let newX = selStart.x, newY = selStart.y;
+                let newW = selStart.w, newH = selStart.h;
+                
+                if (activeHandle.includes('left')) {
+                    newX = Math.min(selStart.x + dx, selStart.x + selStart.w - 1);
+                    newW = selStart.w - (newX - selStart.x);
+                }
+                if (activeHandle.includes('right')) {
+                    newW = Math.max(1, selStart.w + dx);
+                }
+                if (activeHandle.includes('top')) {
+                    newY = Math.min(selStart.y + dy, selStart.y + selStart.h - 1);
+                    newH = selStart.h - (newY - selStart.y);
+                }
+                if (activeHandle.includes('bottom')) {
+                    newH = Math.max(1, selStart.h + dy);
+                }
+                
+                sel.x = Math.max(0, newX);
+                sel.y = Math.max(0, newY);
+                sel.w = Math.max(1, newW);
+                sel.h = Math.max(1, newH);
+            }
+            
+            updateSelectionBox();
+        });
+        
+        // Mouse up - end interaction
+        document.addEventListener('mouseup', () => {
+            if (mode !== 'none') {
+                mode = 'none';
+                activeHandle = null;
+                updatePreview();
+            }
+        });
+        
+        function updatePreview() {
+            if (!currentImage || !hasSelection || sel.w <= 0 || sel.h <= 0) return;
+            
+            const scale = 4;
+            previewCanvas.width = sel.w * scale;
+            previewCanvas.height = sel.h * scale;
+            previewCtx.imageSmoothingEnabled = false;
+            previewCtx.drawImage(currentImage, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w * scale, sel.h * scale);
+            document.getElementById('previewInfo').textContent = 
+                `Original: ${sel.w}x${sel.h}, Preview: ${sel.w*scale}x${sel.h*scale}`;
+        }
+        
+        function copyCoords() {
+            if (!hasSelection) return;
+            const text = `x: ${sel.x}, y: ${sel.y}, w: ${sel.w}, h: ${sel.h}`;
+            navigator.clipboard.writeText(text);
+            alert('Copied: ' + text);
+        }
+        
+        function extractSelection() {
+            if (!hasSelection || sel.w <= 0 || sel.h <= 0) return;
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = sel.w;
+            tempCanvas.height = sel.h;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(currentImage, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
+            
+            const dataURL = tempCanvas.toDataURL('image/png');
+            
+            const list = document.getElementById('extractedList');
+            const div = document.createElement('div');
+            div.style.cssText = 'margin:10px 0; padding:10px; background:#222; display:inline-block; margin-right:10px;';
+            div.innerHTML = `
+                <img src="${dataURL}" style="image-rendering:pixelated; border:2px solid #4ade80; max-width:200px; display:block;">
+                <code style="color:#fbbf24; font-size:12px;">x:${sel.x} y:${sel.y} w:${sel.w} h:${sel.h}</code><br>
+                <a href="${dataURL}" download="sprite_${sel.x}_${sel.y}_${sel.w}x${sel.h}.png" 
+                   style="color:#4ade80; font-size:12px;">Download</a>
+            `;
+            list.appendChild(div);
+        }
+        
+        function downloadSelection() {
+            if (!hasSelection || sel.w <= 0 || sel.h <= 0) return;
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = sel.w;
+            tempCanvas.height = sel.h;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(currentImage, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
+            
+            const link = document.createElement('a');
+            link.download = `sprite_${sel.x}_${sel.y}_${sel.w}x${sel.h}.png`;
+            link.href = tempCanvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '+' || e.key === '=') setZoom(zoom + 1);
+            if (e.key === '-') setZoom(zoom - 1);
+            if (e.key === '0') setZoom(1);
+            if (e.key === 'Escape') clearSelection();
+            if (e.key === 'c' && e.ctrlKey) { e.preventDefault(); copyCoords(); }
+            if (e.key === 's' && e.ctrlKey) { e.preventDefault(); downloadSelection(); }
+            
+            // Arrow keys to nudge selection
+            if (hasSelection && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+                const step = e.shiftKey ? 10 : 1;
+                if (e.key === 'ArrowUp') sel.y = Math.max(0, sel.y - step);
+                if (e.key === 'ArrowDown') sel.y += step;
+                if (e.key === 'ArrowLeft') sel.x = Math.max(0, sel.x - step);
+                if (e.key === 'ArrowRight') sel.x += step;
+                updateSelectionBox();
+            }
+        });
+        
+        // Load first sheet on start
+        loadSheet();
+    </script>
+</body>
+</html>

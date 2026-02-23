@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Building Footprint Test</title>
+<style>
+  body { background: #1a1a1a; color: #eee; font-family: monospace; margin: 20px; }
+  canvas { border: 1px solid #444; display: block; margin: 20px auto; image-rendering: pixelated; }
+  h1 { text-align: center; font-size: 16px; }
+  .legend { text-align: center; margin: 10px; font-size: 12px; }
+  .legend span { margin: 0 12px; }
+  .fp { color: #ff4444; } .sprite { color: #44ff44; } .anchor { color: #ffff00; }
+</style>
+</head>
+<body>
+<h1>Building Footprint System Test (SW Anchor)</h1>
+<div class="legend">
+  <span class="fp">Red outline = collision footprint</span>
+  <span class="sprite">Green outline = sprite render area</span>
+  <span class="anchor">Yellow dot = anchor (x,y) SW corner</span>
+</div>
+<canvas id="c" width="960" height="640"></canvas>
+<div id="info" style="text-align:center; font-size:11px;"></div>
+
+<script>
+var TILE = 64;
+var COLS = 15, ROWS = 10;
+
+var KIND_FP = {
+  mall:        { w: 4, h: 2 },
+  warehouse:   { w: 4, h: 2 },
+  gas_station: { w: 4, h: 2 },
+  apt_tall:    { w: 2, h: 2 },
+  apt_med:     { w: 2, h: 2 },
+  apt_small:   { w: 1, h: 1 },
+  shop:        { w: 2, h: 2 },
+  fastfood:    { w: 2, h: 2 },
+  pizza:       { w: 2, h: 2 }
+};
+
+var HIRES = {
+  mall:        { src: 'sprites/buildings/mall.png',        w: 128, h: 64  },
+  shop:        { src: 'sprites/buildings/shop.png',        w: 96,  h: 64  },
+  warehouse:   { src: 'sprites/buildings/warehouse.png',   w: 108, h: 64  },
+  gas_station: { src: 'sprites/buildings/gas_station.png', w: 128, h: 52  },
+  apt_tall:    { src: 'sprites/buildings/apt_tall.png',    w: 52,  h: 128 },
+  apt_med:     { src: 'sprites/buildings/apt_med.png',     w: 72,  h: 96  },
+  apt_small:   { src: 'sprites/buildings/apt_small.png',   w: 96,  h: 64  },
+  fastfood:    { src: 'sprites/buildings/fastfood.png',    w: 128, h: 72  },
+  pizza:       { src: 'sprites/buildings/pizza.png',       w: 108, h: 72  }
+};
+
+var TEST_BUILDINGS = [
+  { x: 1,  y: 4, kind: 'mall',        label: 'mall 4x2' },
+  { x: 6,  y: 4, kind: 'warehouse',   label: 'warehouse 4x2' },
+  { x: 11, y: 4, kind: 'gas_station', label: 'gas_station 4x2' },
+  { x: 1,  y: 8, kind: 'apt_tall',    label: 'apt_tall 2x2' },
+  { x: 4,  y: 8, kind: 'shop',        label: 'shop 2x2' },
+  { x: 7,  y: 8, kind: 'fastfood',    label: 'fastfood 2x2' },
+  { x: 10, y: 8, kind: 'pizza',       label: 'pizza 2x2' },
+  { x: 13, y: 8, kind: 'apt_small',   label: 'apt_small 1x1' }
+];
+
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var images = {};
+var loaded = 0;
+var total = Object.keys(HIRES).length;
+
+Object.keys(HIRES).forEach(function(kind) {
+  var img = new Image();
+  img.onload = function() {
+    images[kind] = img;
+    loaded++;
+    if (loaded >= total) draw();
+  };
+  img.onerror = function() {
+    loaded++;
+    if (loaded >= total) draw();
+  };
+  img.src = HIRES[kind].src + '?v=1';
+});
+
+setTimeout(function() { if (loaded < total) draw(); }, 2000);
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw tile grid
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 0.5;
+  for (var y = 0; y <= ROWS; y++) {
+    ctx.beginPath(); ctx.moveTo(0, y * TILE); ctx.lineTo(COLS * TILE, y * TILE); ctx.stroke();
+  }
+  for (var x = 0; x <= COLS; x++) {
+    ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, ROWS * TILE); ctx.stroke();
+  }
+
+  // Draw each test building
+  var info = [];
+  TEST_BUILDINGS.forEach(function(b) {
+    var fp = KIND_FP[b.kind] || { w: 1, h: 1 };
+    var hi = HIRES[b.kind];
+    var scale = TILE / 32;
+
+    // Footprint rect (SW anchor: x,y is bottom-left)
+    var fpX0 = b.x;
+    var fpY0 = b.y - (fp.h - 1);
+    var fpPxX = fpX0 * TILE;
+    var fpPxY = fpY0 * TILE;
+    var fpPxW = fp.w * TILE;
+    var fpPxH = fp.h * TILE;
+
+    // Fill footprint with semi-transparent red
+    ctx.fillStyle = 'rgba(255, 60, 60, 0.15)';
+    ctx.fillRect(fpPxX, fpPxY, fpPxW, fpPxH);
+
+    // Draw sprite (centered on footprint, bottom-aligned)
+    var fpPxBottom = (b.y + 1) * TILE;
+    if (hi && images[b.kind]) {
+      var dw = hi.w * scale;
+      var dh = hi.h * scale;
+      var dx = fpPxX + (fpPxW - dw) / 2;
+      var dy = fpPxBottom - dh;
+
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(images[b.kind], dx, dy, dw, dh);
+
+      // Green outline: actual sprite render area
+      ctx.strokeStyle = '#44ff44';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(dx, dy, dw, dh);
+      ctx.setLineDash([]);
+
+      info.push(b.kind + ': sprite ' + dw + 'x' + dh + 'px, fp ' + fpPxW + 'x' + fpPxH + 'px');
+    } else {
+      // Fallback colored rect
+      ctx.fillStyle = '#666';
+      ctx.fillRect(fpPxX + 4, fpPxBottom - fp.h * TILE + 4, fpPxW - 8, fpPxH - 8);
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(b.kind, fpPxX + fpPxW / 2, fpPxBottom - fpPxH / 2 + 4);
+      info.push(b.kind + ': IMAGE NOT LOADED');
+    }
+
+    // Red outline: collision footprint
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(fpPxX + 1, fpPxY + 1, fpPxW - 2, fpPxH - 2);
+
+    // Yellow dot: anchor point (x,y) = SW corner of footprint
+    ctx.fillStyle = '#ffff00';
+    ctx.beginPath();
+    ctx.arc(b.x * TILE + 4, (b.y + 1) * TILE - 4, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('SW', b.x * TILE + 11, (b.y + 1) * TILE - 1);
+
+    // Label
+    ctx.fillStyle = '#ccc';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(b.label, fpPxX + fpPxW / 2, fpPxY - 4);
+  });
+
+  document.getElementById('info').innerHTML = info.join(' &nbsp;|&nbsp; ');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sewer Showdown Map Editor</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin:0; height:100%; background:#0d0f14; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    #root { display:flex; height:100%; }
+    #canvasWrap { flex:1; position:relative; overflow:hidden; }
+    canvas { display:block; width:100%; height:100%; background:#0b0c10; cursor: crosshair; }
+    #sidebar {
+      width: 280px; min-width: 280px;
+      border-left: 1px solid #202430;
+      background: #111521;
+      padding: 10px;
+      overflow-y: auto;
+      box-sizing: border-box;
+    }
+    .row { display:flex; gap:6px; align-items:center; margin:6px 0; flex-wrap:wrap; }
+    .btn { background:#1b2233; border:1px solid #2a3350; color:#e6e9f2; padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+    .btn:hover { background:#232c42; }
+    .btn.small { padding:5px 8px; font-size:12px; }
+    .btn.active { outline:2px solid #6aa9ff; background:#1e2a44; }
+    select, input[type="text"], input[type="number"] {
+      width:100%; background:#0f1420; border:1px solid #2a3350; color:#e6e9f2;
+      padding:6px 8px; border-radius:6px; box-sizing:border-box; font-size:13px;
+    }
+    .label { font-size:12px; color:#aeb6cc; margin:8px 0 4px; font-weight:600; }
+    #violations { font-size:12px; max-height:200px; overflow-y:auto; }
+    .vErr { color:#ff6b6b; margin:3px 0; }
+    .vWarn { color:#ffd36a; margin:3px 0; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:12px; }
+    hr { border:0; border-top:1px solid #202430; margin:10px 0; }
+    #statusBar {
+      position:absolute; bottom:0; left:0; right:0; height:24px;
+      background:rgba(17,21,33,0.9); border-top:1px solid #202430;
+      color:#aeb6cc; font-size:11px; font-family:monospace;
+      display:flex; align-items:center; padding:0 10px; gap:16px;
+    }
+    #hud {
+      position:absolute; top:8px; left:8px;
+      color:#aeb6cc; font-size:11px; font-family:monospace;
+      background:rgba(17,21,33,0.8); padding:4px 8px; border-radius:4px;
+      pointer-events:none;
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div id="canvasWrap">
+      <canvas id="c"></canvas>
+      <div id="hud">Sewer Showdown Editor</div>
+      <div id="statusBar">
+        <span id="sbCoords">--</span>
+        <span id="sbTerrain">--</span>
+        <span id="sbTool">--</span>
+        <span id="sbZoom">1x</span>
+      </div>
+    </div>
+    <div id="sidebar">
+      <div class="row">
+        <button id="btnLoad" class="btn small">Load Region</button>
+        <button id="btnLoadPatch" class="btn small">Load Patch</button>
+      </div>
+
+      <div class="label">Tools (1-6)</div>
+      <div class="row">
+        <button data-tool="terrain"  class="btn small">1 Terrain</button>
+        <button data-tool="road"     class="btn small">2 Road</button>
+        <button data-tool="town"     class="btn small">3 Town</button>
+        <button data-tool="building" class="btn small">4 Building</button>
+        <button data-tool="landmark" class="btn small">5 Landmark</button>
+        <button data-tool="eraser"   class="btn small">6 Erase</button>
+      </div>
+
+      <div id="toolOptions"></div>
+
+      <hr/>
+
+      <div class="label">Selection</div>
+      <div id="selection" class="mono" style="color:#e6e9f2; min-height:20px;">none</div>
+
+      <hr/>
+
+      <div class="row">
+        <button id="btnExportFull" class="btn small">Export Full JSON</button>
+        <button id="btnExportPatch" class="btn small">Export Patch</button>
+      </div>
+      <div class="row">
+        <button id="btnCopy" class="btn small">Copy JSON</button>
+        <button id="btnUndo" class="btn small">Undo (Z)</button>
+        <button id="btnRedo" class="btn small">Redo (Y)</button>
+      </div>
+      <div id="exportStatus" class="mono" style="color:#7adb7a; min-height:16px;"></div>
+
+      <hr/>
+
+      <div class="label">Validation</div>
+      <div id="violations"></div>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" accept=".json" style="display:none" />
+  <script src="js/editor.js"></script>
+</body>
+</html>

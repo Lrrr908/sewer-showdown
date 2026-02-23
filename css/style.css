@@ -1,0 +1,254 @@
+/* Sewer Showdown - Retro NES Style */
+
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: #000;
+    color: #fff;
+    font-family: 'Press Start 2P', cursive;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+.game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.header {
+    text-align: center;
+    color: #4ade80;
+    text-shadow: 3px 3px 0 #166534;
+}
+
+.header h1 {
+    font-size: 24px;
+    margin-bottom: 8px;
+    animation: pulse 2s infinite;
+}
+
+.header p {
+    font-size: 10px;
+    color: #fbbf24;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+}
+
+.game-wrapper {
+    position: relative;
+    border: 8px solid #374151;
+    border-radius: 4px;
+    box-shadow: 
+        0 0 0 4px #1f2937,
+        0 0 20px rgba(74, 222, 128, 0.3),
+        inset 0 0 60px rgba(0, 0, 0, 0.5);
+    background: #111;
+}
+
+#gameCanvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #1a1a2e;
+}
+
+/* Info Panel for Artists */
+.info-panel {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 200px;
+    background: rgba(0, 0, 0, 0.95);
+    border: 4px solid #4ade80;
+    padding: 12px;
+    font-size: 8px;
+    transition: all 0.3s ease;
+}
+
+.info-panel.hidden {
+    opacity: 0;
+    transform: translateX(20px);
+    pointer-events: none;
+}
+
+.info-panel img {
+    width: 64px;
+    height: 64px;
+    border: 2px solid #fbbf24;
+    image-rendering: pixelated;
+    margin-bottom: 8px;
+}
+
+.info-panel h2 {
+    color: #4ade80;
+    font-size: 10px;
+    margin-bottom: 8px;
+}
+
+.info-panel p {
+    color: #9ca3af;
+    line-height: 1.6;
+    margin-bottom: 12px;
+}
+
+.visit-btn {
+    display: block;
+    background: #7c3aed;
+    color: #fff;
+    text-decoration: none;
+    padding: 8px 12px;
+    text-align: center;
+    font-size: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.visit-btn:hover {
+    background: #a855f7;
+    transform: scale(1.05);
+}
+
+.hint {
+    display: block;
+    text-align: center;
+    margin-top: 8px;
+    color: #6b7280;
+    font-size: 6px;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+/* Controls */
+.controls {
+    text-align: center;
+}
+
+.control-hint {
+    font-size: 8px;
+    color: #6b7280;
+}
+
+.key {
+    display: inline-block;
+    background: #374151;
+    padding: 4px 8px;
+    margin: 0 4px;
+    border-radius: 2px;
+    color: #fff;
+}
+
+/* Mobile Controls */
+.mobile-controls {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    left: 0;
+    right: 0;
+    padding: 0 20px;
+}
+
+.dpad {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    background: rgba(74, 222, 128, 0.3);
+    border: 3px solid #4ade80;
+    color: #4ade80;
+    font-size: 20px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.dpad:active {
+    background: rgba(74, 222, 128, 0.6);
+}
+
+.dpad.up { left: 70px; bottom: 110px; }
+.dpad.down { left: 70px; bottom: 0; }
+.dpad.left { left: 10px; bottom: 55px; }
+.dpad.right { left: 130px; bottom: 55px; }
+
+.action-btn {
+    position: absolute;
+    right: 30px;
+    bottom: 40px;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: rgba(251, 191, 36, 0.3);
+    border: 4px solid #fbbf24;
+    color: #fbbf24;
+    font-size: 24px;
+    font-family: 'Press Start 2P', cursive;
+    cursor: pointer;
+}
+
+.action-btn:active {
+    background: rgba(251, 191, 36, 0.6);
+}
+
+@media (max-width: 800px) {
+    .header h1 { font-size: 16px; }
+    .header p { font-size: 8px; }
+    
+    #gameCanvas {
+        width: 100vw;
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .game-wrapper {
+        border-width: 4px;
+    }
+    
+    .mobile-controls {
+        display: block;
+    }
+    
+    .controls {
+        display: none;
+    }
+    
+    .info-panel {
+        width: 160px;
+        font-size: 6px;
+    }
+}
+
+/* Scanline effect for extra retro feel */
+.game-wrapper::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.1),
+        rgba(0, 0, 0, 0.1) 1px,
+        transparent 1px,
+        transparent 2px
+    );
+    pointer-events: none;
+}

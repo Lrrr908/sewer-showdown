@@ -1,0 +1,11 @@
+{
+  "id": "neon_nes",
+  "name": "Neon NES",
+  "version": 1,
+  "overrides": {
+    "roadTile": "roadTile.png",
+    "waterTile": "waterTile.png",
+    "buildingArcade": "buildingArcade.png"
+  },
+  "aliases": {}
+}

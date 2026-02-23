@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Sewer Showdown - Drive the Party Wagon!</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+        }
+        
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        
+        /* Info panel overlay */
+        #infoPanel {
+            position: fixed;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            border: 3px solid #fcfc00;
+            border-radius: 8px;
+            padding: 15px 25px;
+            color: #fff;
+            font-family: 'Press Start 2P', monospace;
+            text-align: center;
+            z-index: 100;
+            min-width: 300px;
+        }
+        
+        #infoPanel.hidden {
+            display: none;
+        }
+        
+        #infoPanel h2 {
+            color: #fcfc00;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        #infoPanel p {
+            font-size: 10px;
+            color: #58d8f8;
+            margin-bottom: 12px;
+        }
+        
+        .visit-btn {
+            display: inline-block;
+            background: #4ade80;
+            color: #000;
+            padding: 8px 16px;
+            text-decoration: none;
+            font-size: 10px;
+            border-radius: 4px;
+        }
+        
+        .visit-btn:hover {
+            background: #22c55e;
+        }
+        
+        .hint {
+            display: block;
+            margin-top: 8px;
+            font-size: 8px;
+            color: #666;
+        }
+        
+        /* Mobile controls */
+        .mobile-controls {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 200;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        @media (max-width: 768px) {
+            .mobile-controls {
+                display: block;
+            }
+        }
+        
+        .dpad {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        button.dpad:active,
+        button.dpad.pressed {
+            background: rgba(255, 255, 255, 0.6);
+            border-color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .dpad.up { left: 55px; top: 0; }
+        .dpad.down { left: 55px; top: 110px; }
+        .dpad.left { left: 0; top: 55px; }
+        .dpad.right { left: 110px; top: 55px; }
+        
+        .action-btn {
+            display: none;
+            position: fixed;
+            bottom: 75px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background: #ef4444;
+            border: 3px solid #fff;
+            border-radius: 50%;
+            color: #fff;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 200;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        @media (max-width: 768px) {
+            .action-btn.visible { display: block; }
+        }
+        
+        /* Building overlay */
+        /* ── Building overlay ── */
+        #buildingOverlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 500;
+            font-family: 'Press Start 2P', monospace;
+            color: #fff;
+            padding: 10px 12px env(safe-area-inset-bottom, 10px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            box-sizing: border-box;
+        }
+
+        #buildingOverlay.hidden {
+            display: none;
+        }
+
+        #buildingOverlay h1 {
+            color: #fcfc00;
+            font-size: 14px;
+            margin: 8px 0 6px;
+            text-align: center;
+            flex-shrink: 0;
+            word-break: break-word;
+        }
+
+        #buildingOverlay .overlay-bio {
+            color: #58d8f8;
+            font-size: 10px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            line-height: 1.6;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+        }
+
+        /* Hero image area */
+        #overlayHeroWrap {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            min-height: 80px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #111;
+            border: 2px solid #333;
+            border-radius: 4px;
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+
+        #overlayHeroImg {
+            display: block;
+            max-width: 100%;
+            max-height: 45vh;
+            object-fit: contain;
+            image-rendering: auto;
+        }
+
+        #overlayHeroImg.hidden {
+            display: none;
+        }
+
+        #overlayHeroPlaceholder {
+            color: #666;
+            font-size: 10px;
+            text-align: center;
+            padding: 20px;
+        }
+
+        #overlayHeroPlaceholder.hidden {
+            display: none;
+        }
+
+        #overlayError {
+            color: #ef4444;
+            font-size: 10px;
+            text-align: center;
+            padding: 10px;
+        }
+
+        #overlayError.hidden {
+            display: none;
+        }
+
+        /* Thumbnail strip */
+        .thumbs {
+            display: flex;
+            gap: 4px;
+            flex-wrap: nowrap;
+            justify-content: flex-start;
+            max-width: 500px;
+            width: 100%;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 4px;
+        }
+
+        .thumbs.hidden {
+            display: none;
+        }
+
+        .thumb-btn {
+            width: 44px;
+            height: 44px;
+            padding: 0;
+            border: 2px solid #555;
+            border-radius: 4px;
+            background: #222;
+            cursor: pointer;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .thumb-btn:focus {
+            outline: 2px solid #fcfc00;
+            outline-offset: 1px;
+        }
+
+        .thumb-btn.active {
+            border-color: #fcfc00;
+        }
+
+        .thumb-btn.thumb-bad {
+            opacity: 0.3;
+            cursor: not-allowed;
+            border-color: #333;
+        }
+
+        .thumb-btn img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* Sidebar container (portrait: column, landscape: side panel) */
+        .overlay-sidebar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 500px;
+            flex-shrink: 0;
+        }
+
+        /* Overlay action buttons */
+        #buildingOverlay .overlay-ig {
+            display: inline-block;
+            background: #4ade80;
+            color: #000;
+            padding: 8px 16px;
+            text-decoration: none;
+            font-size: 10px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+        }
+
+        #buildingOverlay .overlay-ig:hover {
+            background: #22c55e;
+        }
+
+        #buildingOverlay .overlay-close {
+            background: none;
+            border: 2px solid #fff;
+            color: #fff;
+            padding: 8px 20px;
+            font-size: 10px;
+            font-family: 'Press Start 2P', monospace;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+
+        #buildingOverlay .overlay-close:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* ── Landscape phone: side-by-side layout ── */
+        @media (max-height: 500px) and (orientation: landscape) {
+            #buildingOverlay {
+                flex-direction: row;
+                flex-wrap: wrap;
+                align-items: flex-start;
+                padding: 6px 10px;
+                gap: 8px;
+            }
+            #buildingOverlay h1 {
+                width: 100%;
+                font-size: 12px;
+                margin: 4px 0;
+            }
+            #overlayHeroWrap {
+                flex: 1 1 50%;
+                max-width: 50%;
+                min-height: 0;
+                margin-bottom: 0;
+            }
+            #overlayHeroImg {
+                max-height: 60vh;
+            }
+            .overlay-sidebar {
+                flex: 1 1 40%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 6px;
+                overflow-y: auto;
+                max-height: calc(100vh - 40px);
+            }
+            .thumbs {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                max-width: 100%;
+            }
+        }
+
+        /* ── Small portrait phones (SE, mini) ── */
+        @media (max-height: 700px) and (orientation: portrait) {
+            #buildingOverlay h1 {
+                font-size: 12px;
+                margin: 4px 0;
+            }
+            #buildingOverlay .overlay-bio {
+                font-size: 9px;
+                margin-bottom: 6px;
+                line-height: 1.5;
+            }
+            #overlayHeroImg {
+                max-height: 35vh;
+            }
+            #overlayHeroWrap {
+                min-height: 60px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <!-- Info panel that shows when near a building -->
+    <div id="infoPanel" class="hidden">
+        <h2 id="artistName">Artist Name</h2>
+        <p id="artistBio">Bio here...</p>
+        <a id="artistLink" href="#" target="_blank" class="visit-btn">
+            VISIT INSTAGRAM →
+        </a>
+        <span class="hint">Press ENTER to go inside</span>
+    </div>
+    
+    <!-- Mobile controls -->
+    <div class="mobile-controls">
+        <button id="btnUp" class="dpad up">▲</button>
+        <button id="btnLeft" class="dpad left">◄</button>
+        <button id="btnRight" class="dpad right">►</button>
+        <button id="btnDown" class="dpad down">▼</button>
+    </div>
+    <button id="btnAction" class="action-btn">A</button>
+    
+    <!-- Login overlay (shown before multiplayer connection) -->
+    <div id="loginOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.92);z-index:1000;display:none;align-items:center;justify-content:center;font-family:'Press Start 2P',monospace;">
+        <div style="background:#111;border:3px solid #fcfc00;border-radius:8px;padding:24px;max-width:340px;width:90%;text-align:center;">
+            <h2 style="color:#fcfc00;font-size:14px;margin-bottom:16px;">SEWER SHOWDOWN</h2>
+            <p style="color:#58d8f8;font-size:9px;margin-bottom:16px;" id="loginStatus">Enter credentials to go online</p>
+            <div id="loginForm">
+                <input id="loginEmail" type="email" placeholder="Email" style="width:100%;padding:8px;margin-bottom:8px;font-family:inherit;font-size:10px;background:#222;color:#fff;border:1px solid #444;border-radius:4px;box-sizing:border-box;">
+                <input id="loginPassword" type="password" placeholder="Password" style="width:100%;padding:8px;margin-bottom:8px;font-family:inherit;font-size:10px;background:#222;color:#fff;border:1px solid #444;border-radius:4px;box-sizing:border-box;">
+                <input id="loginUsername" type="text" placeholder="Display Name (register only)" style="width:100%;padding:8px;margin-bottom:12px;font-family:inherit;font-size:10px;background:#222;color:#fff;border:1px solid #333;border-radius:4px;box-sizing:border-box;">
+                <button id="loginBtn" style="width:48%;padding:8px;font-family:inherit;font-size:10px;background:#4ade80;color:#000;border:none;border-radius:4px;cursor:pointer;margin-right:2%;">LOGIN</button>
+                <button id="registerBtn" style="width:48%;padding:8px;font-family:inherit;font-size:10px;background:#3cbcfc;color:#000;border:none;border-radius:4px;cursor:pointer;">REGISTER</button>
+            </div>
+            <button id="guestBtn" style="margin-top:12px;padding:8px 16px;font-family:inherit;font-size:10px;background:#fcfc00;color:#000;border:none;border-radius:4px;cursor:pointer;width:100%;">PLAY AS GUEST</button>
+            <button id="playOfflineBtn" style="margin-top:8px;padding:8px 16px;font-family:inherit;font-size:9px;background:none;color:#666;border:1px solid #333;border-radius:4px;cursor:pointer;">PLAY OFFLINE (NO SERVER)</button>
+        </div>
+    </div>
+
+    <!-- Building overlay (shown when inside a building) -->
+    <div id="buildingOverlay" class="hidden">
+        <h1 id="overlayArtistName">Artist Name</h1>
+
+        <div id="overlayHeroWrap">
+            <div id="overlayHeroPlaceholder">NO IMAGE YET</div>
+            <img id="overlayHeroImg" class="hidden" alt="" />
+            <div id="overlayError" class="hidden">IMAGE FAILED TO LOAD</div>
+        </div>
+
+        <div class="overlay-sidebar">
+            <p class="overlay-bio" id="overlayArtistBio">Bio here...</p>
+            <div id="overlayThumbs" class="thumbs hidden"></div>
+            <a class="overlay-ig" id="overlayIgLink" href="#" target="_blank">VISIT INSTAGRAM →</a>
+            <button class="overlay-close" id="overlayCloseBtn">← BACK TO MAP</button>
+        </div>
+    </div>
+    
+    <!-- Shared foundation (order matters) -->
+    <script src="js/shared/errors.js"></script>
+    <script src="js/shared/path.js"></script>
+    <script src="js/shared/versioning.js"></script>
+    <script src="js/shared/palette.js"></script>
+    <script src="js/shared/rng.js"></script>
+    <script src="js/shared/pattern_core.js"></script>
+    <script src="js/shared/level_schema.js"></script>
+    <script src="js/shared/building_fp.js"></script>
+    <!-- Multiplayer networking -->
+    <script src="js/multiplayer.js"></script>
+    <!-- Admin bridge (dev-only) -->
+    <script src="js/admin-bridge.js?v=41"></script>
+    <script>
+    // One-time fix: remove corrupted turtleDown1 + stale region cache
+    (function(){
+        try {
+            var raw = localStorage.getItem('adminSync_patterns');
+            if (raw) {
+                var pats = JSON.parse(raw);
+                if (pats.turtleDown1) {
+                    delete pats.turtleDown1;
+                    localStorage.setItem('adminSync_patterns', JSON.stringify(pats));
+                    console.log('Cleared corrupted turtleDown1 from pattern cache');
+                }
+            }
+            ['na','sa','eu','asia','oce','af'].forEach(function(r){
+                localStorage.removeItem('adminSync_region_' + r);
+            });
+        } catch(e) {}
+    })();
+    </script>
+    <script src="js/building_pixels.js?v=3"></script>
+    <script src="js/game.js?v=58"></script>
+    <script>
+    // Login overlay wiring
+    (function() {
+        var overlay = document.getElementById('loginOverlay');
+        var status = document.getElementById('loginStatus');
+        var emailInput = document.getElementById('loginEmail');
+        var passInput = document.getElementById('loginPassword');
+        var userInput = document.getElementById('loginUsername');
+        var loginBtn = document.getElementById('loginBtn');
+        var registerBtn = document.getElementById('registerBtn');
+        var guestBtn = document.getElementById('guestBtn');
+        var offlineBtn = document.getElementById('playOfflineBtn');
+
+        function showOverlay() { overlay.style.display = 'flex'; }
+        function hideOverlay() { overlay.style.display = 'none'; }
+
+        if (MP.isLoggedIn()) {
+            MP.connect();
+        } else {
+            showOverlay();
+        }
+
+        guestBtn.addEventListener('click', async function() {
+            status.style.color = '#58d8f8';
+            status.textContent = 'Joining as guest...';
+            try {
+                await MP.guest();
+                status.textContent = 'Playing as ' + MP.displayName;
+                MP.connect();
+                hideOverlay();
+            } catch(e) {
+                status.style.color = '#ff6b6b';
+                status.textContent = e.message;
+            }
+        });
+
+        loginBtn.addEventListener('click', async function() {
+            status.style.color = '#58d8f8';
+            status.textContent = 'Logging in...';
+            try {
+                await MP.login(emailInput.value, passInput.value);
+                status.textContent = 'Connected as ' + MP.displayName;
+                MP.connect();
+                hideOverlay();
+            } catch(e) {
+                status.style.color = '#ff6b6b';
+                status.textContent = e.message;
+            }
+        });
+
+        registerBtn.addEventListener('click', async function() {
+            status.style.color = '#58d8f8';
+            status.textContent = 'Registering...';
+            try {
+                await MP.register(userInput.value, emailInput.value, passInput.value);
+                status.textContent = 'Registered! Connected as ' + MP.displayName;
+                MP.connect();
+                hideOverlay();
+            } catch(e) {
+                status.style.color = '#ff6b6b';
+                status.textContent = e.message;
+            }
+        });
+
+        offlineBtn.addEventListener('click', function() {
+            hideOverlay();
+        });
+
+        // Show login overlay with L key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'l' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) {
+                if (overlay.classList.contains('hidden')) {
+                    showOverlay();
+                } else {
+                    hideOverlay();
+                }
+            }
+        });
+    })();
+    </script>
+</body>
+</html>

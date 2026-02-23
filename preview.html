@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NES Sprite Preview &amp; Tracer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #e0e0e0; font-family: 'Courier New', monospace; padding: 20px; }
+h1 { color: #fc7460; margin-bottom: 10px; font-size: 20px; }
+h2 { color: #3cbcfc; margin: 16px 0 8px; font-size: 16px; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.panel { background: #16213e; border: 2px solid #0f3460; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+canvas { image-rendering: pixelated; image-rendering: crisp-edges; border: 1px solid #333; cursor: crosshair; }
+.swatch { display: inline-block; width: 24px; height: 24px; border: 2px solid #555; cursor: pointer; margin: 2px; vertical-align: middle; }
+.swatch.active { border-color: #fcfcfc; box-shadow: 0 0 6px #fcfcfc; }
+.palette-bar { margin: 8px 0; }
+button { background: #0f3460; color: #e0e0e0; border: 1px solid #3cbcfc; padding: 6px 14px; cursor: pointer; font-family: inherit; font-size: 13px; border-radius: 4px; margin: 2px; }
+button:hover { background: #3cbcfc; color: #000; }
+textarea { background: #0a0a1a; color: #0f0; border: 1px solid #333; font-family: 'Courier New', monospace; font-size: 11px; width: 100%; padding: 8px; border-radius: 4px; }
+label { font-size: 13px; color: #aaa; }
+.info { font-size: 12px; color: #888; margin: 4px 0; }
+#refCanvas { background: #000; }
+#traceCanvas { background: #000; }
+.coord-info { font-size: 12px; color: #fcd8a8; min-height: 18px; margin: 4px 0; }
+.scale-btns button { font-size: 11px; padding: 3px 8px; }
+#previewGrid { display: flex; gap: 16px; flex-wrap: wrap; }
+.preview-item { text-align: center; }
+.preview-item canvas { display: block; margin: 4px auto; }
+.preview-item .name { font-size: 12px; color: #bcbcbc; }
+</style>
+</head>
+<body>
+
+<h1>NES TMNT Sprite Preview &amp; Tracer</h1>
+
+<!-- SECTION 1: Current pattern previews -->
+<div class="panel">
+<h2>Current Building Patterns (from game.js)</h2>
+<div class="info">These are what the game currently renders. Scale: 4x (128x128px from 32x32 NES pixels)</div>
+<div id="previewGrid"></div>
+</div>
+
+<!-- SECTION 2: Reference image loader + pixel tracer -->
+<div class="panel">
+<h2>Reference Image &rarr; Pattern Tracer</h2>
+<div class="info">Drop or select a reference sprite PNG. Click pixels to sample colors and build a pattern.</div>
+
+<div class="row">
+<div>
+<label>Load reference image:</label><br>
+<input type="file" id="refFile" accept="image/*">
+<div class="scale-btns" style="margin-top:6px;">
+Zoom: <button onclick="setRefScale(1)">1x</button>
+<button onclick="setRefScale(2)">2x</button>
+<button onclick="setRefScale(4)">4x</button>
+<button onclick="setRefScale(6)">6x</button>
+<button onclick="setRefScale(8)">8x</button>
+</div>
+<div class="coord-info" id="refCoord">&nbsp;</div>
+<canvas id="refCanvas" width="400" height="300"></canvas>
+<div class="info" id="refInfo"></div>
+</div>
+
+<div>
+<label>Trace canvas (<span id="traceSize">32x32</span>):</label><br>
+<div style="margin:4px 0;">
+Size: <input type="number" id="traceCols" value="32" min="1" max="128" style="width:50px;background:#0a0a1a;color:#0f0;border:1px solid #333;">
+x <input type="number" id="traceRows" value="32" min="1" max="128" style="width:50px;background:#0a0a1a;color:#0f0;border:1px solid #333;">
+<button onclick="resizeTrace()">Resize</button>
+</div>
+<div class="coord-info" id="traceCoord">&nbsp;</div>
+<canvas id="traceCanvas" width="256" height="256"></canvas>
+<div style="margin-top:6px;">
+<button onclick="clearTrace()">Clear</button>
+<button onclick="fillTrace()">Fill w/ active color</button>
+<button onclick="undoTrace()">Undo</button>
+</div>
+</div>
+</div>
+
+<h2>Palette</h2>
+<div class="palette-bar" id="paletteBar"></div>
+<div class="info">Click a swatch to select, then click on trace canvas to paint. Right-click trace canvas to erase (transparent).</div>
+
+<h2>Auto-Trace from Reference</h2>
+<div class="info">Select a region on the reference image and auto-map each pixel to the closest NES palette color.</div>
+<div style="margin:6px 0;">
+Crop from ref: X <input type="number" id="cropX" value="0" min="0" style="width:50px;background:#0a0a1a;color:#0f0;border:1px solid #333;">
+Y <input type="number" id="cropY" value="0" min="0" style="width:50px;background:#0a0a1a;color:#0f0;border:1px solid #333;">
+W <input type="number" id="cropW" value="32" min="1" style="width:50px;background:#0a0a1a;color:#0f0;border:1px solid #333;">
+H <input type="number" id="cropH" value="32" min="1" style="width:50px;background:#0a0a1a;color:#0f0;border:1px solid #333;">
+<button onclick="autoTrace()">Auto-Trace Region</button>
+</div>
+
+<h2>Output Pattern (copy into game.js)</h2>
+<button onclick="exportPattern()">Generate Code</button>
+<button onclick="copyToClipboard()">Copy to Clipboard</button>
+<div style="margin-top:6px;">
+<textarea id="output" rows="36" readonly></textarea>
+</div>
+</div>
+
+<script>
+var PAL = {
+    W: '#fcfcfc', L: '#bcbcbc', G: '#747474', B: '#0070ec',
+    K: '#000000', N: '#24188c', C: '#3cbcfc', R: '#a40000',
+    P: '#fc7460', T: '#fcd8a8',
+    D: '#7c0800', M: '#c84c0c', O: '#fc9838',
+    V: '#00a800',
+    _: null
+};
+
+var PALKEYS = Object.keys(PAL).filter(function(k) { return k !== '_'; });
+var activePalKey = 'K';
+
+// Building patterns from game.js
+var PATTERNS = {};
+
+PATTERNS.bldgGrayBlue = [
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KLLLLLLLLLLLLLLLLLLLLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLWWWGWWWWWLLLLLLWWWLKKGGGGLGLGK',
+    'KLWWGKGWWWWLWWWWLWWWLKKKKKKKKKKK',
+    'KLWGKKKGWWWLWWWWLWWWLKKGGGGLGLGK',
+    'KLGKKKKKGWWLLLLLLWWWLKKGGGGLGLGK',
+    'KLGGGGGGGWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKKKKKKKKKK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLLLLLLLLLLLLLLLLLLLLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGGGLGLGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKKKKKKKKKK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGGGLGLGK',
+    'KLLLLLLLLLLLLLLLLLLLLKKGGGGLGLGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKKKKKKKKKK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLLLLLLLLLLLLLLLLLLLLKKGGLGLGGGK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KNBBBKNBBKKKKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KNBBBKNBBKKKKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KNBBBKNBBKKKKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK'
+];
+
+PATTERNS.bldgGrayRed = [
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KLLLLLLLLLLLLLLLLLLLLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLWWWGWWWWWLLLLLLWWWLKKGGGGLGLGK',
+    'KLWWGKGWWWWLWWWWLWWWLKKKKKKKKKKK',
+    'KLWGKKKGWWWLWWWWLWWWLKKGGGGLGLGK',
+    'KLGKKKKKGWWLLLLLLWWWLKKGGGGLGLGK',
+    'KLGGGGGGGWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKKKKKKKKKK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLLLLLLLLLLLLLLLLLLLLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGGGLGLGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKKKKKKKKKK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGGGLGLGK',
+    'KLLLLLLLLLLLLLLLLLLLLKKGGGGLGLGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKKKKKKKKKK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLWWWWWWWWWWWWWWWWWWLKKGGLGLGGGK',
+    'KLLLLLLLLLLLLLLLLLLLLKKGGLGLGGGK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KRRPRRPRRKKKKRPRRPRRRKKNNNNNNNNK',
+    'KRRPRRPRRKGGKRPRRPRRRKKNNNNNNNNK',
+    'KRRPRRPRRKGGKRPRRPRRRKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KRRPRRPRRKKKKRPRRPRRRKKNNNNNNNNK',
+    'KRRPRRPRRKGGKRPRRPRRRKKNNNNNNNNK',
+    'KRRPRRPRRKGGKRPRRPRRRKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KRRPRRPRRKKKKRPRRPRRRKKNNNNNNNNK',
+    'KRRPRRPRRKGGKRPRRPRRRKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK'
+];
+
+PATTERNS.bldgRedBlue = [
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KRRRRRKRRRRRKRRRRRRRRKKDRRDKDRRK',
+    'KRRPRRKRRPRRKRRRRRRRRKKDRRDKDRRK',
+    'KRRRRRKRRRRRKRRRRRRRRKKDRRRKDRRK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KRRKRRRRRKRRRRRKRRRRRKKDRRDKDRRK',
+    'KRRKRRPRRKRRRRPKRRRRRKKDRRDKDRRK',
+    'KRRKRRRRRKRRRRRKRRRRRKKDRRRKDRRK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KRRRRRKRRRRRKRRRRRRRRKKDRRDKDRRK',
+    'KRRPRRKRRPRRKRRRRRRRRKKDRRDKDRRK',
+    'KRRRRRKRRRRRKRRRRRRRRKKDRRRKDRRK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KRRKRRRRRKRRRRRKRRRRRKKDRRDKDRRK',
+    'KRRKRRPRRKRRRRPKRRRRRKKDRRDKDRRK',
+    'KRRKRRRRRKRRRRRKRRRRRKKDRRRKDRRK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KRRKRRRRRKRRRRRKRRRRRKKDRRDKDRRK',
+    'KRRKRRPRRKRRRRPKRRRRRKKDRRDKDRRK',
+    'KRRKRRRRRKRRRRRKRRRRRKKDRRRKDRRK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KNBBBKNBBKKKKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KNBBBKNBBKKKKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK',
+    'KNBBBKNBBKKKKNBBBKNBBKKNNNNNNNNK',
+    'KNBBBKNBBKGGKNBBBKNBBKKNNNNNNNNK',
+    'KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK'
+];
+
+// ── Render previews ──
+function renderPattern(canvas, pat, scale) {
+    var rows = pat.length;
+    var cols = pat[0].length;
+    canvas.width = cols * scale;
+    canvas.height = rows * scale;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < pat[r].length; c++) {
+            var ch = pat[r][c];
+            var color = PAL[ch];
+            if (!color) continue;
+            ctx.fillStyle = color;
+            ctx.fillRect(c * scale, r * scale, scale, scale);
+        }
+    }
+}
+
+function initPreviews() {
+    var grid = document.getElementById('previewGrid');
+    var names = Object.keys(PATTERNS);
+    for (var i = 0; i < names.length; i++) {
+        var div = document.createElement('div');
+        div.className = 'preview-item';
+        var nameEl = document.createElement('div');
+        nameEl.className = 'name';
+        nameEl.textContent = names[i];
+        var cvs = document.createElement('canvas');
+        renderPattern(cvs, PATTERNS[names[i]], 4);
+        div.appendChild(nameEl);
+        div.appendChild(cvs);
+        grid.appendChild(div);
+    }
+}
+
+// ── Palette bar ──
+function initPalette() {
+    var bar = document.getElementById('paletteBar');
+    var keys = Object.keys(PAL);
+    for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var el = document.createElement('span');
+        el.className = 'swatch' + (k === activePalKey ? ' active' : '');
+        el.style.background = PAL[k] || '#1a1a2e';
+        if (!PAL[k]) {
+            el.style.background = 'repeating-conic-gradient(#333 0% 25%, #1a1a2e 0% 50%) 50% / 8px 8px';
+            el.title = '_ (transparent)';
+        } else {
+            el.title = k + ' = ' + PAL[k];
+        }
+        el.dataset.key = k;
+        el.addEventListener('click', function() {
+            document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
+            this.classList.add('active');
+            activePalKey = this.dataset.key;
+        });
+        bar.appendChild(el);
+    }
+}
+
+// ── Reference image ──
+var refImg = null;
+var refImgData = null;
+var refScale = 4;
+
+function setRefScale(s) { refScale = s; drawRefImage(); }
+
+document.getElementById('refFile').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var img = new Image();
+    img.onload = function() {
+        refImg = img;
+        document.getElementById('refInfo').textContent = 'Loaded: ' + img.width + 'x' + img.height + ' px';
+        document.getElementById('cropW').value = img.width;
+        document.getElementById('cropH').value = img.height;
+        drawRefImage();
+    };
+    img.src = URL.createObjectURL(file);
+});
+
+function drawRefImage() {
+    if (!refImg) return;
+    var cvs = document.getElementById('refCanvas');
+    cvs.width = refImg.width * refScale;
+    cvs.height = refImg.height * refScale;
+    var ctx = cvs.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(refImg, 0, 0, cvs.width, cvs.height);
+    // store original pixel data
+    var tmp = document.createElement('canvas');
+    tmp.width = refImg.width; tmp.height = refImg.height;
+    var tmpCtx = tmp.getContext('2d');
+    tmpCtx.drawImage(refImg, 0, 0);
+    refImgData = tmpCtx.getImageData(0, 0, refImg.width, refImg.height);
+    // draw grid
+    if (refScale >= 4) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 0.5;
+        for (var x = 0; x <= cvs.width; x += refScale) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cvs.height); ctx.stroke();
+        }
+        for (var y = 0; y <= cvs.height; y += refScale) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cvs.width, y); ctx.stroke();
+        }
+    }
+}
+
+document.getElementById('refCanvas').addEventListener('mousemove', function(e) {
+    if (!refImgData) return;
+    var rect = this.getBoundingClientRect();
+    var px = Math.floor((e.clientX - rect.left) / refScale);
+    var py = Math.floor((e.clientY - rect.top) / refScale);
+    if (px < 0 || py < 0 || px >= refImg.width || py >= refImg.height) return;
+    var idx = (py * refImg.width + px) * 4;
+    var r = refImgData.data[idx], g = refImgData.data[idx+1], b = refImgData.data[idx+2];
+    var hex = '#' + ((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+    var nearest = findNearestPalKey(r, g, b);
+    document.getElementById('refCoord').textContent =
+        'Pixel (' + px + ',' + py + ') RGB(' + r + ',' + g + ',' + b + ') ' + hex + ' → NES: ' + nearest;
+});
+
+document.getElementById('refCanvas').addEventListener('click', function(e) {
+    if (!refImgData) return;
+    var rect = this.getBoundingClientRect();
+    var px = Math.floor((e.clientX - rect.left) / refScale);
+    var py = Math.floor((e.clientY - rect.top) / refScale);
+    if (px < 0 || py < 0 || px >= refImg.width || py >= refImg.height) return;
+    var idx = (py * refImg.width + px) * 4;
+    var r = refImgData.data[idx], g = refImgData.data[idx+1], b = refImgData.data[idx+2];
+    var nearest = findNearestPalKey(r, g, b);
+    activePalKey = nearest;
+    document.querySelectorAll('.swatch').forEach(function(s) {
+        s.classList.toggle('active', s.dataset.key === nearest);
+    });
+});
+
+function hexToRgb(hex) {
+    var n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function colorDist(r1, g1, b1, r2, g2, b2) {
+    var dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+    return dr*dr + dg*dg + db*db;
+}
+
+function findNearestPalKey(r, g, b) {
+    var best = '_', bestD = Infinity;
+    for (var i = 0; i < PALKEYS.length; i++) {
+        var k = PALKEYS[i];
+        var rgb = hexToRgb(PAL[k]);
+        var d = colorDist(r, g, b, rgb[0], rgb[1], rgb[2]);
+        if (d < bestD) { bestD = d; best = k; }
+    }
+    return best;
+}
+
+// ── Trace canvas ──
+var traceCols = 32, traceRows = 32;
+var traceData = []; // 2D array of palette keys
+var traceHistory = [];
+var traceScale = 8;
+
+function initTrace() {
+    traceData = [];
+    for (var r = 0; r < traceRows; r++) {
+        var row = [];
+        for (var c = 0; c < traceCols; c++) row.push('_');
+        traceData.push(row);
+    }
+    drawTrace();
+}
+
+function resizeTrace() {
+    traceCols = parseInt(document.getElementById('traceCols').value) || 32;
+    traceRows = parseInt(document.getElementById('traceRows').value) || 32;
+    document.getElementById('traceSize').textContent = traceCols + 'x' + traceRows;
+    traceScale = Math.max(2, Math.min(10, Math.floor(320 / Math.max(traceCols, traceRows))));
+    traceHistory = [];
+    initTrace();
+}
+
+function drawTrace() {
+    var cvs = document.getElementById('traceCanvas');
+    cvs.width = traceCols * traceScale;
+    cvs.height = traceRows * traceScale;
+    var ctx = cvs.getContext('2d');
+    // checkerboard bg for transparent
+    for (var r = 0; r < traceRows; r++) {
+        for (var c = 0; c < traceCols; c++) {
+            var ch = traceData[r][c];
+            var color = PAL[ch];
+            if (!color) {
+                var light = ((r + c) % 2 === 0) ? '#222' : '#2a2a2a';
+                ctx.fillStyle = light;
+            } else {
+                ctx.fillStyle = color;
+            }
+            ctx.fillRect(c * traceScale, r * traceScale, traceScale, traceScale);
+        }
+    }
+    // grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 0.5;
+    for (var x = 0; x <= cvs.width; x += traceScale) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cvs.height); ctx.stroke();
+    }
+    for (var y = 0; y <= cvs.height; y += traceScale) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cvs.width, y); ctx.stroke();
+    }
+}
+
+var isDrawing = false;
+
+document.getElementById('traceCanvas').addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    traceHistory.push(JSON.parse(JSON.stringify(traceData)));
+    if (traceHistory.length > 50) traceHistory.shift();
+    isDrawing = true;
+    paintTrace(e);
+});
+
+document.getElementById('traceCanvas').addEventListener('mousemove', function(e) {
+    var rect = this.getBoundingClientRect();
+    var c = Math.floor((e.clientX - rect.left) / traceScale);
+    var r = Math.floor((e.clientY - rect.top) / traceScale);
+    document.getElementById('traceCoord').textContent = (c >= 0 && c < traceCols && r >= 0 && r < traceRows)
+        ? 'Pixel (' + c + ',' + r + ') = ' + traceData[r][c] : '';
+    if (isDrawing) paintTrace(e);
+});
+
+document.addEventListener('mouseup', function() { isDrawing = false; });
+
+document.getElementById('traceCanvas').addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    traceHistory.push(JSON.parse(JSON.stringify(traceData)));
+    var rect = this.getBoundingClientRect();
+    var c = Math.floor((e.clientX - rect.left) / traceScale);
+    var r = Math.floor((e.clientY - rect.top) / traceScale);
+    if (c >= 0 && c < traceCols && r >= 0 && r < traceRows) {
+        traceData[r][c] = '_';
+        drawTrace();
+    }
+});
+
+function paintTrace(e) {
+    var rect = document.getElementById('traceCanvas').getBoundingClientRect();
+    var c = Math.floor((e.clientX - rect.left) / traceScale);
+    var r = Math.floor((e.clientY - rect.top) / traceScale);
+    if (c >= 0 && c < traceCols && r >= 0 && r < traceRows) {
+        traceData[r][c] = activePalKey;
+        drawTrace();
+    }
+}
+
+function clearTrace() {
+    traceHistory.push(JSON.parse(JSON.stringify(traceData)));
+    for (var r = 0; r < traceRows; r++)
+        for (var c = 0; c < traceCols; c++)
+            traceData[r][c] = '_';
+    drawTrace();
+}
+
+function fillTrace() {
+    traceHistory.push(JSON.parse(JSON.stringify(traceData)));
+    for (var r = 0; r < traceRows; r++)
+        for (var c = 0; c < traceCols; c++)
+            traceData[r][c] = activePalKey;
+    drawTrace();
+}
+
+function undoTrace() {
+    if (traceHistory.length === 0) return;
+    traceData = traceHistory.pop();
+    traceRows = traceData.length;
+    traceCols = traceData[0].length;
+    drawTrace();
+}
+
+// ── Auto-trace ──
+function autoTrace() {
+    if (!refImgData) { alert('Load a reference image first'); return; }
+    var sx = parseInt(document.getElementById('cropX').value) || 0;
+    var sy = parseInt(document.getElementById('cropY').value) || 0;
+    var sw = parseInt(document.getElementById('cropW').value) || 32;
+    var sh = parseInt(document.getElementById('cropH').value) || 32;
+    traceCols = sw; traceRows = sh;
+    document.getElementById('traceCols').value = sw;
+    document.getElementById('traceRows').value = sh;
+    document.getElementById('traceSize').textContent = sw + 'x' + sh;
+    traceScale = Math.max(2, Math.min(10, Math.floor(320 / Math.max(sw, sh))));
+    traceHistory.push(JSON.parse(JSON.stringify(traceData)));
+    traceData = [];
+    for (var r = 0; r < sh; r++) {
+        var row = [];
+        for (var c = 0; c < sw; c++) {
+            var px = sx + c, py = sy + r;
+            if (px >= refImg.width || py >= refImg.height) { row.push('_'); continue; }
+            var idx = (py * refImg.width + px) * 4;
+            var rv = refImgData.data[idx], gv = refImgData.data[idx+1], bv = refImgData.data[idx+2];
+            var av = refImgData.data[idx+3];
+            if (av < 128) { row.push('_'); continue; }
+            row.push(findNearestPalKey(rv, gv, bv));
+        }
+        traceData.push(row);
+    }
+    drawTrace();
+    exportPattern();
+}
+
+// ── Export ──
+function exportPattern() {
+    var lines = [];
+    lines.push("    PATTERNS.myBuilding = [");
+    for (var r = 0; r < traceRows; r++) {
+        var s = traceData[r].join('');
+        var comma = (r < traceRows - 1) ? ',' : '';
+        lines.push("        '" + s + "'" + comma + " // " + r);
+    }
+    lines.push("    ];");
+    document.getElementById('output').value = lines.join('\n');
+}
+
+function copyToClipboard() {
+    var ta = document.getElementById('output');
+    ta.select();
+    document.execCommand('copy');
+}
+
+// ── Init ──
+initPreviews();
+initPalette();
+initTrace();
+</script>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pixel-Data Building Renderer — NES Area 1 Style</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; }
+h1 { text-align: center; padding: 12px; font-size: 1.3em; color: #88ccff; }
+.wrap { display: flex; gap: 12px; padding: 0 12px 12px; }
+.controls { width: 280px; flex-shrink: 0; background: #222; border-radius: 8px; padding: 12px; overflow-y: auto; max-height: 90vh; }
+.controls label { display: block; font-size: 0.82em; margin-top: 8px; color: #aaa; }
+.controls input[type=range] { width: 100%; }
+.controls .val { float: right; color: #88ccff; font-weight: bold; }
+.controls button { margin-top: 10px; width: 100%; padding: 6px; background: #336; color: #eee; border: none; border-radius: 4px; cursor: pointer; }
+.controls button:hover { background: #448; }
+canvas { border-radius: 8px; image-rendering: pixelated; }
+#info { font-size: 0.75em; color: #777; padding: 4px 12px; }
+</style>
+</head>
+<body>
+<h1>Pixel-Data Building Renderer — NES Area 1 (No PNGs)</h1>
+<div class="wrap">
+<div class="controls" id="ctrl"></div>
+<canvas id="cv"></canvas>
+</div>
+<div id="info"></div>
+
+<script src="js/building_pixels.js?v=3"></script>
+<script>
+// ── Seeded RNG ───────────────────────────────────────────────────
+function mulberry32(seed) {
+    var s = seed | 0;
+    return function () {
+        s = (s + 0x6D2B79F5) | 0;
+        var t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+function tileHash(x, y) {
+    var h = (x * 374761393 + y * 668265263) | 0;
+    h = (h ^ (h >>> 13)) * 1274126177;
+    return ((h ^ (h >>> 16)) >>> 0);
+}
+
+// ── Build offscreen canvases from embedded pixel data ────────────
+buildBldgCanvases();
+
+// ── Tunable constants ────────────────────────────────────────────
+var CFG = {
+    FLOOR_PX:     10,
+    ROOF_DEPTH:   0.5,
+    EDGE_PX:      2,
+    SHADOW_PX:    5,
+    SHADOW_ALPHA: 0.4,
+    TILE_SIZE:    32,
+};
+
+var sliders = [
+    { key: 'FLOOR_PX',     min: 4, max: 24, step: 1,    label: 'Floor Height (px)' },
+    { key: 'ROOF_DEPTH',   min: 0.2, max: 1.2, step: 0.05, label: 'Roof Depth' },
+    { key: 'EDGE_PX',      min: 1, max: 5, step: 1,     label: 'Edge Thickness' },
+    { key: 'SHADOW_PX',    min: 0, max: 12, step: 1,    label: 'Shadow Size' },
+    { key: 'SHADOW_ALPHA', min: 0, max: 0.8, step: 0.05, label: 'Shadow Opacity' },
+    { key: 'TILE_SIZE',    min: 16, max: 64, step: 4,   label: 'Tile Size' },
+];
+
+var globalSeedOffset = 0;
+
+function buildControls() {
+    var html = '';
+    for (var i = 0; i < sliders.length; i++) {
+        var s = sliders[i];
+        html += '<label>' + s.label + '<span class="val" id="v_' + s.key + '">' + CFG[s.key] + '</span></label>';
+        html += '<input type="range" id="s_' + s.key + '" min="' + s.min + '" max="' + s.max + '" step="' + s.step + '" value="' + CFG[s.key] + '">';
+    }
+    html += '<button id="btnRedraw">Redraw (new seeds)</button>';
+    document.getElementById('ctrl').innerHTML = html;
+    document.getElementById('btnRedraw').onclick = function () { globalSeedOffset++; redraw(); };
+    for (var i = 0; i < sliders.length; i++) {
+        (function (s) {
+            document.getElementById('s_' + s.key).oninput = function () {
+                CFG[s.key] = parseFloat(this.value);
+                document.getElementById('v_' + s.key).textContent = CFG[s.key];
+                redraw();
+            };
+        })(sliders[i]);
+    }
+}
+
+function pick(arr, rng) { return arr[Math.floor(rng() * arr.length)]; }
+
+// ── Build params ─────────────────────────────────────────────────
+function buildParams(tileX, tileY, floors, fpW, fpH) {
+    var seed = tileHash(tileX + globalSeedOffset, tileY + globalSeedOffset);
+    var rng = mulberry32(seed);
+
+    var doorKeys = ['opendoor', 'closedddoors', 'doornostairs', 'doornostairsclosed', 'doorstairsclosed'];
+    var doorKey = pick(doorKeys, rng);
+
+    var setbacks = null;
+    if (floors > 10 && rng() > 0.2) {
+        setbacks = [];
+        var remaining = floors;
+        var baseFloors = Math.ceil(floors * (0.35 + rng() * 0.15));
+        setbacks.push({ floors: baseFloors, widthFrac: 1.0 });
+        remaining -= baseFloors;
+        var curW = 1.0;
+        while (remaining > 2 && curW > 0.35) {
+            var secFloors = Math.min(remaining, Math.max(3, Math.ceil(floors * (0.12 + rng() * 0.13))));
+            curW *= (0.65 + rng() * 0.15);
+            if (curW < 0.3) curW = 0.3;
+            setbacks.push({ floors: secFloors, widthFrac: curW });
+            remaining -= secFloors;
+        }
+        if (remaining > 0) setbacks[setbacks.length - 1].floors += remaining;
+    }
+
+    return {
+        floors: floors,
+        fp: { w: fpW, h: fpH },
+        doorKey: doorKey,
+        setbacks: setbacks,
+        seed: seed,
+    };
+}
+
+// ── Shadow: L-shape to south + east ──────────────────────────────
+function drawShadow(ctx, x, y, w, h) {
+    if (CFG.SHADOW_PX <= 0) return;
+    ctx.fillStyle = 'rgba(0,0,0,' + CFG.SHADOW_ALPHA + ')';
+    ctx.fillRect(x, y + h + CFG.EDGE_PX, w + CFG.EDGE_PX + CFG.SHADOW_PX, CFG.SHADOW_PX);
+    ctx.fillRect(x + w + CFG.EDGE_PX, y, CFG.SHADOW_PX, h + CFG.EDGE_PX);
+}
+
+// ── Black border outline ─────────────────────────────────────────
+function drawEdge(ctx, x, y, w, h, fullOutline) {
+    var ep = CFG.EDGE_PX;
+    ctx.fillStyle = '#000';
+    if (fullOutline) {
+        // Full rectangle outline — all 4 sides, same thickness
+        ctx.fillRect(x, y, w, ep);           // top
+        ctx.fillRect(x, y + h, w, ep);       // bottom
+        ctx.fillRect(x - ep, y, ep, h + ep); // left
+        ctx.fillRect(x + w, y, ep, h + ep);  // right
+    } else {
+        // Base NES style — right + bottom only
+        ctx.fillRect(x + w, y, ep, h + ep);
+        ctx.fillRect(x, y + h, w, ep);
+    }
+}
+
+// ── Roof: tile the converted roof canvas ─────────────────────────
+function drawRoof(ctx, x, y, w, roofH) {
+    var tex = (w >= 110) ? BLDG_CANVASES.bigroof : BLDG_CANVASES.roof;
+    if (!tex) return;
+    ctx.drawImage(tex, x, y, w, roofH);
+}
+
+// ── Wall: tile the converted wall canvas vertically ──────────────
+function drawWall(ctx, x, y, w, wallH, fpPxW) {
+    var tex = (fpPxW >= 110) ? BLDG_CANVASES.bigwall : BLDG_CANVASES.wall;
+    if (!tex) return;
+    var scaleX = w / tex.width;
+    var tileH = Math.max(4, Math.round(tex.height * scaleX));
+    var offset = 0;
+    while (offset < wallH) {
+        var drawH = Math.min(tileH, wallH - offset);
+        var srcH = Math.round(drawH * tex.height / tileH);
+        if (srcH > tex.height) srcH = tex.height;
+        if (srcH < 1) srcH = 1;
+        ctx.drawImage(tex, 0, 0, tex.width, srcH, x, y + offset, w, drawH);
+        offset += drawH;
+    }
+}
+
+// ── Door: sprite scaled up 2x, never shrunk ─────────────────────
+function drawDoor(ctx, x, wallBottom, w, wallH, params) {
+    var tex = BLDG_CANVASES[params.doorKey];
+    if (!tex) return;
+    var dw = tex.width * 2;
+    var dh = tex.height * 2;
+    var dx = x + Math.round((w - dw) / 2);
+    var dy = wallBottom - dh;
+    ctx.drawImage(tex, dx, dy, dw, dh);
+}
+
+// ── Minimum wall height so the wall is always bigger than the door ──
+function getMinWallH() {
+    var maxDoorH = 0;
+    var doorKeys = ['opendoor','closedddoors','doornostairs','doornostairsclosed','doorstairsclosed'];
+    var wallTex = BLDG_CANVASES.wall;
+    for (var i = 0; i < doorKeys.length; i++) {
+        var c = BLDG_CANVASES[doorKeys[i]];
+        if (c && c.height > maxDoorH) maxDoorH = c.height;
+    }
+    return maxDoorH * 2 + 6;
+}
+
+// ── Draw one section (roof + wall + optional door) ───────────────
+function drawSection(ctx, x, topY, w, roofH, wallH, fpPxW, params, isBase) {
+    drawRoof(ctx, x, topY, w, roofH);
+    drawWall(ctx, x, topY + roofH, w, wallH, fpPxW);
+    if (isBase) drawDoor(ctx, x, topY + roofH + wallH, w, wallH, params);
+}
+
+// ── Main building compositor ─────────────────────────────────────
+function drawBuilding(ctx, fpPxX, fpPxBottom, fpPxW, params) {
+    var floors = params.floors;
+    var floorH = CFG.FLOOR_PX;
+    var totalWallH = Math.max(floors * floorH, getMinWallH());
+    var roofH = Math.max(6, Math.round(fpPxW * CFG.ROOF_DEPTH));
+
+    if (!params.setbacks || params.setbacks.length <= 1) {
+        var totalH = roofH + totalWallH;
+        var topY = fpPxBottom - totalH;
+        drawShadow(ctx, fpPxX, topY, fpPxW, totalH);
+        drawSection(ctx, fpPxX, topY, fpPxW, roofH, totalWallH, fpPxW, params, true);
+        drawEdge(ctx, fpPxX, topY, fpPxW, totalH);
+        return;
+    }
+
+    var sections = params.setbacks;
+    var secGeo = [];
+    var curBottom = fpPxBottom;
+    var parentX = fpPxX;
+    var parentW = fpPxW;
+
+    for (var si = 0; si < sections.length; si++) {
+        var sec = sections[si];
+        var secW = Math.round(fpPxW * sec.widthFrac);
+        var secX = parentX + Math.round((parentW - secW) / 2);
+        var secWallH = sec.floors * floorH;
+        var secRoofH = Math.max(6, Math.round(secW * CFG.ROOF_DEPTH));
+        var secTotalH = secWallH + secRoofH;
+        var secTopY = curBottom - secTotalH;
+        secGeo.push({
+            x: secX, w: secW, wallH: secWallH, roofH: secRoofH,
+            totalH: secTotalH, topY: secTopY, floors: sec.floors
+        });
+        curBottom = curBottom - secWallH;
+        parentX = secX;
+        parentW = secW;
+    }
+
+    // Pass 1: draw all section content (bottom to top)
+    for (var si = 0; si < secGeo.length; si++) {
+        var g = secGeo[si];
+        if (si === 0) drawShadow(ctx, g.x, g.topY, g.w, g.totalH);
+        drawSection(ctx, g.x, g.topY, g.w, g.roofH, g.wallH, fpPxW, params, si === 0);
+    }
+    // Pass 2: draw all borders ON TOP so nothing covers them
+    for (var si = 0; si < secGeo.length; si++) {
+        var g = secGeo[si];
+        drawEdge(ctx, g.x, g.topY, g.w, g.totalH, si > 0);
+    }
+    // Ledge-front borders at each setback step
+    var ep = CFG.EDGE_PX;
+    ctx.fillStyle = '#000';
+    var base = secGeo[0];
+    ctx.fillRect(base.x - ep, base.topY, ep, base.totalH + ep);
+    for (var si = 1; si < secGeo.length; si++) {
+        var lower = secGeo[si - 1];
+        var upper = secGeo[si];
+        var ledgeY = upper.topY + upper.totalH;
+        var leftGap = upper.x - lower.x;
+        if (leftGap > 0) {
+            ctx.fillRect(lower.x, ledgeY, leftGap + ep, ep);
+        }
+        var rightGap = (lower.x + lower.w) - (upper.x + upper.w);
+        if (rightGap > 0) {
+            ctx.fillRect(upper.x + upper.w, ledgeY, rightGap, ep);
+        }
+    }
+
+    if (floors >= 20) {
+        var topG = secGeo[secGeo.length - 1];
+        var antennaX = fpPxX + Math.round(fpPxW / 2);
+        var antennaH = 8 + Math.floor(floors * 0.4);
+        ctx.fillStyle = '#555';
+        ctx.fillRect(antennaX, topG.topY - antennaH, 2, antennaH);
+        ctx.fillStyle = '#c00';
+        ctx.fillRect(antennaX - 1, topG.topY - antennaH - 1, 4, 3);
+        ctx.fillStyle = '#666';
+        ctx.fillRect(antennaX - 2, topG.topY - Math.round(antennaH * 0.4), 6, 1);
+    }
+}
+
+// ── Test buildings ───────────────────────────────────────────────
+var testBuildings = [
+    { label: 'Small Shop',     floors: 1,  fpW: 1, fpH: 1 },
+    { label: 'House',          floors: 1,  fpW: 2, fpH: 1 },
+    { label: 'Apartment (3F)', floors: 3,  fpW: 2, fpH: 2 },
+    { label: 'Apartment (5F)', floors: 5,  fpW: 2, fpH: 2 },
+    { label: 'Office (8F)',    floors: 8,  fpW: 2, fpH: 2 },
+    { label: 'Warehouse',      floors: 1,  fpW: 4, fpH: 2 },
+    { label: 'Office Tower',   floors: 15, fpW: 2, fpH: 2 },
+    { label: 'Skyscraper',     floors: 30, fpW: 3, fpH: 2 },
+    { label: 'Empire State',   floors: 40, fpW: 3, fpH: 3 },
+];
+
+var canvas = document.getElementById('cv');
+var ctx = canvas.getContext('2d');
+
+function redraw() {
+    var ts = CFG.TILE_SIZE;
+    var gap = 24;
+    var groundY = 550;
+    var totalW = gap;
+    for (var i = 0; i < testBuildings.length; i++) {
+        totalW += testBuildings[i].fpW * ts + CFG.EDGE_PX + CFG.SHADOW_PX + gap;
+    }
+
+    canvas.width = Math.max(totalW + 40, 900);
+    canvas.height = 620;
+    ctx.imageSmoothingEnabled = false;
+
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, canvas.width, groundY - 8);
+
+    ctx.fillStyle = '#787878';
+    ctx.fillRect(0, groundY - 8, canvas.width, 8);
+    ctx.fillStyle = '#888';
+    ctx.fillRect(0, groundY - 8, canvas.width, 1);
+
+    ctx.fillStyle = '#383838';
+    ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+    ctx.fillStyle = '#666';
+    for (var dx = 0; dx < canvas.width; dx += 16) {
+        ctx.fillRect(dx, groundY + 20, 8, 2);
+    }
+
+    var curX = gap;
+    for (var i = 0; i < testBuildings.length; i++) {
+        var b = testBuildings[i];
+        var params = buildParams(10 + i * 7, 20 + i * 3, b.floors, b.fpW, b.fpH);
+        var fpPxW = b.fpW * ts;
+        var fpPxBottom = groundY - 8;
+
+        drawBuilding(ctx, curX, fpPxBottom, fpPxW, params);
+
+        ctx.fillStyle = '#88ccff';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(b.label, curX + fpPxW / 2, groundY + 40);
+        ctx.fillStyle = '#667';
+        ctx.fillText(b.floors + 'F / ' + b.fpW + 'x' + b.fpH, curX + fpPxW / 2, groundY + 50);
+
+        curX += fpPxW + CFG.EDGE_PX + CFG.SHADOW_PX + gap;
+    }
+
+    document.getElementById('info').textContent =
+        'Tile: ' + ts + 'px | Seed: ' + globalSeedOffset + ' | Graphics generated from pixel data (no PNGs loaded)';
+}
+
+buildControls();
+redraw();
+</script>
+</body>
+</html>
