@@ -29,3 +29,6 @@ module.exports = {
   LOGIN_RATE_LIMIT_PER_MIN: parseInt(process.env.LOGIN_RATE_LIMIT_PER_MIN, 10) || 10,
   REGISTER_RATE_LIMIT_PER_MIN: parseInt(process.env.REGISTER_RATE_LIMIT_PER_MIN, 10) || 5,
 };
+
+// Build identifier for deploy verification
+module.exports.BUILD_HASH = "1b513ba";

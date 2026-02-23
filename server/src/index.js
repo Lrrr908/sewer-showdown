@@ -32,6 +32,7 @@ app.get('/health', async (_req, res) => {
     db: dbOk,
     dirStale: zoneDir.isStale(),
     uptime: (Date.now() - bootTime) / 1000,
+    build: config.BUILD_HASH || 'unknown',
   });
 });
 
