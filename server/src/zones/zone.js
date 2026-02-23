@@ -27,6 +27,7 @@ class Zone {
     this.conns = new Map();
     this.aoi = new AOIGrid();
     this.dirtyUpserts = new Map();
+    this._pendingTeleports = new Map();
     this.dirtyRemoves = new Set();
     this.tickId = 0;
 
@@ -122,13 +123,19 @@ class Zone {
     entity.x = cx;
     entity.y = cy;
     entity.intent = null;
-    this.dirtyUpserts.add(entityId);
+    this._pendingTeleports.set(entityId, wireSnapshot(entity));
     return true;
   }
 
   tick() {
     this.tickId++;
     this.dirtyUpserts.clear();
+
+    // Merge any teleports that happened between ticks
+    for (const [eid, snap] of this._pendingTeleports) {
+      this.dirtyUpserts.set(eid, snap);
+    }
+    this._pendingTeleports.clear();
 
     for (const [eid, player] of this.entities) {
       if (!player.intent) continue;
