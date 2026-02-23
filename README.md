@@ -1,115 +1,90 @@
-# Sewer Showdown - Party Wagon World
+# Sewer Showdown
 
-An interactive retro NES-style website where visitors drive the Party Wagon around to visit artist galleries!
+NES-style multiplayer browser MMO. Drive the Party Wagon across a procedurally generated world, visit artist galleries, and play with others in real time.
+
+## Architecture
+
+```
+├── index.html              # Game client (vanilla JS, canvas)
+├── js/
+│   ├── game.js             # Rendering, input, procedural buildings
+│   ├── multiplayer.js      # WebSocket client, prediction, auth
+│   └── shared/             # Code shared between client & server
+├── server/                 # Node.js authoritative MMO server
+│   └── src/
+│       ├── auth/           # JWT auth, rate limiting
+│       ├── realtime/       # WebSocket server, sim tick loop, AOI
+│       ├── zones/          # Zone manager, collision, presence
+│       ├── ugc/            # User-generated content pipeline
+│       └── db/             # Postgres migrations
+├── scripts/
+│   └── urban_plan.py       # Procedural city & road generation
+├── data/                   # World, region, level JSON data
+├── sprites/                # NES-style sprite assets
+└── render.yaml             # Render.com deployment blueprint
+```
 
 ## Quick Start
 
+### Client only (no multiplayer)
+
 ```bash
-cd /home/beast/tmnt-art-show
 python3 -m http.server 8080
+# open http://localhost:8080
 ```
 
-Then open: http://localhost:8080
+### Full stack (multiplayer)
 
-## Getting Sprites
+```bash
+# 1. Start Postgres and create the database
+createdb sewer_showdown
 
-Download NES TMNT sprites from The Spriters Resource:
+# 2. Copy env and edit as needed
+cp server/.env.example server/.env
 
-### Required Sprites
+# 3. Install dependencies
+npm install
 
-1. **Party Wagon** - [TMNT NES Sprites](https://www.spriters-resource.com/nes/tmnt/)
-   - Look for vehicle/van sprites
-   
-2. **Buildings/Tiles** - [TMNT Overworld](https://www.spriters-resource.com/nes/tmnt/)
-   - Grab the map/overworld tiles
-   
-3. **Characters** (optional) - Use for decorations
-   - Turtles, Shredder, enemies
+# 4. Run migrations
+npm run migrate
 
-### Where to Download
-
-- **The Spriters Resource**: https://www.spriters-resource.com/nes/tmnt/
-- **TMNT 2 Arcade**: https://www.spriters-resource.com/arcade/tmnt2/
-- **TMNT 3 NES**: https://www.spriters-resource.com/nes/tmnt3/
-
-Save sprites to the `sprites/` folder.
-
-## Adding Your Artists
-
-Edit `js/game.js` and update the `ARTISTS` array:
-
-```javascript
-const ARTISTS = [
-    {
-        id: 'artist1',
-        name: 'ARTIST NAME',           // Shows in the info panel
-        bio: 'Short bio here...',       // Description
-        instagram: 'https://instagram.com/username',
-        avatar: 'sprites/avatar1.png',  // Optional avatar image
-        x: 5,                           // Grid position (0-15)
-        y: 3                            // Grid position (0-11)
-    },
-    // Add more artists...
-];
+# 5. Start server + client
+npm run dev
 ```
 
-## Customizing the Map
+The game server runs on `:3000` (WebSocket + REST).
+The client runs on `:8080` and auto-detects the server.
 
-The map is a 16x12 grid. Edit the `MAP` array in `game.js`:
+## Regenerating the Map
 
-```javascript
-// Tile types:
-// 0 = Grass
-// 1 = Road (horizontal)
-// 2 = Road (vertical)  
-// 3 = Road (intersection)
-// 4 = Water (blocks movement)
-// 5 = Building (auto-placed by artists)
-// 6 = Tree (blocks movement)
-// 7 = Sewer entrance
+```bash
+npm run gen:map
 ```
 
-## Controls
-
-- **Arrow Keys** or **WASD** - Drive the Party Wagon
-- **Enter** or **Space** - Visit artist's Instagram (when near building)
-- **Mobile** - Touch controls appear automatically
-
-## File Structure
-
-```
-tmnt-art-show/
-├── index.html          # Main page
-├── css/
-│   └── style.css       # Retro styling
-├── js/
-│   └── game.js         # Game logic & artist config
-├── sprites/            # Put your sprites here!
-│   ├── party_wagon.png
-│   ├── building.png
-│   ├── tiles.png
-│   └── avatar1.png (etc)
-└── README.md
-```
+This runs `scripts/urban_plan.py` which rebuilds `data/regions/na.json` with highways, arterials, local streets, blocks, zoning, and building placement.
 
 ## Deployment
 
-For a real website, just upload all files to any web host:
-- GitHub Pages (free)
-- Netlify (free)
-- Vercel (free)
-- Any web hosting
+The repo includes a `render.yaml` blueprint for [Render.com](https://render.com):
 
-## Tips
+- **sewer-showdown-server** — Node.js web service (WebSocket + REST API)
+- **sewer-showdown-client** — Static site serving the game client
+- **sewer-showdown-db** — Managed Postgres database
 
-1. **Sprite sizes** - Keep sprites around 48x48 pixels for best look
-2. **Avatar images** - Square images work best (64x64 recommended)
-3. **Building placement** - Don't place buildings on roads or water
-4. **Test locally** - Always test with a local server, not file://
+Deploy with: Render Dashboard → New → Blueprint → connect this repo.
 
-## Credits
+The client auto-detects whether to connect to `localhost:3000` or the production Render service.
 
-- Original sprites from Konami's TMNT NES games
-- Built for Sewer Showdown
+## Controls
 
-COWABUNGA!
+- **Arrow Keys / WASD** — Drive
+- **Enter / Space** — Interact with buildings
+- **Mobile** — Touch controls
+
+## Stack
+
+- **Client**: Vanilla JS, Canvas 2D, procedural NES-style renderer
+- **Server**: Node.js, Express, ws (WebSocket), PostgreSQL
+- **Auth**: JWT (guest + registered accounts)
+- **Multiplayer**: Authoritative server, client prediction, server reconciliation, AOI
+- **Map gen**: Python (A* routing, Prim MST, zone classification, lot generation)

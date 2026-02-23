@@ -25,6 +25,13 @@ async function createSession(accountId, token, req) {
   );
 }
 
+let _dbAvailable = null;
+async function checkDb() {
+  if (_dbAvailable !== null) return _dbAvailable;
+  try { await pool.query('SELECT 1'); _dbAvailable = true; } catch { _dbAvailable = false; }
+  return _dbAvailable;
+}
+
 router.post('/guest', async (req, res) => {
   try {
     const ip = clientIp(req);
@@ -36,17 +43,29 @@ router.post('/guest', async (req, res) => {
     const tag = crypto.randomBytes(4).toString('hex');
     const displayName = 'Guest_' + tag;
 
-    const result = await pool.query(
-      `INSERT INTO accounts (is_guest, display_name) VALUES (TRUE, $1) RETURNING account_id, display_name`,
-      [displayName]
-    );
-    const account = result.rows[0];
-    const token = signToken({ sub: account.account_id, is_guest: true });
-    await createSession(account.account_id, token, req);
+    const dbOk = await checkDb();
+    let accountId;
+    if (dbOk) {
+      const result = await pool.query(
+        `INSERT INTO accounts (is_guest, display_name) VALUES (TRUE, $1) RETURNING account_id, display_name`,
+        [displayName]
+      );
+      accountId = result.rows[0].account_id;
+      const token = signToken({ sub: accountId, is_guest: true });
+      await createSession(accountId, token, req);
+      return res.status(201).json({
+        token,
+        user: { id: accountId, displayName: result.rows[0].display_name, isGuest: true },
+      });
+    }
 
+    // In-memory fallback when no DB is available
+    accountId = crypto.randomUUID();
+    const token = signToken({ sub: accountId, is_guest: true });
+    console.log('[auth] guest created in-memory (no DB):', accountId);
     res.status(201).json({
       token,
-      user: { id: account.account_id, displayName: account.display_name, isGuest: true },
+      user: { id: accountId, displayName, isGuest: true },
     });
   } catch (e) {
     console.error('[auth] guest error:', e.message);

@@ -5,8 +5,14 @@
 var MP = (function () {
     'use strict';
 
-    var WS_URL = 'ws://localhost:3000/ws';
-    var API_URL = 'http://localhost:3000';
+    // Auto-detect server URL: production uses the Render service, local uses localhost
+    var _serverHost = (window.SS_SERVER_HOST ||
+        (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1'
+            ? 'sewer-showdown-server.onrender.com'
+            : 'localhost:3000'));
+    var _isSecure = location.protocol === 'https:' || _serverHost.indexOf('.onrender.com') !== -1;
+    var WS_URL = (_isSecure ? 'wss://' : 'ws://') + _serverHost + '/ws';
+    var API_URL = (_isSecure ? 'https://' : 'http://') + _serverHost;
     var PROTOCOL_VERSION = 1;
     var DEFAULT_ZONE = 'world:na';
     var MAX_RECONNECT_DELAY = 30000;

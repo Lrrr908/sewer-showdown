@@ -1,5 +1,13 @@
 {
-  "name": "tmnt-art-show",
+  "name": "sewer-showdown",
   "private": true,
-  "workspaces": ["server"]
+  "workspaces": ["server"],
+  "scripts": {
+    "dev": "npm run dev:server & npm run dev:client",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "python3 -m http.server 8080",
+    "start:server": "cd server && npm start",
+    "migrate": "cd server && npm run migrate",
+    "gen:map": "python3 scripts/urban_plan.py"
+  }
 }
