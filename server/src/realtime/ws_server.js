@@ -277,7 +277,16 @@ function initWsServer(wss) {
       const zone = sim.getZoneForAccount(accountId);
       if (!zone) return;
       zone.teleportEntity(accountId, msg.x, msg.y);
-      console.log(`[ws] ${entityId} spawn_pos -> (${msg.x}, ${msg.y})`);
+
+      // Send fresh snapshot so player sees neighbors at new position
+      const entity = sim.getEntityForAccount(accountId);
+      const visiblePlayers = zone.getVisibleSnapshots(entityId);
+      const allPlayers = entity ? [wireSnapshot(entity), ...visiblePlayers] : visiblePlayers;
+      const bounds = { w: zone.boundsW, h: zone.boundsH };
+      const collision = zone.collisionDescriptor;
+      try { ws.send(makeSnapshot(sim.tickCount, zoneId, allPlayers, entity ? entity.lastSeq : 0, bounds, collision)); } catch {}
+
+      console.log(`[ws] ${entityId} spawn_pos -> (${msg.x}, ${msg.y}) + snapshot (${allPlayers.length} players)`);
     }
 
     function handleCollisionRequest(ws, msg) {

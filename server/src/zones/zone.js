@@ -123,7 +123,10 @@ class Zone {
     entity.x = cx;
     entity.y = cy;
     entity.intent = null;
+    const newCell = posToCell(cx, cy, 1);
+    this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
     this._pendingTeleports.set(entityId, wireSnapshot(entity));
+    presence.update(accountId, entity);
     return true;
   }
 
