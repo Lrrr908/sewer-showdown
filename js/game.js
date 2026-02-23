@@ -5799,8 +5799,27 @@ function updateTransition(dt) {
     } else {
         closeBuildingOverlay();
         game.state = 'OVERWORLD';
+        // Unstick: nudge player out of building collision on exit
+        _unstickFromBuilding();
     }
     updateMobileActionVisibility();
+}
+
+function _unstickFromBuilding() {
+    var p = game.player;
+    if (!checkCollision(p.x, p.y)) return;
+    // Try nudging in each cardinal direction with increasing distance
+    var step = 4;
+    for (var dist = step; dist <= TILE_SIZE * 3; dist += step) {
+        if (!checkCollision(p.x + dist, p.y)) { p.x += dist; return; }
+        if (!checkCollision(p.x - dist, p.y)) { p.x -= dist; return; }
+        if (!checkCollision(p.x, p.y + dist)) { p.y += dist; return; }
+        if (!checkCollision(p.x, p.y - dist)) { p.y -= dist; return; }
+        if (!checkCollision(p.x + dist, p.y + dist)) { p.x += dist; p.y += dist; return; }
+        if (!checkCollision(p.x - dist, p.y + dist)) { p.x -= dist; p.y += dist; return; }
+        if (!checkCollision(p.x + dist, p.y - dist)) { p.x += dist; p.y -= dist; return; }
+        if (!checkCollision(p.x - dist, p.y - dist)) { p.x -= dist; p.y -= dist; return; }
+    }
 }
 
 // ── Van/Foot toggle ──────────────────────────────────────────
