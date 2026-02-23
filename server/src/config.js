@@ -31,4 +31,4 @@ module.exports = {
 };
 
 // Build identifier for deploy verification
-module.exports.BUILD_HASH = "will-be-d4fd";
+module.exports.BUILD_HASH = "routing-fix";

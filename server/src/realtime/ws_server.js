@@ -158,6 +158,8 @@ function initWsServer(wss) {
             handleTransfer(ws, msg);
           } else if (msg.action === 'collision_request') {
             handleCollisionRequest(ws, msg);
+          } else if (msg.action === 'spawn_pos') {
+            handleSpawnPos(msg);
           }
           break;
 
