@@ -31,4 +31,4 @@ module.exports = {
 };
 
 // Build identifier for deploy verification
-module.exports.BUILD_HASH = "1b513ba";
+module.exports.BUILD_HASH = "will-be-d4fd";

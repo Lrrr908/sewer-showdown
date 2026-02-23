@@ -273,20 +273,31 @@ function initWsServer(wss) {
     }
 
     function handleSpawnPos(msg) {
-      if (typeof msg.x !== 'number' || typeof msg.y !== 'number') return;
-      const zone = sim.getZoneForAccount(accountId);
-      if (!zone) return;
-      zone.teleportEntity(accountId, msg.x, msg.y);
+      try {
+        if (typeof msg.x !== 'number' || typeof msg.y !== 'number') {
+          try { ws.send(JSON.stringify({ t: 'event', event: 'spawn_ack', ok: false, reason: 'bad_xy' })); } catch {}
+          return;
+        }
+        const zone = sim.getZoneForAccount(accountId);
+        if (!zone) {
+          try { ws.send(JSON.stringify({ t: 'event', event: 'spawn_ack', ok: false, reason: 'no_zone' })); } catch {}
+          return;
+        }
+        const teleOk = zone.teleportEntity(accountId, msg.x, msg.y);
 
-      // Send fresh snapshot so player sees neighbors at new position
-      const entity = sim.getEntityForAccount(accountId);
-      const visiblePlayers = zone.getVisibleSnapshots(entityId);
-      const allPlayers = entity ? [wireSnapshot(entity), ...visiblePlayers] : visiblePlayers;
-      const bounds = { w: zone.boundsW, h: zone.boundsH };
-      const collision = zone.collisionDescriptor;
-      try { ws.send(makeSnapshot(sim.tickCount, zoneId, allPlayers, entity ? entity.lastSeq : 0, bounds, collision)); } catch {}
+        const entity = sim.getEntityForAccount(accountId);
+        const visiblePlayers = zone.getVisibleSnapshots(entityId);
+        const allPlayers = entity ? [wireSnapshot(entity), ...visiblePlayers] : visiblePlayers;
+        const bounds = { w: zone.boundsW, h: zone.boundsH };
+        const collision = zone.collisionDescriptor;
+        ws.send(makeSnapshot(sim.tickCount, zoneId, allPlayers, entity ? entity.lastSeq : 0, bounds, collision));
 
-      console.log(`[ws] ${entityId} spawn_pos -> (${msg.x}, ${msg.y}) + snapshot (${allPlayers.length} players)`);
+        ws.send(JSON.stringify({ t: 'event', event: 'spawn_ack', ok: true, teleOk: teleOk, pos: { x: entity ? entity.x : -1, y: entity ? entity.y : -1 }, players: allPlayers.length }));
+        console.log('[ws] ' + entityId + ' spawn_pos -> (' + msg.x + ',' + msg.y + ') teleOk=' + teleOk + ' snapshot=' + allPlayers.length);
+      } catch (err) {
+        console.error('[ws] spawn_pos CRASH:', err);
+        try { ws.send(JSON.stringify({ t: 'event', event: 'spawn_ack', ok: false, reason: 'crash', err: err.message })); } catch {}
+      }
     }
 
     function handleCollisionRequest(ws, msg) {
