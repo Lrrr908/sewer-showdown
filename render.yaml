@@ -5,7 +5,7 @@ services:
     plan: starter
     rootDir: server
     buildCommand: npm install
-    startCommand: node src/index.js
+    startCommand: node src/db/migrate.js && node src/index.js
     envVars:
       - key: JWT_SECRET
         generateValue: true
@@ -20,7 +20,7 @@ services:
     name: sewer-showdown-client
     runtime: static
     plan: starter
-    buildCommand: echo "static site"
+    buildCommand: echo "static"
     staticPublishPath: .
     pullRequestPreviewsEnabled: true
     headers:
