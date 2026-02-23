@@ -8025,6 +8025,12 @@ const keyToDirection = {
 };
 
 document.addEventListener('keydown', (e) => {
+    // Skip game input when a text field or the login overlay has focus
+    var tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    var loginOv = document.getElementById('loginOverlay');
+    if (loginOv && loginOv.style.display !== 'none') return;
+
     // Blimp menu intercepts all input while active
     if (game.blimpMenu.active) {
         e.preventDefault();
@@ -8105,6 +8111,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keyup', (e) => {
+    var tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     const dir = keyToDirection[e.code];
     if (dir) {
         e.preventDefault();

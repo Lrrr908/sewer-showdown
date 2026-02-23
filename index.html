@@ -558,9 +558,11 @@
             hideOverlay();
         });
 
-        // Show login overlay with L key
+        // Show login overlay with L key (only when no input focused)
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'l' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) {
+            var tag = document.activeElement && document.activeElement.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            if (e.key === 'l' && !e.ctrlKey && !e.metaKey) {
                 if (overlay.classList.contains('hidden')) {
                     showOverlay();
                 } else {
