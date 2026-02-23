@@ -2,7 +2,7 @@ services:
   - type: web
     name: sewer-showdown-server
     runtime: node
-    plan: starter
+    plan: free
     rootDir: server
     buildCommand: npm install && node src/db/migrate.js
     startCommand: node src/index.js
@@ -19,7 +19,7 @@ services:
   - type: web
     name: sewer-showdown-client
     runtime: static
-    plan: starter
+    plan: free
     buildCommand: echo "static"
     staticPublishPath: .
     pullRequestPreviewsEnabled: true
@@ -37,4 +37,4 @@ services:
 
 databases:
   - name: sewer-showdown-db
-    plan: starter
+    plan: free
