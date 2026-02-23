@@ -7687,29 +7687,37 @@ function draw() {
         drawTownProps(startX, startY, endX, endY);
 
         // Draw remote multiplayer players
-        if (typeof MP !== 'undefined' && MP.isConnected()) {
-            MP.drawRemotePlayers(ctx, game.camera.x, game.camera.y, function(ctx, p, sx, sy) {
-                // Draw remote player as a party wagon tinted differently
-                var sprite = game.sprites.partyWagon;
-                if (sprite && sprite.complete) {
-                    ctx.globalAlpha = 0.85;
-                    ctx.drawImage(sprite, sx, sy, TILE_SIZE, TILE_SIZE);
-                    ctx.globalAlpha = 1.0;
-                } else {
-                    ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
-                    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        if (typeof MP !== 'undefined') {
+            var _mpRemote = MP.getRemotePlayers();
+            if (_mpRemote.length > 0) {
+                for (var _ri = 0; _ri < _mpRemote.length; _ri++) {
+                    var _rp = _mpRemote[_ri];
+                    var _rpx = _rp.x * TILE_SIZE - game.camera.x;
+                    var _rpy = _rp.y * TILE_SIZE - game.camera.y;
+                    // Bright green box so it's unmissable
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillRect(_rpx - 2, _rpy - 2, TILE_SIZE + 4, TILE_SIZE + 4);
+                    // Party wagon sprite on top
+                    var _rSprite = game.sprites.partyWagon;
+                    if (_rSprite && _rSprite.complete) {
+                        ctx.drawImage(_rSprite, _rpx, _rpy, TILE_SIZE, TILE_SIZE);
+                    }
+                    // Name tag
+                    ctx.font = '8px monospace';
+                    ctx.textAlign = 'center';
+                    var _rlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(_rpx + TILE_SIZE/2 - 30, _rpy - 14, 60, 12);
+                    ctx.fillStyle = '#0f0';
+                    ctx.fillText(_rlabel, _rpx + TILE_SIZE/2, _rpy - 4);
+                    ctx.textAlign = 'left';
                 }
-                // Name tag above
-                ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                var label = (p.displayName || p.id || '').substring(0, 12);
-                var tw = ctx.measureText(label).width;
-                ctx.fillRect(sx + TILE_SIZE/2 - tw/2 - 2, sy - 12, tw + 4, 10);
-                ctx.fillStyle = '#58d8f8';
-                ctx.font = '8px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText(label, sx + TILE_SIZE/2, sy - 4);
-                ctx.textAlign = 'left';
-            });
+            }
+            // Debug: show MP status on screen
+            ctx.font = '9px monospace';
+            ctx.fillStyle = '#0f0';
+            ctx.textAlign = 'left';
+            ctx.fillText('MP: ' + (MP.isConnected() ? 'ON' : 'OFF') + ' remote:' + _mpRemote.length + ' eid:' + (MP.entityId || 'none'), 4, CANVAS_HEIGHT - 4);
         }
     }
     
