@@ -25,7 +25,7 @@ services:
     headers:
       - path: /*
         name: Cache-Control
-        value: public, max-age=3600
+        value: public, max-age=60
       - path: /data/*
         name: Cache-Control
         value: public, max-age=86400
