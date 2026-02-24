@@ -4909,6 +4909,90 @@ function drawOnFootTurtle() {
     NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
 }
 
+var _drFacingToDir = { n: 'up', s: 'down', e: 'right', w: 'left' };
+
+function _drawRemotePlayer(_rp) {
+    var _rpWorldX = _rp.px != null ? _rp.px : _rp.x * TILE_SIZE;
+    var _rpWorldY = _rp.py != null ? _rp.py : _rp.y * TILE_SIZE;
+    var _vpMargin = 256;
+    if (_rpWorldX < game.camera.x - _vpMargin || _rpWorldX > game.camera.x + CANVAS_WIDTH + _vpMargin ||
+        _rpWorldY < game.camera.y - _vpMargin || _rpWorldY > game.camera.y + CANVAS_HEIGHT + _vpMargin) return;
+    var _rpx = _rpWorldX - game.camera.x;
+    var _rpy = _rpWorldY - game.camera.y;
+    var _rDir = _drFacingToDir[_rp.facing] || 'down';
+    var _rMode = _rp.mode || 'van';
+    var _rTid = _rp.tid || 'leo';
+
+    if (_rMode === 'foot' && typeof NES !== 'undefined') {
+        if (_rp.vpx != null && _rp.vpy != null) {
+            var _rvx = _rp.vpx - game.camera.x;
+            var _rvy = _rp.vpy - game.camera.y;
+            var _rvDir = _rp.vf || 'right';
+            var _rvDirMap = { n: 'up', s: 'down', e: 'right', w: 'left', up: 'up', down: 'down', left: 'left', right: 'right' };
+            _rvDir = _rvDirMap[_rvDir] || 'right';
+            var _rvDrawW = game.player.width || 128;
+            var _rvDrawH = game.player.height || 128;
+            var _rvFlip = (_rvDir === 'left');
+            var _rvPatKey;
+            if (_rvDir === 'left' || _rvDir === 'right') {
+                _rvPatKey = 'wagonRight5';
+            } else {
+                var _rvFS = game.wagonFrames[_rvDir];
+                _rvPatKey = _rvFS ? WAGON_PATTERN_MAP[_rvFS[0]] : 'wagonDown1';
+            }
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            ctx.globalAlpha = 0.85;
+            ctx.translate(_rvx + _rvDrawW / 2, _rvy + _rvDrawH / 2);
+            if (_rvFlip) ctx.scale(-1, 1);
+            if (_rvPatKey) {
+                var _rvScale = _rvDrawW / 32;
+                NES.drawSprite(ctx, -_rvDrawW / 2, -_rvDrawH / 2, _rvPatKey, _rvScale);
+            }
+            ctx.restore();
+        }
+        var _tDrawW = game.turtle.width || 32;
+        var _tDrawH = game.turtle.height || 32;
+        var _tScale = _tDrawW / 16;
+        NES.drawTurtleSprite(ctx, _rpx, _rpy, _rDir, 0, _rTid, _tScale);
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        var _tlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(_rpx + _tDrawW / 2 - 30, _rpy - 14, 60, 12);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(_tlabel, _rpx + _tDrawW / 2, _rpy - 4);
+        ctx.textAlign = 'left';
+    } else {
+        var _rFrameSet = game.wagonFrames[_rDir];
+        var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';
+        var _rPatKey = WAGON_PATTERN_MAP[_rFrameKey];
+        var _rDrawW = game.player.width || 128;
+        var _rDrawH = game.player.height || 128;
+        var _rFlip = (_rDir === 'left');
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.translate(_rpx + _rDrawW / 2, _rpy + _rDrawH / 2);
+        if (_rFlip) ctx.scale(-1, 1);
+        if (_rPatKey && typeof NES !== 'undefined') {
+            var _rScale = _rDrawW / 32;
+            NES.drawSprite(ctx, -_rDrawW / 2, -_rDrawH / 2, _rPatKey, _rScale);
+        } else {
+            ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
+            ctx.fillRect(-_rDrawW / 2, -_rDrawH / 2, _rDrawW, _rDrawH);
+        }
+        ctx.restore();
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        var _rlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(_rpx + _rDrawW / 2 - 30, _rpy - 14, 60, 12);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(_rlabel, _rpx + _rDrawW / 2, _rpy - 4);
+        ctx.textAlign = 'left';
+    }
+}
+
 var _blimpAnimTimer = 0;
 var _blimpAnimFrame = 0;
 var BLIMP_FRAMES = ['blimp1', 'blimp2', 'blimp3'];
@@ -7653,6 +7737,21 @@ function draw() {
         }
         var _playerDrawn = false;
 
+        // Bucket remote players by their Y-sort row for depth ordering
+        var _remoteByRow = {};
+        if (typeof MP !== 'undefined') {
+            var _mpAll = MP.getRemotePlayers();
+            for (var _rbi = 0; _rbi < _mpAll.length; _rbi++) {
+                var _rbp = _mpAll[_rbi];
+                var _rbMode = _rbp.mode || 'van';
+                var _rbPy = _rbp.py != null ? _rbp.py : _rbp.y * TILE_SIZE;
+                var _rbH = (_rbMode === 'foot') ? (game.turtle.height || 32) : (game.player.height || 128);
+                var _rbSortY = Math.floor((_rbPy + _rbH) / TILE_SIZE);
+                if (!_remoteByRow[_rbSortY]) _remoteByRow[_rbSortY] = [];
+                _remoteByRow[_rbSortY].push(_rbp);
+            }
+        }
+
         var rStart = Math.max(0, startY - 2);
         var rEnd = Math.min(WORLD_HEIGHT - 1, endY + 1);
 
@@ -7697,6 +7796,14 @@ function draw() {
                 var lm = lRow[li];
                 if (lm.x >= startX - 2 && lm.x <= endX + 1) drawLandmark(lm);
             }
+
+            // Draw remote players whose feet are on this row
+            var _rowRemote = _remoteByRow[ry];
+            if (_rowRemote) {
+                for (var _rri = 0; _rri < _rowRemote.length; _rri++) {
+                    _drawRemotePlayer(_rowRemote[_rri]);
+                }
+            }
         }
 
         // If player wasn't drawn (below all buildings), draw now
@@ -7709,99 +7816,19 @@ function draw() {
             }
         }
 
-        drawTownProps(startX, startY, endX, endY);
-
-        // Draw remote multiplayer players (viewport-culled for scalability)
-        if (typeof MP !== 'undefined') {
-            var _mpRemote = MP.getRemotePlayers();
-            var _facingToDir = { n: 'up', s: 'down', e: 'right', w: 'left' };
-            if (_mpRemote.length > 0) {
-                var _vpMargin = 256;
-                for (var _ri = 0; _ri < _mpRemote.length; _ri++) {
-                    var _rp = _mpRemote[_ri];
-                    var _rpWorldX = _rp.px != null ? _rp.px : _rp.x * TILE_SIZE;
-                    var _rpWorldY = _rp.py != null ? _rp.py : _rp.y * TILE_SIZE;
-                    if (_rpWorldX < game.camera.x - _vpMargin || _rpWorldX > game.camera.x + CANVAS_WIDTH + _vpMargin ||
-                        _rpWorldY < game.camera.y - _vpMargin || _rpWorldY > game.camera.y + CANVAS_HEIGHT + _vpMargin) continue;
-                    var _rpx = _rpWorldX - game.camera.x;
-                    var _rpy = _rpWorldY - game.camera.y;
-                    var _rDir = _facingToDir[_rp.facing] || 'down';
-                    var _rMode = _rp.mode || 'van';
-                    var _rTid = _rp.tid || 'leo';
-
-                    if (_rMode === 'foot' && typeof NES !== 'undefined') {
-                        // Draw the parked van first (if position available)
-                        if (_rp.vpx != null && _rp.vpy != null) {
-                            var _rvx = _rp.vpx - game.camera.x;
-                            var _rvy = _rp.vpy - game.camera.y;
-                            var _rvDir = _rp.vf || 'right';
-                            var _rvDirMap = { n: 'up', s: 'down', e: 'right', w: 'left', up: 'up', down: 'down', left: 'left', right: 'right' };
-                            _rvDir = _rvDirMap[_rvDir] || 'right';
-                            var _rvDrawW = game.player.width || 128;
-                            var _rvDrawH = game.player.height || 128;
-                            var _rvFlip = (_rvDir === 'left');
-                            var _rvPatKey;
-                            if (_rvDir === 'left' || _rvDir === 'right') {
-                                _rvPatKey = 'wagonRight5';
-                            } else {
-                                var _rvFS = game.wagonFrames[_rvDir];
-                                _rvPatKey = _rvFS ? WAGON_PATTERN_MAP[_rvFS[0]] : 'wagonDown1';
-                            }
-                            ctx.save();
-                            ctx.imageSmoothingEnabled = false;
-                            ctx.globalAlpha = 0.85;
-                            ctx.translate(_rvx + _rvDrawW / 2, _rvy + _rvDrawH / 2);
-                            if (_rvFlip) ctx.scale(-1, 1);
-                            if (_rvPatKey) {
-                                var _rvScale = _rvDrawW / 32;
-                                NES.drawSprite(ctx, -_rvDrawW / 2, -_rvDrawH / 2, _rvPatKey, _rvScale);
-                            }
-                            ctx.restore();
-                        }
-                        // Then draw the turtle
-                        var _tDrawW = game.turtle.width || 32;
-                        var _tDrawH = game.turtle.height || 32;
-                        var _tScale = _tDrawW / 16;
-                        NES.drawTurtleSprite(ctx, _rpx, _rpy, _rDir, 0, _rTid, _tScale);
-                        ctx.font = '8px monospace';
-                        ctx.textAlign = 'center';
-                        var _tlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                        ctx.fillRect(_rpx + _tDrawW / 2 - 30, _rpy - 14, 60, 12);
-                        ctx.fillStyle = '#fff';
-                        ctx.fillText(_tlabel, _rpx + _tDrawW / 2, _rpy - 4);
-                        ctx.textAlign = 'left';
-                    } else {
-                        var _rFrameSet = game.wagonFrames[_rDir];
-                        var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';
-                        var _rPatKey = WAGON_PATTERN_MAP[_rFrameKey];
-                        var _rDrawW = game.player.width || 128;
-                        var _rDrawH = game.player.height || 128;
-                        var _rFlip = (_rDir === 'left');
-                        ctx.save();
-                        ctx.imageSmoothingEnabled = false;
-                        ctx.translate(_rpx + _rDrawW / 2, _rpy + _rDrawH / 2);
-                        if (_rFlip) ctx.scale(-1, 1);
-                        if (_rPatKey && typeof NES !== 'undefined') {
-                            var _rScale = _rDrawW / 32;
-                            NES.drawSprite(ctx, -_rDrawW / 2, -_rDrawH / 2, _rPatKey, _rScale);
-                        } else {
-                            ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
-                            ctx.fillRect(-_rDrawW / 2, -_rDrawH / 2, _rDrawW, _rDrawH);
-                        }
-                        ctx.restore();
-                        ctx.font = '8px monospace';
-                        ctx.textAlign = 'center';
-                        var _rlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                        ctx.fillRect(_rpx + _rDrawW / 2 - 30, _rpy - 14, 60, 12);
-                        ctx.fillStyle = '#fff';
-                        ctx.fillText(_rlabel, _rpx + _rDrawW / 2, _rpy - 4);
-                        ctx.textAlign = 'left';
-                    }
+        // Draw any remote players below the last rendered row
+        for (var _rrKey in _remoteByRow) {
+            if (parseInt(_rrKey) > rEnd) {
+                var _rrBucket = _remoteByRow[_rrKey];
+                for (var _rrl = 0; _rrl < _rrBucket.length; _rrl++) {
+                    _drawRemotePlayer(_rrBucket[_rrl]);
                 }
             }
         }
+
+        drawTownProps(startX, startY, endX, endY);
+
+
     }
     // MP debug overlay
     if (typeof MP !== 'undefined') {
