@@ -2,7 +2,12 @@ require('dotenv').config();
 
 const INSTANCE_ID = require('crypto').randomBytes(4).toString('hex');
 
+const _eventLog = [];
+function logEvent(msg) { _eventLog.push(Date.now() + ': ' + msg); if (_eventLog.length > 100) _eventLog.shift(); }
+
 module.exports = {
+  logEvent,
+  getEventLog: function() { return _eventLog; },
   INSTANCE_ID,
   PORT: parseInt(process.env.PORT, 10) || 3000,
   NODE_ENV: process.env.NODE_ENV || 'development',

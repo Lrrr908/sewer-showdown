@@ -59,6 +59,7 @@ function initWsServer(wss) {
       ws.close(4000 + fatalCodeOffset(code), code);
     }
 
+    require('../config').logEvent('WS_OPEN from ' + req.socket.remoteAddress);
     ws.on('message', async (raw) => {
       const msg = parseMessage(raw);
       if (!msg) return;
@@ -101,6 +102,7 @@ function initWsServer(wss) {
         zoneId = entity.zoneId;
         entity.displayName = msg.dn || decoded.dn || accountId.substring(0, 8);
         authenticated = true;
+        require('../config').logEvent('AUTH_OK ' + entityId + ' acct=' + accountId.substr(0,8) + ' zone=' + zoneId);
 
         const zone = sim.getZoneForAccount(accountId);
         const visiblePlayers = zone ? zone.getVisibleSnapshots(entityId) : [];
@@ -111,6 +113,7 @@ function initWsServer(wss) {
         const bounds = zone ? { w: zone.boundsW, h: zone.boundsH } : null;
         const collision = zone ? zone.collisionDescriptor : null;
         ws.send(makeSnapshot(sim.tickCount, zoneId, allPlayers, entity.lastSeq, bounds, collision));
+        require('../config').logEvent('SNAPSHOT_SENT ' + entityId + ' players=' + allPlayers.length + ' zone=' + zoneId);
 
         if (zone) {
           const snap = wireSnapshot(entity);
@@ -325,7 +328,8 @@ function initWsServer(wss) {
     }
 
     ws.on('close', (code, reason) => {
-      console.log(`[ws] CLOSE: ${entityId || 'unknown'} (${accountId || 'none'}) code=${code} reason=${reason || 'none'} instance=${require('../config').INSTANCE_ID}`);
+      console.log(`[ws] CLOSE: ${entityId || 'unknown'} (${accountId || 'none'}) code=${code} reason=${reason || 'none'}`);
+      require('../config').logEvent('WS_CLOSE ' + (entityId || 'unknown') + ' code=' + code + ' reason=' + (reason || 'none'));
       clearInterval(pingInterval);
       clearTimeout(authTimer);
       if (accountId) {

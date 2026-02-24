@@ -83,7 +83,7 @@ app.get('/debug/zones', (_req, res) => {
       players,
     };
   }
-  res.json({ ok: true, tick: sim.tickCount, instance: config.INSTANCE_ID, zones });
+  res.json({ ok: true, tick: sim.tickCount, instance: config.INSTANCE_ID, eventLog: config.getEventLog().slice(-30), zones });
 });
 
 const server = http.createServer(app);
