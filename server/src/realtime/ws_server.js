@@ -99,6 +99,7 @@ function initWsServer(wss) {
 
         entityId = entity.id;
         zoneId = entity.zoneId;
+        entity.displayName = decoded.dn || accountId.substring(0, 8);
         authenticated = true;
 
         const zone = sim.getZoneForAccount(accountId);

@@ -458,6 +458,7 @@ var MP = (function () {
                             localRenderPx.y = predTile.y * TILE_SIZE;
                             foundSelf = true;
                         } else {
+                            if (p.dn) p.displayName = p.dn;
                             p._lastUpdate = Date.now();
                             remotePlayers[p.id] = p;
                         }
@@ -497,6 +498,7 @@ var MP = (function () {
                             upd._interpBuf.push({ px: tpx, py: tpy, t: now });
                             if (upd._interpBuf.length > 4) upd._interpBuf.shift();
                             upd._lastUpdate = now;
+                            if (upd.dn) upd.displayName = upd.dn;
                             remotePlayers[upd.id] = upd;
                         }
                     }
@@ -517,7 +519,7 @@ var MP = (function () {
                     for (var bi = 0; bi < msg.p.length; bi++) {
                         var be = msg.p[bi];
                         var bid = be[0], bpx = be[1], bpy = be[2], bf = be[3], bmode = be[4] || 'van', btid = be[5] || 'leo';
-                        var bvpx = be[6], bvpy = be[7], bvf = be[8];
+                        var bvpx = be[6], bvpy = be[7], bvf = be[8], bdn = be[9] || '';
                         if (bid === entityId) continue;
                         var rp = remotePlayers[bid];
                         if (rp) {
@@ -529,12 +531,13 @@ var MP = (function () {
                             rp.vpx = bvpx != null ? bvpx : rp.vpx;
                             rp.vpy = bvpy != null ? bvpy : rp.vpy;
                             rp.vf = bvf || rp.vf;
+                            if (bdn) rp.displayName = bdn;
                             if (!rp._interpBuf) rp._interpBuf = [];
                             rp._interpBuf.push({ px: bpx, py: bpy, t: now });
                             if (rp._interpBuf.length > 4) rp._interpBuf.shift();
                             rp._lastUpdate = now;
                         } else {
-                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, vpx: bvpx, vpy: bvpy, vf: bvf, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }], _lastUpdate: now };
+                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, vpx: bvpx, vpy: bvpy, vf: bvf, displayName: bdn, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }], _lastUpdate: now };
                         }
                     }
                 }

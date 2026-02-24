@@ -326,7 +326,7 @@ class Zone {
       entity._lastBcastPy = entity.py;
       entity._lastBcastFacing = entity.facing;
       entity._lastBcastTime = Date.now();
-      const compact = [entity.id, entity.px, entity.py, entity.facing, entity.mode || 'van', entity.turtleId || 'leo', entity.vpx, entity.vpy, entity.vf];
+      const compact = [entity.id, entity.px, entity.py, entity.facing, entity.mode || 'van', entity.turtleId || 'leo', entity.vpx, entity.vpy, entity.vf, entity.displayName || ''];
       const cell = posToCell(entity.x, entity.y, 1);
       const neighbors = neighborCells(cell.cx, cell.cy);
       for (const nk of neighbors) {
@@ -423,6 +423,7 @@ function wireSnapshot(entity) {
     spriteRef: entity.spriteRef,
     mode: entity.mode || 'van',
     tid: entity.turtleId || 'leo',
+    dn: entity.displayName || '',
   };
   if (entity.vpx != null) {
     snap.vpx = entity.vpx;

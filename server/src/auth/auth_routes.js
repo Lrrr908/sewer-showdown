@@ -51,7 +51,7 @@ router.post('/guest', async (req, res) => {
         [displayName]
       );
       accountId = result.rows[0].account_id;
-      const token = signToken({ sub: accountId, is_guest: true });
+      const token = signToken({ sub: accountId, is_guest: true, dn: result.rows[0].display_name });
       await createSession(accountId, token, req);
       return res.status(201).json({
         token,
@@ -61,7 +61,7 @@ router.post('/guest', async (req, res) => {
 
     // In-memory fallback when no DB is available
     accountId = crypto.randomUUID();
-    const token = signToken({ sub: accountId, is_guest: true });
+    const token = signToken({ sub: accountId, is_guest: true, dn: displayName });
     console.log('[auth] guest created in-memory (no DB):', accountId);
     res.status(201).json({
       token,
@@ -98,7 +98,7 @@ router.post('/register', async (req, res) => {
       [email.trim().toLowerCase(), passwordHash, displayName.trim()]
     );
     const account = result.rows[0];
-    const token = signToken({ sub: account.account_id, is_guest: false });
+    const token = signToken({ sub: account.account_id, is_guest: false, dn: account.display_name });
     await createSession(account.account_id, token, req);
 
     res.status(201).json({
@@ -141,7 +141,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const token = signToken({ sub: account.account_id, is_guest: false });
+    const token = signToken({ sub: account.account_id, is_guest: false, dn: account.display_name });
     await createSession(account.account_id, token, req);
 
     res.json({
