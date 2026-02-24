@@ -286,6 +286,7 @@ var MP = (function () {
                 var payload = JSON.parse(atob(t.split('.')[1]));
                 userId = payload.sub;
                 isGuest = !!payload.is_guest;
+                if (payload.dn && !displayName) displayName = payload.dn;
             } catch (e) {
                 userId = null; isGuest = false;
             }
@@ -368,6 +369,7 @@ var MP = (function () {
                 t: 'hello', v: PROTOCOL_VERSION,
                 token: token, zone: currentZone,
                 resume: true,
+                dn: displayName || '',
                 client: { build: 'dev', ua: navigator.userAgent },
             }));
         };
@@ -739,6 +741,7 @@ var MP = (function () {
             var payload = JSON.parse(atob(token.split('.')[1]));
             userId = payload.sub;
             isGuest = !!payload.is_guest;
+            if (payload.dn) displayName = payload.dn;
             if (payload.exp && payload.exp * 1000 < Date.now()) {
                 setToken(null);
             }

@@ -31,4 +31,4 @@ module.exports = {
 };
 
 // Build identifier for deploy verification
-module.exports.BUILD_HASH = "pos-sync";
+module.exports.BUILD_HASH = 'username-tags';
