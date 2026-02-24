@@ -267,7 +267,7 @@ var MP = (function () {
         }
 
         // Expire stale remote players (no update for 5+ seconds = out of AOI)
-        var staleThreshold = Date.now() - 5000;
+        var staleThreshold = Date.now() - 30000;
         for (var sid in remotePlayers) {
             if (remotePlayers[sid]._lastUpdate && remotePlayers[sid]._lastUpdate < staleThreshold) {
                 delete remotePlayers[sid];
@@ -641,7 +641,8 @@ var MP = (function () {
         var dxS = Math.abs(rpx - _lastSentPx);
         var dyS = Math.abs(rpy - _lastSentPy);
         var modeChanged = m !== _lastSentMode || tid !== _lastSentTurtleId;
-        if (!modeChanged && dxS < POS_SEND_THRESHOLD && dyS < POS_SEND_THRESHOLD && f === _lastSentFacing) return;
+        var keepalive = (now - _lastPosSyncTime) >= 2000;
+        if (!keepalive && !modeChanged && dxS < POS_SEND_THRESHOLD && dyS < POS_SEND_THRESHOLD && f === _lastSentFacing) return;
         _lastPosSyncTime = now;
         _lastSentPx = rpx;
         _lastSentPy = rpy;

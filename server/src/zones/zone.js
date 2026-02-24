@@ -60,6 +60,7 @@ class Zone {
     entity._lastBcastPx = entity.px;
     entity._lastBcastPy = entity.py;
     entity._lastBcastFacing = entity.facing;
+    entity._lastBcastTime = Date.now();
     this.entities.set(entity.id, entity);
     this.byAccount.set(entity.accountId, entity.id);
     if (ws) this.conns.set(entity.id, ws);
@@ -188,8 +189,9 @@ class Zone {
     const dxB = Math.abs(px - entity._lastBcastPx);
     const dyB = Math.abs(py - entity._lastBcastPy);
     const facingChanged = entity.facing !== entity._lastBcastFacing;
+    const keepalive = (Date.now() - (entity._lastBcastTime || 0)) >= 2000;
 
-    if (dxB >= POS_DIRTY_THRESHOLD_PX || dyB >= POS_DIRTY_THRESHOLD_PX || facingChanged) {
+    if (dxB >= POS_DIRTY_THRESHOLD_PX || dyB >= POS_DIRTY_THRESHOLD_PX || facingChanged || keepalive) {
       this._posDirty.set(entityId, entity);
     }
 
@@ -210,6 +212,7 @@ class Zone {
     entity._lastBcastPx = entity.px;
     entity._lastBcastPy = entity.py;
     entity._lastBcastFacing = entity.facing;
+    entity._lastBcastTime = Date.now();
     entity.intent = null;
     const newCell = posToCell(cx, cy, 1);
     const cellChange = this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
@@ -303,6 +306,7 @@ class Zone {
       entity._lastBcastPx = entity.px;
       entity._lastBcastPy = entity.py;
       entity._lastBcastFacing = entity.facing;
+      entity._lastBcastTime = Date.now();
       const cell = posToCell(entity.x, entity.y, 1);
       const neighbors = neighborCells(cell.cx, cell.cy);
       for (const nk of neighbors) {
@@ -321,6 +325,7 @@ class Zone {
       entity._lastBcastPx = entity.px;
       entity._lastBcastPy = entity.py;
       entity._lastBcastFacing = entity.facing;
+      entity._lastBcastTime = Date.now();
       const compact = [entity.id, entity.px, entity.py, entity.facing, entity.mode || 'van', entity.turtleId || 'leo', entity.vpx, entity.vpy, entity.vf];
       const cell = posToCell(entity.x, entity.y, 1);
       const neighbors = neighborCells(cell.cx, cell.cy);
