@@ -20,14 +20,27 @@ const BRAND = {
 // ============================================
 
 const SAVE_KEY = 'sewerShowdown_save';
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 
 function saveGame() {
     try {
+        var entity = (game.controllerEntity === 'foot') ? game.turtle : game.player;
         var blob = {
             version: SAVE_VERSION,
             timestamp: Date.now(),
-            progress: game.progress
+            progress: game.progress,
+            position: {
+                x: entity.x,
+                y: entity.y,
+                direction: entity.direction || 'down',
+                regionId: game.currentRegionId || 'na',
+                mode: game.mode || 'REGION',
+                controllerEntity: game.controllerEntity || 'van',
+                activeTurtle: game.activeTurtle || 'leo',
+                vanX: game.van ? game.van.x : 0,
+                vanY: game.van ? game.van.y : 0,
+                vanDir: game.van ? game.van.direction : 'down'
+            }
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(blob));
     } catch (e) {
@@ -68,7 +81,10 @@ function loadSave() {
             game.progress.galleriesVisited = blob.progress.galleriesVisited || {};
             game.progress.technodromeClear = blob.progress.technodromeClear || false;
         }
-        console.log('Save loaded (' + Object.keys(game.progress.levelWins).length + ' wins, saved ' + new Date(blob.timestamp).toLocaleString() + ')');
+        if (blob.position) {
+            game._savedPosition = blob.position;
+        }
+        console.log('Save loaded (' + Object.keys(game.progress.levelWins).length + ' wins, saved ' + new Date(blob.timestamp).toLocaleString() + (game._savedPosition ? ', pos ' + Math.round(game._savedPosition.x) + ',' + Math.round(game._savedPosition.y) : '') + ')');
     } catch (e) {
         console.warn('Load save failed:', e.message);
     }
@@ -2834,7 +2850,6 @@ async function loadBootData() {
 function applyMapData(mapData) {
     if (mapData.world) {
         TILE_SIZE    = mapData.world.tileSize    || 64;
-        if (typeof MP !== 'undefined' && MP.setTileSize) MP.setTileSize(TILE_SIZE);
         WORLD_WIDTH  = mapData.world.widthTiles  || 60;
         WORLD_HEIGHT = mapData.world.heightTiles || 40;
     }
@@ -4909,90 +4924,6 @@ function drawOnFootTurtle() {
     NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
 }
 
-var _drFacingToDir = { n: 'up', s: 'down', e: 'right', w: 'left' };
-
-function _drawRemotePlayer(_rp) {
-    var _rpWorldX = _rp.px != null ? _rp.px : _rp.x * TILE_SIZE;
-    var _rpWorldY = _rp.py != null ? _rp.py : _rp.y * TILE_SIZE;
-    var _vpMargin = 256;
-    if (_rpWorldX < game.camera.x - _vpMargin || _rpWorldX > game.camera.x + CANVAS_WIDTH + _vpMargin ||
-        _rpWorldY < game.camera.y - _vpMargin || _rpWorldY > game.camera.y + CANVAS_HEIGHT + _vpMargin) return;
-    var _rpx = _rpWorldX - game.camera.x;
-    var _rpy = _rpWorldY - game.camera.y;
-    var _rDir = _drFacingToDir[_rp.facing] || 'down';
-    var _rMode = _rp.mode || 'van';
-    var _rTid = _rp.tid || 'leo';
-
-    if (_rMode === 'foot' && typeof NES !== 'undefined') {
-        if (_rp.vpx != null && _rp.vpy != null) {
-            var _rvx = _rp.vpx - game.camera.x;
-            var _rvy = _rp.vpy - game.camera.y;
-            var _rvDir = _rp.vf || 'right';
-            var _rvDirMap = { n: 'up', s: 'down', e: 'right', w: 'left', up: 'up', down: 'down', left: 'left', right: 'right' };
-            _rvDir = _rvDirMap[_rvDir] || 'right';
-            var _rvDrawW = game.player.width || 128;
-            var _rvDrawH = game.player.height || 128;
-            var _rvFlip = (_rvDir === 'left');
-            var _rvPatKey;
-            if (_rvDir === 'left' || _rvDir === 'right') {
-                _rvPatKey = 'wagonRight5';
-            } else {
-                var _rvFS = game.wagonFrames[_rvDir];
-                _rvPatKey = _rvFS ? WAGON_PATTERN_MAP[_rvFS[0]] : 'wagonDown1';
-            }
-            ctx.save();
-            ctx.imageSmoothingEnabled = false;
-            ctx.globalAlpha = 0.85;
-            ctx.translate(_rvx + _rvDrawW / 2, _rvy + _rvDrawH / 2);
-            if (_rvFlip) ctx.scale(-1, 1);
-            if (_rvPatKey) {
-                var _rvScale = _rvDrawW / 32;
-                NES.drawSprite(ctx, -_rvDrawW / 2, -_rvDrawH / 2, _rvPatKey, _rvScale);
-            }
-            ctx.restore();
-        }
-        var _tDrawW = game.turtle.width || 32;
-        var _tDrawH = game.turtle.height || 32;
-        var _tScale = _tDrawW / 16;
-        NES.drawTurtleSprite(ctx, _rpx, _rpy, _rDir, 0, _rTid, _tScale);
-        ctx.font = '8px monospace';
-        ctx.textAlign = 'center';
-        var _tlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(_rpx + _tDrawW / 2 - 30, _rpy - 14, 60, 12);
-        ctx.fillStyle = '#fff';
-        ctx.fillText(_tlabel, _rpx + _tDrawW / 2, _rpy - 4);
-        ctx.textAlign = 'left';
-    } else {
-        var _rFrameSet = game.wagonFrames[_rDir];
-        var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';
-        var _rPatKey = WAGON_PATTERN_MAP[_rFrameKey];
-        var _rDrawW = game.player.width || 128;
-        var _rDrawH = game.player.height || 128;
-        var _rFlip = (_rDir === 'left');
-        ctx.save();
-        ctx.imageSmoothingEnabled = false;
-        ctx.translate(_rpx + _rDrawW / 2, _rpy + _rDrawH / 2);
-        if (_rFlip) ctx.scale(-1, 1);
-        if (_rPatKey && typeof NES !== 'undefined') {
-            var _rScale = _rDrawW / 32;
-            NES.drawSprite(ctx, -_rDrawW / 2, -_rDrawH / 2, _rPatKey, _rScale);
-        } else {
-            ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
-            ctx.fillRect(-_rDrawW / 2, -_rDrawH / 2, _rDrawW, _rDrawH);
-        }
-        ctx.restore();
-        ctx.font = '8px monospace';
-        ctx.textAlign = 'center';
-        var _rlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(_rpx + _rDrawW / 2 - 30, _rpy - 14, 60, 12);
-        ctx.fillStyle = '#fff';
-        ctx.fillText(_rlabel, _rpx + _rDrawW / 2, _rpy - 4);
-        ctx.textAlign = 'left';
-    }
-}
-
 var _blimpAnimTimer = 0;
 var _blimpAnimFrame = 0;
 var BLIMP_FRAMES = ['blimp1', 'blimp2', 'blimp3'];
@@ -5884,27 +5815,8 @@ function updateTransition(dt) {
     } else {
         closeBuildingOverlay();
         game.state = 'OVERWORLD';
-        // Unstick: nudge player out of building collision on exit
-        _unstickFromBuilding();
     }
     updateMobileActionVisibility();
-}
-
-function _unstickFromBuilding() {
-    var p = game.player;
-    if (!checkCollision(p.x, p.y)) return;
-    // Try nudging in each cardinal direction with increasing distance
-    var step = 4;
-    for (var dist = step; dist <= TILE_SIZE * 3; dist += step) {
-        if (!checkCollision(p.x + dist, p.y)) { p.x += dist; return; }
-        if (!checkCollision(p.x - dist, p.y)) { p.x -= dist; return; }
-        if (!checkCollision(p.x, p.y + dist)) { p.y += dist; return; }
-        if (!checkCollision(p.x, p.y - dist)) { p.y -= dist; return; }
-        if (!checkCollision(p.x + dist, p.y + dist)) { p.x += dist; p.y += dist; return; }
-        if (!checkCollision(p.x - dist, p.y + dist)) { p.x -= dist; p.y += dist; return; }
-        if (!checkCollision(p.x + dist, p.y - dist)) { p.x += dist; p.y -= dist; return; }
-        if (!checkCollision(p.x - dist, p.y - dist)) { p.x -= dist; p.y -= dist; return; }
-    }
 }
 
 // ── Van/Foot toggle ──────────────────────────────────────────
@@ -6047,14 +5959,6 @@ function update(dt) {
             var tny = t.y + ndy * t.pxPerSecond * dt;
             if (!checkTurtleCollision(tnx, t.y)) t.x = tnx;
             if (!checkTurtleCollision(t.x, tny)) t.y = tny;
-
-            var _fFacing = ndx < 0 ? 'w' : ndx > 0 ? 'e' : ndy < 0 ? 'n' : 's';
-            if (typeof MP !== 'undefined' && MP.isConnected()) {
-                MP.sendPosSync(t.x, t.y, _fFacing, 'foot', game.activeTurtle, game.van.x, game.van.y, game.van.direction);
-            }
-        } else if (typeof MP !== 'undefined' && MP.isConnected()) {
-            var _idleFootF = t.direction === 'left' ? 'w' : t.direction === 'right' ? 'e' : t.direction === 'up' ? 'n' : 's';
-            MP.sendPosSync(t.x, t.y, _idleFootF, 'foot', game.activeTurtle, game.van.x, game.van.y, game.van.direction);
         }
         t.moving = isMoving;
         if (isMoving) {
@@ -6092,14 +5996,6 @@ function update(dt) {
             if (!checkCollision(newX, p.y)) p.x = newX;
             if (!checkCollision(p.x, newY)) p.y = newY;
         }
-
-        var _facing = dx < 0 ? 'w' : dx > 0 ? 'e' : dy < 0 ? 'n' : 's';
-        if (typeof MP !== 'undefined' && MP.isConnected()) {
-            MP.sendPosSync(p.x, p.y, _facing, 'van', game.activeTurtle);
-        }
-    } else if (typeof MP !== 'undefined' && MP.isConnected()) {
-        var _idleFacing = p.direction === 'left' ? 'w' : p.direction === 'right' ? 'e' : p.direction === 'up' ? 'n' : 's';
-        MP.sendPosSync(p.x, p.y, _idleFacing, game.controllerEntity === 'foot' ? 'foot' : 'van', game.activeTurtle);
     }
     
     p.moving = isMoving;
@@ -6855,26 +6751,6 @@ function drawProceduralBuilding(ctx, fpPxX, fpPxBottom, fpPxW, params) {
     for (var si = 0; si < secGeo.length; si++) {
         var g = secGeo[si];
         _procEdge(ctx, g.x, g.topY, g.w, g.totalH, si > 0);
-    }
-    // Ledge-front borders at each setback step
-    var ep = PROC_CFG.EDGE_PX;
-    ctx.fillStyle = '#000';
-    // Left border on the base section
-    var base = secGeo[0];
-    ctx.fillRect(base.x - ep, base.topY, ep, base.totalH + ep);
-    // Horizontal ledge lines where each upper tier meets the wider tier below
-    for (var si = 1; si < secGeo.length; si++) {
-        var lower = secGeo[si - 1];
-        var upper = secGeo[si];
-        var ledgeY = upper.topY + upper.totalH;
-        var leftGap = upper.x - lower.x;
-        if (leftGap > 0) {
-            ctx.fillRect(lower.x, ledgeY, leftGap + ep, ep);
-        }
-        var rightGap = (lower.x + lower.w) - (upper.x + upper.w);
-        if (rightGap > 0) {
-            ctx.fillRect(upper.x + upper.w, ledgeY, rightGap, ep);
-        }
     }
 
     if (floors >= 20) {
@@ -7737,27 +7613,12 @@ function draw() {
         }
         var _playerDrawn = false;
 
-        // Bucket remote players by their Y-sort row for depth ordering
-        var _remoteByRow = {};
-        if (typeof MP !== 'undefined') {
-            var _mpAll = MP.getRemotePlayers();
-            for (var _rbi = 0; _rbi < _mpAll.length; _rbi++) {
-                var _rbp = _mpAll[_rbi];
-                var _rbMode = _rbp.mode || 'van';
-                var _rbPy = _rbp.py != null ? _rbp.py : _rbp.y * TILE_SIZE;
-                var _rbH = (_rbMode === 'foot') ? (game.turtle.height || 32) : (game.player.height || 128);
-                var _rbSortY = Math.floor((_rbPy + _rbH) / TILE_SIZE);
-                if (!_remoteByRow[_rbSortY]) _remoteByRow[_rbSortY] = [];
-                _remoteByRow[_rbSortY].push(_rbp);
-            }
-        }
-
         var rStart = Math.max(0, startY - 2);
         var rEnd = Math.min(WORLD_HEIGHT - 1, endY + 1);
 
         for (var ry = rStart; ry <= rEnd; ry++) {
-            // Y-sort: draw players BEFORE buildings on their row
-            // so buildings at/below render ON TOP (closer to camera)
+            // Y-sort: draw player BEFORE buildings on their row
+            // so buildings at/below the player render ON TOP (closer to camera)
             if (!_playerDrawn && ry >= _playerSortY) {
                 _playerDrawn = true;
                 if (game.controllerEntity === 'foot') {
@@ -7765,14 +7626,6 @@ function draw() {
                     drawOnFootTurtle();
                 } else {
                     drawPartyWagon();
-                }
-            }
-
-            // Remote players also drawn before buildings for same depth rule
-            var _rowRemote = _remoteByRow[ry];
-            if (_rowRemote) {
-                for (var _rri = 0; _rri < _rowRemote.length; _rri++) {
-                    _drawRemotePlayer(_rowRemote[_rri]);
                 }
             }
 
@@ -7816,32 +7669,7 @@ function draw() {
             }
         }
 
-        // Draw any remote players below the last rendered row
-        for (var _rrKey in _remoteByRow) {
-            if (parseInt(_rrKey) > rEnd) {
-                var _rrBucket = _remoteByRow[_rrKey];
-                for (var _rrl = 0; _rrl < _rrBucket.length; _rrl++) {
-                    _drawRemotePlayer(_rrBucket[_rrl]);
-                }
-            }
-        }
-
         drawTownProps(startX, startY, endX, endY);
-
-
-    }
-    // MP debug overlay
-    if (typeof MP !== 'undefined') {
-        var _dbgRemote = MP.getRemotePlayers();
-        ctx.font = '9px monospace';
-        ctx.fillStyle = '#0f0';
-        ctx.textAlign = 'left';
-        var _dbgText = 'MP:' + (MP.isConnected() ? 'ON' : 'OFF') + ' r:' + _dbgRemote.length;
-        if (_dbgRemote.length > 0) {
-            var _dr = _dbgRemote[0];
-            _dbgText += ' px:' + (_dr.px||'?') + ',' + (_dr.py||'?') + ' id:' + (_dr.id||'?').substr(0,6);
-        }
-        ctx.fillText(_dbgText, 4, CANVAS_HEIGHT - 4);
     }
     
     // Draw player for WORLD mode only (region player already drawn in y-sort above)
@@ -8177,7 +8005,6 @@ function gameLoop(now) {
     const dt = Math.min(rawDt, 0.05);
     
     update(dt);
-    if (typeof MP !== 'undefined' && MP.isConnected()) MP.updateRender();
     draw();
     requestAnimationFrame(gameLoop);
 }
@@ -8194,12 +8021,6 @@ const keyToDirection = {
 };
 
 document.addEventListener('keydown', (e) => {
-    // Skip game input when a text field or the login overlay has focus
-    var tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-    var loginOv = document.getElementById('loginOverlay');
-    if (loginOv && loginOv.style.display !== 'none') return;
-
     // Blimp menu intercepts all input while active
     if (game.blimpMenu.active) {
         e.preventDefault();
@@ -8280,8 +8101,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keyup', (e) => {
-    var tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     const dir = keyToDirection[e.code];
     if (dir) {
         e.preventDefault();
@@ -8377,6 +8196,7 @@ document.addEventListener('visibilitychange', () => {
     if (document.hidden) clearAllInput();
 });
 window.addEventListener('beforeunload', saveGame);
+setInterval(saveGame, 10000);
 
 // ============================================
 // WORLD / REGION MAP TRANSITIONS
@@ -8565,11 +8385,6 @@ async function completeEnterRegion(regionId) {
     game.mode = 'REGION';
     game.currentRegionId = regionId;
     game.state = 'OVERWORLD';
-    if (typeof MP !== 'undefined' && MP.sendSpawnPos) {
-        var spTileX = Math.round(spawnPos.x / TILE_SIZE);
-        var spTileY = Math.round(spawnPos.y / TILE_SIZE);
-        MP.sendSpawnPos(spTileX, spTileY);
-    }
     game.controllerEntity = 'van';
     game.activeBuildingId = null;
     game.activeNodeId = null;
@@ -10801,19 +10616,36 @@ async function init() {
     cleanStaleRegionCache();
     loadSave();
     await loadBootData();
-    await loadMap('data/regions/na.json');
+    var _sp = game._savedPosition;
+    var _restoreRegion = (_sp && _sp.regionId) ? _sp.regionId : 'na';
+    var _regionFile = 'data/regions/' + _restoreRegion + '.json';
+    await loadMap(_regionFile);
     resizeCanvas();
-    var spawnPos = findSpawnOnRoad();
-    game.player.x = spawnPos.x;
-    game.player.y = spawnPos.y;
-    game.mode = 'REGION';
-    game.currentRegionId = 'na';
+    if (_sp) {
+        game.player.x = _sp.x;
+        game.player.y = _sp.y;
+        game.player.direction = _sp.direction || 'down';
+        if (_sp.controllerEntity === 'foot' && game.van) {
+            game.van.x = _sp.vanX || _sp.x;
+            game.van.y = _sp.vanY || _sp.y;
+            game.van.direction = _sp.vanDir || 'down';
+        }
+        if (_sp.activeTurtle) game.activeTurtle = _sp.activeTurtle;
+        console.log('Restored saved position:', Math.round(_sp.x), Math.round(_sp.y), 'region:', _restoreRegion);
+    } else {
+        var spawnPos = findSpawnOnRoad();
+        game.player.x = spawnPos.x;
+        game.player.y = spawnPos.y;
+    }
+    game.mode = (_sp && _sp.mode) ? _sp.mode : 'REGION';
+    game.currentRegionId = _restoreRegion;
     if (typeof MP !== 'undefined' && MP.sendSpawnPos) {
-        var spTileX = Math.round(spawnPos.x / TILE_SIZE);
-        var spTileY = Math.round(spawnPos.y / TILE_SIZE);
-        MP.sendSpawnPos(spTileX, spTileY);
+        var _spTX = Math.round(game.player.x / TILE_SIZE);
+        var _spTY = Math.round(game.player.y / TILE_SIZE);
+        MP.sendSpawnPos(_spTX, _spTY);
     }
     updateMobileActionVisibility();
+    delete game._savedPosition;
     requestAnimationFrame(gameLoop);
     console.log(BRAND.title + ' v' + BRAND.version + ' — COWABUNGA! World ready, loading sprites...');
 
