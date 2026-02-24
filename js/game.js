@@ -20,14 +20,27 @@ const BRAND = {
 // ============================================
 
 const SAVE_KEY = 'sewerShowdown_save';
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 
 function saveGame() {
     try {
+        var entity = (game.controllerEntity === 'foot') ? game.turtle : game.player;
         var blob = {
             version: SAVE_VERSION,
             timestamp: Date.now(),
-            progress: game.progress
+            progress: game.progress,
+            position: {
+                x: entity.x,
+                y: entity.y,
+                direction: entity.direction || 'down',
+                regionId: game.currentRegionId || 'na',
+                mode: game.mode || 'REGION',
+                controllerEntity: game.controllerEntity || 'van',
+                activeTurtle: game.activeTurtle || 'leo',
+                vanX: game.van ? game.van.x : 0,
+                vanY: game.van ? game.van.y : 0,
+                vanDir: game.van ? game.van.direction : 'down'
+            }
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(blob));
     } catch (e) {
@@ -68,7 +81,10 @@ function loadSave() {
             game.progress.galleriesVisited = blob.progress.galleriesVisited || {};
             game.progress.technodromeClear = blob.progress.technodromeClear || false;
         }
-        console.log('Save loaded (' + Object.keys(game.progress.levelWins).length + ' wins, saved ' + new Date(blob.timestamp).toLocaleString() + ')');
+        if (blob.position) {
+            game._savedPosition = blob.position;
+        }
+        console.log('Save loaded (' + Object.keys(game.progress.levelWins).length + ' wins, saved ' + new Date(blob.timestamp).toLocaleString() + (game._savedPosition ? ', pos ' + Math.round(game._savedPosition.x) + ',' + Math.round(game._savedPosition.y) : '') + ')');
     } catch (e) {
         console.warn('Load save failed:', e.message);
     }
@@ -6576,92 +6592,21 @@ var ZONE_FLOOR_RANGE = {
     downtown:    [5, 40],
 };
 
-var KIND_FLOOR_RANGE = {
-    house:        [1, 3],
-    apt_small:    [2, 4],
-    apt_tall:     [6, 15],
-    office:       [4, 12],
-    shopfront:    [1, 2],
-    warehouse_bg: [1, 2],
-};
-
-var WALL_TINTS = [
-    null,
-    'rgba(60,30,0,0.3)',
-    'rgba(0,0,0,0.25)',
-    'rgba(80,0,0,0.25)',
-    'rgba(60,50,20,0.2)',
-    'rgba(0,0,40,0.2)',
-];
-
-var KIND_TINT_BIAS = {
-    house:        [1, 3, 4],
-    apt_small:    [0, 2, 5],
-    apt_tall:     [0, 2, 5],
-    office:       [2, 5, 0],
-    shopfront:    [0, 1, 3],
-    warehouse_bg: [2, 2, 2],
-};
-
-var AWNING_COLORS = ['#c03030','#2060a0','#30804a','#b06820','#6040a0'];
-
 function _procPick(arr, rng) { return arr[Math.floor(rng() * arr.length)]; }
 
 function _procBuildParams(bg) {
     var seed = tileHash(bg.x, bg.y);
     var rng = mulberry32(seed);
     var zone = bg.zone || 'residential';
-    var kind = bg.kind || '';
 
-    var floorRange = KIND_FLOOR_RANGE[kind] || ZONE_FLOOR_RANGE[zone] || [1, 3];
     var floors = bg.floors;
     if (!floors || floors < 1) {
-        floors = floorRange[0] + Math.floor(rng() * (floorRange[1] - floorRange[0] + 1));
+        var range = ZONE_FLOOR_RANGE[zone] || [1, 3];
+        floors = range[0] + Math.floor(rng() * (range[1] - range[0] + 1));
     }
 
     var doorKeys = ['opendoor', 'closedddoors', 'doornostairs', 'doornostairsclosed', 'doorstairsclosed'];
     var doorKey = _procPick(doorKeys, rng);
-
-    var tintBias = KIND_TINT_BIAS[kind];
-    var wallTint;
-    if (tintBias) {
-        wallTint = WALL_TINTS[_procPick(tintBias, rng)];
-    } else {
-        wallTint = WALL_TINTS[Math.floor(rng() * WALL_TINTS.length)];
-    }
-
-    var winW = 4, winH = 3, winSpaceH = 8;
-    var noWindows = (kind === 'warehouse_bg');
-    if (kind === 'office') { winW = 6; winH = 4; winSpaceH = 10; }
-    else if (kind === 'house') { winW = 5; winH = 4; winSpaceH = 12; }
-    else if (kind === 'shopfront') { winW = 3; winH = 3; winSpaceH = 7; }
-    var winLitRatio = 0.3 + rng() * 0.5;
-    var winSeed = seed ^ 0xBEEF;
-
-    var groundFloor = 'plain';
-    if (kind === 'shopfront') {
-        groundFloor = rng() < 0.6 ? 'awning' : 'storefront';
-    } else if (kind === 'warehouse_bg') {
-        groundFloor = 'plain';
-    } else {
-        var gfRoll = rng();
-        if (gfRoll < 0.30) groundFloor = 'awning';
-        else if (gfRoll < 0.50) groundFloor = 'sign';
-        else if (gfRoll < 0.85) groundFloor = 'storefront';
-    }
-    var awningColor = _procPick(AWNING_COLORS, rng);
-    var signColor = _procPick(['#c03030','#2060a0','#30804a','#d4a020','#ffffff'], rng);
-
-    var roofDetail = 'none';
-    if (kind !== 'house' && floors >= 3) {
-        var rdRoll = rng();
-        if (rdRoll < 0.15) roofDetail = 'tank';
-        else if (rdRoll < 0.40) roofDetail = 'ac';
-        else if (rdRoll < 0.50) roofDetail = 'garden';
-        else if (rdRoll < 0.60 && floors >= 5) roofDetail = 'antenna';
-    }
-
-    var fireEscape = (kind === 'apt_small' || kind === 'apt_tall') && floors >= 3 && rng() < 0.4;
 
     var setbacks = null;
     if (floors > 10 && rng() > 0.2) {
@@ -6686,16 +6631,6 @@ function _procBuildParams(bg) {
         doorKey: doorKey,
         setbacks: setbacks,
         seed: seed,
-        kind: kind,
-        wallTint: wallTint,
-        noWindows: noWindows,
-        winW: winW, winH: winH, winSpaceH: winSpaceH,
-        winLitRatio: winLitRatio, winSeed: winSeed,
-        groundFloor: groundFloor,
-        awningColor: awningColor,
-        signColor: signColor,
-        roofDetail: roofDetail,
-        fireEscape: fireEscape,
     };
 }
 
@@ -6720,14 +6655,13 @@ function _procEdge(ctx, x, y, w, h, fullOutline) {
     }
 }
 
-function _procRoof(ctx, x, y, w, roofH, params) {
+function _procRoof(ctx, x, y, w, roofH) {
     var tex = (w >= 110 && BLDG_CANVASES.bigroof) ? BLDG_CANVASES.bigroof : BLDG_CANVASES.roof;
     if (!tex) return;
     ctx.drawImage(tex, x, y, w, roofH);
-    if (params) _procRoofDetail(ctx, x, y, w, roofH, params);
 }
 
-function _procWall(ctx, x, y, w, wallH, fpPxW, params) {
+function _procWall(ctx, x, y, w, wallH, fpPxW) {
     var tex = (fpPxW >= 110 && BLDG_CANVASES.bigwall) ? BLDG_CANVASES.bigwall : BLDG_CANVASES.wall;
     if (!tex) return;
     var scaleX = w / tex.width;
@@ -6740,10 +6674,6 @@ function _procWall(ctx, x, y, w, wallH, fpPxW, params) {
         if (srcH < 1) srcH = 1;
         ctx.drawImage(tex, 0, 0, tex.width, srcH, x, y + offset, w, drawH);
         offset += drawH;
-    }
-    if (params && params.wallTint) {
-        ctx.fillStyle = params.wallTint;
-        ctx.fillRect(x, y, w, wallH);
     }
 }
 
@@ -6770,149 +6700,10 @@ function _getMinWallH() {
     return _minWallHCached;
 }
 
-function _procWindows(ctx, x, y, w, wallH, params) {
-    if (params.noWindows) return;
-    var floorH = PROC_CFG.FLOOR_PX;
-    var wW = params.winW, wH = params.winH, spH = params.winSpaceH;
-    var margin = 4;
-    var cols = Math.max(1, Math.floor((w - margin * 2) / spH));
-    var doorZone = Math.min(floorH * 1.5, wallH * 0.35);
-    var winSeed = params.winSeed;
-    var litRatio = params.winLitRatio;
-    for (var col = 0; col < cols; col++) {
-        var wx = x + margin + Math.round(col * (w - margin * 2 - wW) / Math.max(1, cols - 1));
-        for (var wy = y + 3; wy + wH < y + wallH - doorZone; wy += floorH) {
-            var h = ((wx * 7 + wy * 13 + winSeed) >>> 0) % 100;
-            if (h < litRatio * 100) {
-                ctx.fillStyle = '#fcfcbc';
-            } else {
-                ctx.fillStyle = 'rgba(0,0,0,0.3)';
-            }
-            ctx.fillRect(wx, wy, wW, wH);
-            ctx.fillStyle = 'rgba(0,0,0,0.5)';
-            ctx.fillRect(wx, wy, wW, 1);
-            ctx.fillRect(wx, wy, 1, wH);
-        }
-    }
-}
-
-function _procGroundFloor(ctx, x, wallBottom, w, params) {
-    var gf = params.groundFloor;
-    if (gf === 'plain') return;
-    var doorTex = BLDG_CANVASES[params.doorKey];
-    var doorH = doorTex ? doorTex.height * 2 : 30;
-
-    if (gf === 'awning') {
-        var awH = Math.min(8, Math.round(doorH * 0.3));
-        var awY = wallBottom - doorH - awH - 2;
-        var awMargin = Math.round(w * 0.1);
-        ctx.fillStyle = params.awningColor;
-        ctx.fillRect(x + awMargin, awY, w - awMargin * 2, awH);
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.fillRect(x + awMargin, awY + awH, w - awMargin * 2, 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
-        ctx.fillRect(x + awMargin, awY, w - awMargin * 2, 1);
-    } else if (gf === 'sign') {
-        var sW = Math.min(w * 0.6, 40);
-        var sH = 6;
-        var sX = x + Math.round((w - sW) / 2);
-        var sY = wallBottom - doorH - sH - 4;
-        ctx.fillStyle = params.signColor;
-        ctx.fillRect(sX, sY, sW, sH);
-        ctx.fillStyle = '#000';
-        ctx.fillRect(sX, sY, sW, 1);
-        ctx.fillRect(sX, sY + sH - 1, sW, 1);
-        ctx.fillStyle = 'rgba(255,255,255,0.6)';
-        var dotW = Math.max(2, Math.round(sW * 0.6));
-        ctx.fillRect(sX + Math.round((sW - dotW) / 2), sY + 2, dotW, 2);
-    } else if (gf === 'storefront') {
-        var sfH = Math.min(doorH - 4, 16);
-        var sfY = wallBottom - sfH - 2;
-        var doorW = doorTex ? doorTex.width * 2 : 20;
-        var doorX = x + Math.round((w - doorW) / 2);
-        var leftW = doorX - x - 3;
-        var rightX = doorX + doorW + 3;
-        var rightW = (x + w) - rightX;
-        if (leftW > 6) {
-            ctx.fillStyle = 'rgba(140,200,255,0.5)';
-            ctx.fillRect(x + 2, sfY, leftW, sfH);
-            ctx.fillStyle = 'rgba(255,255,255,0.15)';
-            ctx.fillRect(x + 2, sfY, leftW, 1);
-            ctx.fillStyle = '#000';
-            ctx.fillRect(x + 2, sfY - 1, leftW, 1);
-            ctx.fillRect(x + 2, sfY + sfH, leftW, 1);
-        }
-        if (rightW > 6) {
-            ctx.fillStyle = 'rgba(140,200,255,0.5)';
-            ctx.fillRect(rightX, sfY, rightW - 2, sfH);
-            ctx.fillStyle = 'rgba(255,255,255,0.15)';
-            ctx.fillRect(rightX, sfY, rightW - 2, 1);
-            ctx.fillStyle = '#000';
-            ctx.fillRect(rightX, sfY - 1, rightW - 2, 1);
-            ctx.fillRect(rightX, sfY + sfH, rightW - 2, 1);
-        }
-    }
-}
-
-function _procRoofDetail(ctx, x, y, w, roofH, params) {
-    var detail = params.roofDetail;
-    if (detail === 'none') return;
-    if (detail === 'tank') {
-        var tw = Math.min(10, w * 0.2);
-        var th = Math.min(12, roofH * 0.6);
-        var tx = x + Math.round(w * 0.7);
-        ctx.fillStyle = '#444';
-        ctx.fillRect(tx, y + 1, tw, th);
-        ctx.fillStyle = '#555';
-        ctx.fillRect(tx, y + 1, tw, 2);
-        ctx.fillStyle = '#333';
-        ctx.fillRect(tx + 1, y - 2, 1, 3);
-    } else if (detail === 'ac') {
-        var numAc = 1 + (params.seed % 2);
-        for (var ai = 0; ai < numAc; ai++) {
-            var ax = x + 4 + Math.round(ai * w * 0.4);
-            var aw = Math.min(8, w * 0.15);
-            ctx.fillStyle = '#888';
-            ctx.fillRect(ax, y + 2, aw, 5);
-            ctx.fillStyle = '#666';
-            ctx.fillRect(ax, y + 2, aw, 1);
-            ctx.fillStyle = '#aaa';
-            ctx.fillRect(ax + 1, y + 4, aw - 2, 1);
-        }
-    } else if (detail === 'garden') {
-        var gw = Math.round(w * 0.5);
-        var gx = x + Math.round((w - gw) / 2);
-        ctx.fillStyle = 'rgba(40,120,50,0.4)';
-        ctx.fillRect(gx, y + 2, gw, Math.min(6, roofH - 3));
-    } else if (detail === 'antenna') {
-        var antX = x + Math.round(w * 0.6);
-        var antH = 6 + (params.seed % 4);
-        ctx.fillStyle = '#555';
-        ctx.fillRect(antX, y - antH, 1, antH);
-        ctx.fillStyle = '#c00';
-        ctx.fillRect(antX - 1, y - antH - 1, 3, 2);
-    }
-}
-
-function _procFireEscape(ctx, x, topY, w, totalH, params) {
-    if (!params.fireEscape) return;
-    var floorH = PROC_CFG.FLOOR_PX;
-    var feX = x + w - 3;
-    ctx.fillStyle = '#333';
-    ctx.fillRect(feX, topY, 2, totalH);
-    for (var fy = topY + floorH; fy < topY + totalH - 5; fy += floorH) {
-        ctx.fillRect(feX - 3, fy, 6, 1);
-    }
-}
-
 function _procSection(ctx, x, topY, w, roofH, wallH, fpPxW, params, isBase) {
-    _procRoof(ctx, x, topY, w, roofH, params);
-    _procWall(ctx, x, topY + roofH, w, wallH, fpPxW, params);
-    _procWindows(ctx, x, topY + roofH, w, wallH, params);
-    if (isBase) {
-        _procDoor(ctx, x, topY + roofH + wallH, w, wallH, params);
-        _procGroundFloor(ctx, x, topY + roofH + wallH, w, params);
-    }
+    _procRoof(ctx, x, topY, w, roofH);
+    _procWall(ctx, x, topY + roofH, w, wallH, fpPxW);
+    if (isBase) _procDoor(ctx, x, topY + roofH + wallH, w, wallH, params);
 }
 
 function drawProceduralBuilding(ctx, fpPxX, fpPxBottom, fpPxW, params) {
@@ -6929,7 +6720,6 @@ function drawProceduralBuilding(ctx, fpPxX, fpPxBottom, fpPxW, params) {
         var topY = fpPxBottom - totalH;
         _procShadow(ctx, fpPxX, topY, fpPxW, totalH);
         _procSection(ctx, fpPxX, topY, fpPxW, roofH, totalWallH, fpPxW, params, true);
-        _procFireEscape(ctx, fpPxX, topY + roofH, fpPxW, totalWallH, params);
         _procEdge(ctx, fpPxX, topY, fpPxW, totalH);
         return;
     }
@@ -6957,9 +6747,6 @@ function drawProceduralBuilding(ctx, fpPxX, fpPxBottom, fpPxW, params) {
         var g = secGeo[si];
         if (si === 0) _procShadow(ctx, g.x, g.topY, g.w, g.totalH);
         _procSection(ctx, g.x, g.topY, g.w, g.roofH, g.wallH, fpPxW, params, si === 0);
-    }
-    if (secGeo.length > 0) {
-        _procFireEscape(ctx, secGeo[0].x, secGeo[0].topY + secGeo[0].roofH, secGeo[0].w, secGeo[0].wallH, params);
     }
     for (var si = 0; si < secGeo.length; si++) {
         var g = secGeo[si];
@@ -8409,6 +8196,7 @@ document.addEventListener('visibilitychange', () => {
     if (document.hidden) clearAllInput();
 });
 window.addEventListener('beforeunload', saveGame);
+setInterval(saveGame, 10000);
 
 // ============================================
 // WORLD / REGION MAP TRANSITIONS
@@ -10828,14 +10616,36 @@ async function init() {
     cleanStaleRegionCache();
     loadSave();
     await loadBootData();
-    await loadMap('data/regions/na.json');
+    var _sp = game._savedPosition;
+    var _restoreRegion = (_sp && _sp.regionId) ? _sp.regionId : 'na';
+    var _regionFile = 'data/regions/' + _restoreRegion + '.json';
+    await loadMap(_regionFile);
     resizeCanvas();
-    var spawnPos = findSpawnOnRoad();
-    game.player.x = spawnPos.x;
-    game.player.y = spawnPos.y;
-    game.mode = 'REGION';
-    game.currentRegionId = 'na';
+    if (_sp) {
+        game.player.x = _sp.x;
+        game.player.y = _sp.y;
+        game.player.direction = _sp.direction || 'down';
+        if (_sp.controllerEntity === 'foot' && game.van) {
+            game.van.x = _sp.vanX || _sp.x;
+            game.van.y = _sp.vanY || _sp.y;
+            game.van.direction = _sp.vanDir || 'down';
+        }
+        if (_sp.activeTurtle) game.activeTurtle = _sp.activeTurtle;
+        console.log('Restored saved position:', Math.round(_sp.x), Math.round(_sp.y), 'region:', _restoreRegion);
+    } else {
+        var spawnPos = findSpawnOnRoad();
+        game.player.x = spawnPos.x;
+        game.player.y = spawnPos.y;
+    }
+    game.mode = (_sp && _sp.mode) ? _sp.mode : 'REGION';
+    game.currentRegionId = _restoreRegion;
+    if (typeof MP !== 'undefined' && MP.sendSpawnPos) {
+        var _spTX = Math.round(game.player.x / TILE_SIZE);
+        var _spTY = Math.round(game.player.y / TILE_SIZE);
+        MP.sendSpawnPos(_spTX, _spTY);
+    }
     updateMobileActionVisibility();
+    delete game._savedPosition;
     requestAnimationFrame(gameLoop);
     console.log(BRAND.title + ' v' + BRAND.version + ' — COWABUNGA! World ready, loading sprites...');
 

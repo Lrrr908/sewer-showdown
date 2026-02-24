@@ -846,23 +846,12 @@ function placeBuildings(terrain, allRoadTiles, towns, buildingDefs) {
         arts_district: ['shopfront', 'apt_tall', 'apt_small', 'shopfront', 'office', 'apt_tall']
     };
 
-    const PROFILE_ZONE_MAP = {
-        downtown: 'downtown', industrial: 'industrial',
-        tourist: 'commercial', suburb: 'residential', arts_district: 'commercial'
-    };
-
-    const KIND_WIDTH_RANGE = {
-        house: [1, 1], apt_small: [1, 1], shopfront: [1, 2],
-        apt_tall: [2, 2], office: [2, 3], warehouse_bg: [3, 4]
-    };
-
     const bgBuildings = [];
     let bgIdx = 0;
     for (const t of towns) {
         const bgCount = t.density * 3 + ihash(t.x, t.y) % 3;
         const bgRadius = t.radius + (t.tier === 'A' ? 6 : 3);
         const mix = PROFILE_BG_MIX[t.profile] || PROFILE_BG_MIX.suburb;
-        const bgZone = PROFILE_ZONE_MAP[t.profile] || 'residential';
         const bgCands = [];
 
         for (let dy = -bgRadius; dy <= bgRadius; dy++) {
@@ -873,6 +862,7 @@ function placeBuildings(terrain, allRoadTiles, towns, buildingDefs) {
                 const k = ty * W + tx;
                 if (occupied[k]) continue;
                 if (ROAD_GRID[k]) continue;
+                // Must be near a road (within 2 tiles)
                 let nearRoad = false;
                 for (let ndy = -2; ndy <= 2 && !nearRoad; ndy++) {
                     for (let ndx = -2; ndx <= 2 && !nearRoad; ndx++) {
@@ -892,18 +882,14 @@ function placeBuildings(terrain, allRoadTiles, towns, buildingDefs) {
         for (let i = 0; i < bgCands.length && bgAdded < bgCount; i++) {
             const c = bgCands[i];
             if (bgPlaced.has(c.key)) continue;
+            // Spacing: no adjacent bg buildings
             let tooClose = false;
             for (const pk of bgPlaced) {
                 const px = pk % W, py = (pk / W) | 0;
                 if (Math.abs(c.tx - px) <= 1 && Math.abs(c.ty - py) <= 1) { tooClose = true; break; }
             }
             if (tooClose) continue;
-            const bKind = mix[bgAdded % mix.length];
-            const wRange = KIND_WIDTH_RANGE[bKind] || [1, 1];
-            const bW = wRange[0] + (ihash(c.tx, c.ty) % (wRange[1] - wRange[0] + 1));
-            const entry = { x: c.tx, y: c.ty, kind: bKind, zone: bgZone };
-            if (bW > 1) entry.fp = { w: bW, h: 1 };
-            bgBuildings.push(entry);
+            bgBuildings.push({ x: c.tx, y: c.ty, kind: mix[bgAdded % mix.length] });
             bgPlaced.add(c.key);
             bgAdded++;
             bgIdx++;
