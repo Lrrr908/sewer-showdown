@@ -5137,6 +5137,17 @@ function drawWaypointPips() {
         var bnum = (b + 1).toString();
         drawWaypointPip(bwx, bwy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, bcolor, visited ? null : bnum);
     }
+
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        var _rpAll = MP.getRemotePlayers();
+        for (var _rpi = 0; _rpi < _rpAll.length; _rpi++) {
+            var _rpP = _rpAll[_rpi];
+            var _rpWx = _rpP.px != null ? _rpP.px : _rpP.x * TILE_SIZE;
+            var _rpWy = _rpP.py != null ? _rpP.py : _rpP.y * TILE_SIZE;
+            var _rpLabel = (_rpP.displayName || _rpP.id || '?').substring(0, 8);
+            drawWaypointPip(_rpWx + TILE_SIZE / 2, _rpWy + TILE_SIZE / 2, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#ff3333', _rpLabel);
+        }
+    }
 }
 
 function drawUI() {
