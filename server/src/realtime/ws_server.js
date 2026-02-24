@@ -149,6 +149,13 @@ function initWsServer(wss) {
           }
           break;
 
+        case 'pos_sync':
+          if (typeof msg.px === 'number' && typeof msg.py === 'number') {
+            const zone = sim.getZoneForAccount(accountId);
+            if (zone) zone.posSync(accountId, msg.px, msg.py, msg.facing);
+          }
+          break;
+
         case 'action':
           if (!validateAction(msg)) {
             try { ws.send(makeError('MESSAGE_INVALID', 'bad action payload', false)); } catch {}

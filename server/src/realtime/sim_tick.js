@@ -26,6 +26,8 @@ function createPlayerEntity(entityId, accountId, spawnX, spawnY, opts) {
     zoneId: null,
     x: spawnX,
     y: spawnY,
+    px: (opts && opts.px != null) ? opts.px : spawnX * 64,
+    py: (opts && opts.py != null) ? opts.py : spawnY * 64,
     facing: (opts && opts.facing) || 's',
     spriteRef: (opts && opts.spriteRef) || 'base:van',
     lastSeq: 0,

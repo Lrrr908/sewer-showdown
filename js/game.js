@@ -5966,7 +5966,7 @@ function update(dt) {
 
             var _fFacing = ndx < 0 ? 'w' : ndx > 0 ? 'e' : ndy < 0 ? 'n' : 's';
             if (typeof MP !== 'undefined' && MP.isConnected()) {
-                MP.sendInput(Math.round(ndx), Math.round(ndy), _fFacing);
+                MP.sendPosSync(t.x, t.y, _fFacing);
             }
         }
         t.moving = isMoving;
@@ -6006,10 +6006,9 @@ function update(dt) {
             if (!checkCollision(p.x, newY)) p.y = newY;
         }
 
-        // Send movement to server
         var _facing = dx < 0 ? 'w' : dx > 0 ? 'e' : dy < 0 ? 'n' : 's';
         if (typeof MP !== 'undefined' && MP.isConnected()) {
-            MP.sendInput(Math.round(dx), Math.round(dy), _facing);
+            MP.sendPosSync(p.x, p.y, _facing);
         }
     }
     
@@ -7713,8 +7712,8 @@ function draw() {
             if (_mpRemote.length > 0) {
                 for (var _ri = 0; _ri < _mpRemote.length; _ri++) {
                     var _rp = _mpRemote[_ri];
-                    var _rpx = _rp.x * TILE_SIZE - game.camera.x;
-                    var _rpy = _rp.y * TILE_SIZE - game.camera.y;
+                    var _rpx = (_rp.px != null ? _rp.px : _rp.x * TILE_SIZE) - game.camera.x;
+                    var _rpy = (_rp.py != null ? _rp.py : _rp.y * TILE_SIZE) - game.camera.y;
                     var _rDir = _facingToDir[_rp.facing] || 'down';
                     var _rFrameSet = game.wagonFrames[_rDir];
                     var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';

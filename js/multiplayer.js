@@ -57,6 +57,8 @@ var MP = (function () {
     var collisionGrid = null;
     var collisionHash = null;
     var pendingSpawnPos = null;
+    var _lastPosSyncTime = 0;
+    var POS_SYNC_INTERVAL_MS = 50;
 
     var ugcCache = {};
 
@@ -536,6 +538,14 @@ var MP = (function () {
         console.log('[mp] sendSpawnPos sent tile (' + tileX + ', ' + tileY + ')');
     }
 
+    function sendPosSync(px, py, facing) {
+        if (!ws || ws.readyState !== 1 || !authenticated || inputFrozen) return;
+        var now = Date.now();
+        if (now - _lastPosSyncTime < POS_SYNC_INTERVAL_MS) return;
+        _lastPosSyncTime = now;
+        ws.send(JSON.stringify({ t: 'pos_sync', px: Math.round(px), py: Math.round(py), facing: facing || 's' }));
+    }
+
     function sendAction(actionType, data) {
         if (!ws || ws.readyState !== 1 || !authenticated || inputFrozen) return;
         inputSeq++;
@@ -633,6 +643,7 @@ var MP = (function () {
 
         sendInput: sendInput,
         sendSpawnPos: sendSpawnPos,
+        sendPosSync: sendPosSync,
         sendAction: sendAction,
         requestTransfer: requestTransfer,
         requestCollision: requestCollision,

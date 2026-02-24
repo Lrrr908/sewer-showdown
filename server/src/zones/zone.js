@@ -113,6 +113,28 @@ class Zone {
     };
   }
 
+  posSync(accountId, px, py, facing) {
+    const entityId = this.byAccount.get(accountId);
+    if (!entityId) return false;
+    const entity = this.entities.get(entityId);
+    if (!entity) return false;
+    entity.px = px;
+    entity.py = py;
+    if (facing && VALID_FACING[facing]) entity.facing = facing;
+    const newTileX = Math.floor(px / 64);
+    const newTileY = Math.floor(py / 64);
+    const clampedX = Math.max(0, Math.min(this.boundsW - 1, newTileX));
+    const clampedY = Math.max(0, Math.min(this.boundsH - 1, newTileY));
+    if (clampedX !== entity.x || clampedY !== entity.y) {
+      entity.x = clampedX;
+      entity.y = clampedY;
+      const newCell = posToCell(clampedX, clampedY, 1);
+      this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
+    }
+    this._pendingTeleports.set(entityId, wireSnapshot(entity));
+    return true;
+  }
+
   teleportEntity(accountId, tx, ty) {
     const entityId = this.byAccount.get(accountId);
     if (!entityId) return false;
@@ -122,6 +144,8 @@ class Zone {
     const cy = Math.max(0, Math.min(this.boundsH - 1, Math.round(ty)));
     entity.x = cx;
     entity.y = cy;
+    entity.px = cx * 64;
+    entity.py = cy * 64;
     entity.intent = null;
     const newCell = posToCell(cx, cy, 1);
     this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
@@ -275,6 +299,8 @@ function wireSnapshot(entity) {
     id: entity.id,
     x: entity.x,
     y: entity.y,
+    px: entity.px != null ? entity.px : entity.x * 64,
+    py: entity.py != null ? entity.py : entity.y * 64,
     facing: entity.facing,
     spriteRef: entity.spriteRef,
   };
