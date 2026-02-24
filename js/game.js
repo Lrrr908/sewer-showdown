@@ -6010,6 +6010,9 @@ function update(dt) {
         if (typeof MP !== 'undefined' && MP.isConnected()) {
             MP.sendPosSync(p.x, p.y, _facing);
         }
+    } else if (typeof MP !== 'undefined' && MP.isConnected()) {
+        var _idleFacing = p.direction === 'left' ? 'w' : p.direction === 'right' ? 'e' : p.direction === 'up' ? 'n' : 's';
+        MP.sendPosSync(p.x, p.y, _idleFacing);
     }
     
     p.moving = isMoving;
@@ -7745,6 +7748,19 @@ function draw() {
                 }
             }
         }
+    }
+    // MP debug overlay
+    if (typeof MP !== 'undefined') {
+        var _dbgRemote = MP.getRemotePlayers();
+        ctx.font = '9px monospace';
+        ctx.fillStyle = '#0f0';
+        ctx.textAlign = 'left';
+        var _dbgText = 'MP:' + (MP.isConnected() ? 'ON' : 'OFF') + ' r:' + _dbgRemote.length;
+        if (_dbgRemote.length > 0) {
+            var _dr = _dbgRemote[0];
+            _dbgText += ' px:' + (_dr.px||'?') + ',' + (_dr.py||'?') + ' id:' + (_dr.id||'?').substr(0,6);
+        }
+        ctx.fillText(_dbgText, 4, CANVAS_HEIGHT - 4);
     }
     
     // Draw player for WORLD mode only (region player already drawn in y-sort above)
