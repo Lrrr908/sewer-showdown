@@ -4926,10 +4926,35 @@ function drawOnFootTurtle() {
 }
 
 var _drFacingToDir = { n: 'up', s: 'down', e: 'right', w: 'left' };
+var _remoteAnimState = {};
+
+function _smoothRemotePos(_rp) {
+    var id = _rp.id;
+    if (!_remoteAnimState[id]) {
+        _remoteAnimState[id] = { rx: 0, ry: 0, frame: 0, animTimer: 0, lastPx: 0, lastPy: 0 };
+    }
+    var st = _remoteAnimState[id];
+    var targetX = _rp.px != null ? _rp.px : _rp.x * TILE_SIZE;
+    var targetY = _rp.py != null ? _rp.py : _rp.y * TILE_SIZE;
+    if (st.rx === 0 && st.ry === 0) { st.rx = targetX; st.ry = targetY; }
+    var dx = targetX - st.rx;
+    var dy = targetY - st.ry;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var moving = dist > 2;
+    if (dist > 400) { st.rx = targetX; st.ry = targetY; }
+    else if (moving) { var lerp = 0.18; st.rx += dx * lerp; st.ry += dy * lerp; }
+    if (moving) {
+        st.animTimer += 0.016;
+        if (st.animTimer >= 0.15) { st.animTimer -= 0.15; st.frame = (st.frame + 1) % 2; }
+    } else { st.frame = 0; st.animTimer = 0; }
+    st.lastPx = targetX; st.lastPy = targetY;
+    return { wx: st.rx, wy: st.ry, frame: st.frame, moving: moving };
+}
 
 function _drawRemotePlayer(_rp) {
-    var _rpWorldX = _rp.px != null ? _rp.px : _rp.x * TILE_SIZE;
-    var _rpWorldY = _rp.py != null ? _rp.py : _rp.y * TILE_SIZE;
+    var sm = _smoothRemotePos(_rp);
+    var _rpWorldX = sm.wx;
+    var _rpWorldY = sm.wy;
     var _vpMargin = 256;
     if (_rpWorldX < game.camera.x - _vpMargin || _rpWorldX > game.camera.x + CANVAS_WIDTH + _vpMargin ||
         _rpWorldY < game.camera.y - _vpMargin || _rpWorldY > game.camera.y + CANVAS_HEIGHT + _vpMargin) return;
@@ -4958,17 +4983,18 @@ function _drawRemotePlayer(_rp) {
             ctx.restore();
         }
         var _tDrawW = game.turtle.width || 32; var _tDrawH = game.turtle.height || 32;
-        NES.drawTurtleSprite(ctx, _rpx, _rpy, _rDir, 0, _rTid, _tDrawW / 16);
+        NES.drawTurtleSprite(ctx, _rpx, _rpy, _rDir, sm.frame, _rTid, _tDrawW / 16);
         ctx.font = '8px monospace'; ctx.textAlign = 'center';
         var _tlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(_rpx + _tDrawW / 2 - 30, _rpy - 14, 60, 12);
         ctx.fillStyle = '#fff'; ctx.fillText(_tlabel, _rpx + _tDrawW / 2, _rpy - 4); ctx.textAlign = 'left';
     } else {
-        var _rFrameSet = game.wagonFrames[_rDir];
-        var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';
-        var _rPatKey = WAGON_PATTERN_MAP[_rFrameKey];
         var _rDrawW = game.player.width || 128; var _rDrawH = game.player.height || 128;
         var _rFlip = (_rDir === 'left');
+        var _rFrameSet = game.wagonFrames[_rDir];
+        var _rFrameIdx = sm.moving ? (sm.frame % (_rFrameSet ? _rFrameSet.length : 1)) : 0;
+        var _rFrameKey = _rFrameSet ? _rFrameSet[_rFrameIdx] : 'down1';
+        var _rPatKey = WAGON_PATTERN_MAP[_rFrameKey];
         ctx.save(); ctx.imageSmoothingEnabled = false;
         ctx.translate(_rpx + _rDrawW / 2, _rpy + _rDrawH / 2);
         if (_rFlip) ctx.scale(-1, 1);
@@ -7764,6 +7790,9 @@ function draw() {
         for (var _rrKey in _remoteByRow) {
             if (parseInt(_rrKey) > rEnd) { var _rrB = _remoteByRow[_rrKey]; for (var _rrl = 0; _rrl < _rrB.length; _rrl++) _drawRemotePlayer(_rrB[_rrl]); }
         }
+        var _activeRemoteIds = {};
+        if (typeof MP !== 'undefined') { var _all = MP.getRemotePlayers(); for (var _ci = 0; _ci < _all.length; _ci++) _activeRemoteIds[_all[_ci].id] = true; }
+        for (var _sid in _remoteAnimState) { if (!_activeRemoteIds[_sid]) delete _remoteAnimState[_sid]; }
     }
     if (typeof MP !== 'undefined') {
         var _dbgRemote = MP.getRemotePlayers();
