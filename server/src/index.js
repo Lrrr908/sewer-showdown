@@ -15,6 +15,7 @@ const zoneDir = require('./zones/zone_directory');
 
 const app = express();
 const bootTime = Date.now();
+const INSTANCE_ID = require('crypto').randomBytes(4).toString('hex');
 
 app.use(helmet());
 app.use(cors());
@@ -32,6 +33,7 @@ app.get('/health', async (_req, res) => {
     db: dbOk,
     dirStale: zoneDir.isStale(),
     uptime: (Date.now() - bootTime) / 1000,
+    instance: INSTANCE_ID,
   });
 });
 
@@ -82,7 +84,7 @@ app.get('/debug/zones', (_req, res) => {
       players,
     };
   }
-  res.json({ ok: true, tick: sim.tickCount, zones });
+  res.json({ ok: true, tick: sim.tickCount, instance: INSTANCE_ID, zones });
 });
 
 const server = http.createServer(app);

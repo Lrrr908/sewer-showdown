@@ -419,7 +419,7 @@ var MP = (function () {
         switch (msg.t) {
             case 'hello_ok':
                 authenticated = true;
-                console.log('[mp] hello_ok! entityId:', msg.you ? msg.you.entityId : 'none', 'zone:', msg.you ? msg.you.zone : 'none');
+                console.log('[mp] hello_ok! entityId:', msg.you ? msg.you.entityId : 'none', 'zone:', msg.you ? msg.you.zone : 'none', 'server:', JSON.stringify(msg.server || {}));
                 if (msg.you) {
                     entityId = msg.you.entityId;
                     currentZone = msg.you.zone || currentZone;
@@ -759,6 +759,8 @@ var MP = (function () {
         connect: connect,
         disconnect: disconnect,
         isConnected: function () { return connected && authenticated; },
+        wsState: function () { return ws ? ws.readyState : -1; },
+        wsDebug: function () { return { connected: connected, authenticated: authenticated, wsReady: ws ? ws.readyState : -1, entityId: entityId, token: token ? token.substr(0,20) + '...' : null, remotePlayers: Object.keys(remotePlayers).length }; },
         isLoggedIn: isLoggedIn,
 
         guest: guest,
