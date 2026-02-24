@@ -505,18 +505,20 @@ var MP = (function () {
                     var now = Date.now();
                     for (var bi = 0; bi < msg.p.length; bi++) {
                         var be = msg.p[bi];
-                        var bid = be[0], bpx = be[1], bpy = be[2], bf = be[3];
+                        var bid = be[0], bpx = be[1], bpy = be[2], bf = be[3], bmode = be[4] || 'van', btid = be[5] || 'leo';
                         if (bid === entityId) continue;
                         var rp = remotePlayers[bid];
                         if (rp) {
                             rp.px = bpx;
                             rp.py = bpy;
                             rp.facing = bf;
+                            rp.mode = bmode;
+                            rp.tid = btid;
                             if (!rp._interpBuf) rp._interpBuf = [];
                             rp._interpBuf.push({ px: bpx, py: bpy, t: now });
                             if (rp._interpBuf.length > 4) rp._interpBuf.shift();
                         } else {
-                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }] };
+                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }] };
                         }
                     }
                 }
@@ -608,21 +610,29 @@ var MP = (function () {
         console.log('[mp] sendSpawnPos sent tile (' + tileX + ', ' + tileY + ')');
     }
 
-    function sendPosSync(px, py, facing) {
+    var _lastSentMode = '';
+    var _lastSentTurtleId = '';
+
+    function sendPosSync(px, py, facing, mode, turtleId) {
         if (!ws || ws.readyState !== 1 || !authenticated || inputFrozen) return;
         var now = Date.now();
         if (now - _lastPosSyncTime < POS_SYNC_INTERVAL_MS) return;
         var rpx = Math.round(px);
         var rpy = Math.round(py);
         var f = facing || 's';
+        var m = mode || 'van';
+        var tid = turtleId || 'leo';
         var dxS = Math.abs(rpx - _lastSentPx);
         var dyS = Math.abs(rpy - _lastSentPy);
-        if (dxS < POS_SEND_THRESHOLD && dyS < POS_SEND_THRESHOLD && f === _lastSentFacing) return;
+        var modeChanged = m !== _lastSentMode || tid !== _lastSentTurtleId;
+        if (!modeChanged && dxS < POS_SEND_THRESHOLD && dyS < POS_SEND_THRESHOLD && f === _lastSentFacing) return;
         _lastPosSyncTime = now;
         _lastSentPx = rpx;
         _lastSentPy = rpy;
         _lastSentFacing = f;
-        ws.send(JSON.stringify({ t: 'pos_sync', px: rpx, py: rpy, facing: f }));
+        _lastSentMode = m;
+        _lastSentTurtleId = tid;
+        ws.send(JSON.stringify({ t: 'pos_sync', px: rpx, py: rpy, facing: f, mode: m, tid: tid }));
     }
 
     function sendAction(actionType, data) {

@@ -30,6 +30,8 @@ function createPlayerEntity(entityId, accountId, spawnX, spawnY, opts) {
     py: (opts && opts.py != null) ? opts.py : spawnY * 64,
     facing: (opts && opts.facing) || 's',
     spriteRef: (opts && opts.spriteRef) || 'base:van',
+    mode: 'van',
+    turtleId: 'leo',
     lastSeq: 0,
     intent: null,
     hitbox: { x: 0, y: 0, w: 1, h: 1 },

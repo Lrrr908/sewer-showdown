@@ -157,7 +157,7 @@ function initWsServer(wss) {
           lastPosSyncMs = now;
           if (typeof msg.px === 'number' && typeof msg.py === 'number') {
             const zone = sim.getZoneForAccount(accountId);
-            if (zone) zone.posSync(accountId, msg.px, msg.py, msg.facing);
+            if (zone) zone.posSync(accountId, msg.px, msg.py, msg.facing, msg.mode, msg.tid);
           }
           break;
         }

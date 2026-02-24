@@ -114,7 +114,7 @@ class Zone {
     };
   }
 
-  posSync(accountId, px, py, facing) {
+  posSync(accountId, px, py, facing, mode, turtleId) {
     const entityId = this.byAccount.get(accountId);
     if (!entityId) return false;
     const entity = this.entities.get(entityId);
@@ -123,6 +123,8 @@ class Zone {
     entity.px = px;
     entity.py = py;
     if (facing && VALID_FACING[facing]) entity.facing = facing;
+    if (mode === 'van' || mode === 'foot') entity.mode = mode;
+    if (turtleId) entity.turtleId = turtleId;
 
     const newTileX = Math.floor(px / TILE_PX);
     const newTileY = Math.floor(py / TILE_PX);
@@ -269,7 +271,7 @@ class Zone {
       entity._lastBcastPx = entity.px;
       entity._lastBcastPy = entity.py;
       entity._lastBcastFacing = entity.facing;
-      const compact = [entity.id, entity.px, entity.py, entity.facing];
+      const compact = [entity.id, entity.px, entity.py, entity.facing, entity.mode || 'van', entity.turtleId || 'leo'];
       const cell = posToCell(entity.x, entity.y, 1);
       const neighbors = neighborCells(cell.cx, cell.cy);
       for (const nk of neighbors) {
@@ -350,6 +352,8 @@ function wireSnapshot(entity) {
     py: entity.py != null ? entity.py : entity.y * TILE_PX,
     facing: entity.facing,
     spriteRef: entity.spriteRef,
+    mode: entity.mode || 'van',
+    tid: entity.turtleId || 'leo',
   };
 }
 

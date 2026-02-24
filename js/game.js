@@ -5966,8 +5966,11 @@ function update(dt) {
 
             var _fFacing = ndx < 0 ? 'w' : ndx > 0 ? 'e' : ndy < 0 ? 'n' : 's';
             if (typeof MP !== 'undefined' && MP.isConnected()) {
-                MP.sendPosSync(t.x, t.y, _fFacing);
+                MP.sendPosSync(t.x, t.y, _fFacing, 'foot', game.activeTurtle);
             }
+        } else if (typeof MP !== 'undefined' && MP.isConnected()) {
+            var _idleFootF = t.direction === 'left' ? 'w' : t.direction === 'right' ? 'e' : t.direction === 'up' ? 'n' : 's';
+            MP.sendPosSync(t.x, t.y, _idleFootF, 'foot', game.activeTurtle);
         }
         t.moving = isMoving;
         if (isMoving) {
@@ -6008,11 +6011,11 @@ function update(dt) {
 
         var _facing = dx < 0 ? 'w' : dx > 0 ? 'e' : dy < 0 ? 'n' : 's';
         if (typeof MP !== 'undefined' && MP.isConnected()) {
-            MP.sendPosSync(p.x, p.y, _facing);
+            MP.sendPosSync(p.x, p.y, _facing, 'van', game.activeTurtle);
         }
     } else if (typeof MP !== 'undefined' && MP.isConnected()) {
         var _idleFacing = p.direction === 'left' ? 'w' : p.direction === 'right' ? 'e' : p.direction === 'up' ? 'n' : 's';
-        MP.sendPosSync(p.x, p.y, _idleFacing);
+        MP.sendPosSync(p.x, p.y, _idleFacing, game.controllerEntity === 'foot' ? 'foot' : 'van', game.activeTurtle);
     }
     
     p.moving = isMoving;
@@ -7723,33 +7726,50 @@ function draw() {
                     var _rpx = _rpWorldX - game.camera.x;
                     var _rpy = _rpWorldY - game.camera.y;
                     var _rDir = _facingToDir[_rp.facing] || 'down';
-                    var _rFrameSet = game.wagonFrames[_rDir];
-                    var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';
-                    var _rPatKey = WAGON_PATTERN_MAP[_rFrameKey];
-                    var _rDrawW = game.player.width || 128;
-                    var _rDrawH = game.player.height || 128;
-                    var _rFlip = (_rDir === 'left');
-                    ctx.save();
-                    ctx.imageSmoothingEnabled = false;
-                    ctx.translate(_rpx + _rDrawW / 2, _rpy + _rDrawH / 2);
-                    if (_rFlip) ctx.scale(-1, 1);
-                    if (_rPatKey && typeof NES !== 'undefined') {
-                        var _rScale = _rDrawW / 32;
-                        NES.drawSprite(ctx, -_rDrawW / 2, -_rDrawH / 2, _rPatKey, _rScale);
+                    var _rMode = _rp.mode || 'van';
+                    var _rTid = _rp.tid || 'leo';
+
+                    if (_rMode === 'foot' && typeof NES !== 'undefined') {
+                        var _tDrawW = game.turtle.width || 32;
+                        var _tDrawH = game.turtle.height || 32;
+                        var _tScale = _tDrawW / 16;
+                        NES.drawTurtleSprite(ctx, _rpx, _rpy, _rDir, 0, _rTid, _tScale);
+                        ctx.font = '8px monospace';
+                        ctx.textAlign = 'center';
+                        var _tlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                        ctx.fillRect(_rpx + _tDrawW / 2 - 30, _rpy - 14, 60, 12);
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(_tlabel, _rpx + _tDrawW / 2, _rpy - 4);
+                        ctx.textAlign = 'left';
                     } else {
-                        ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
-                        ctx.fillRect(-_rDrawW / 2, -_rDrawH / 2, _rDrawW, _rDrawH);
+                        var _rFrameSet = game.wagonFrames[_rDir];
+                        var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';
+                        var _rPatKey = WAGON_PATTERN_MAP[_rFrameKey];
+                        var _rDrawW = game.player.width || 128;
+                        var _rDrawH = game.player.height || 128;
+                        var _rFlip = (_rDir === 'left');
+                        ctx.save();
+                        ctx.imageSmoothingEnabled = false;
+                        ctx.translate(_rpx + _rDrawW / 2, _rpy + _rDrawH / 2);
+                        if (_rFlip) ctx.scale(-1, 1);
+                        if (_rPatKey && typeof NES !== 'undefined') {
+                            var _rScale = _rDrawW / 32;
+                            NES.drawSprite(ctx, -_rDrawW / 2, -_rDrawH / 2, _rPatKey, _rScale);
+                        } else {
+                            ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
+                            ctx.fillRect(-_rDrawW / 2, -_rDrawH / 2, _rDrawW, _rDrawH);
+                        }
+                        ctx.restore();
+                        ctx.font = '8px monospace';
+                        ctx.textAlign = 'center';
+                        var _rlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                        ctx.fillRect(_rpx + _rDrawW / 2 - 30, _rpy - 14, 60, 12);
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(_rlabel, _rpx + _rDrawW / 2, _rpy - 4);
+                        ctx.textAlign = 'left';
                     }
-                    ctx.restore();
-                    // Name tag
-                    ctx.font = '8px monospace';
-                    ctx.textAlign = 'center';
-                    var _rlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                    ctx.fillRect(_rpx + _rDrawW / 2 - 30, _rpy - 14, 60, 12);
-                    ctx.fillStyle = '#fff';
-                    ctx.fillText(_rlabel, _rpx + _rDrawW / 2, _rpy - 4);
-                    ctx.textAlign = 'left';
                 }
             }
         }
