@@ -27,6 +27,7 @@ class Zone {
     this.dirtyUpserts = new Map();
     this._pendingTeleports = new Map();
     this._posDirty = new Map();
+    this._aoiExits = [];  // [{entityId, oldNeighborKeys}]
     this.dirtyRemoves = new Set();
     this.tickId = 0;
 
@@ -114,6 +115,42 @@ class Zone {
     };
   }
 
+  _onCellChange(entityId, cellChange) {
+    if (!cellChange) return;
+    const oldNeighbors = new Set(neighborCells(cellChange.oldCx, cellChange.oldCy));
+    const newNeighbors = new Set(neighborCells(cellChange.newCx, cellChange.newCy));
+    const lost = [];
+    for (const k of oldNeighbors) {
+      if (!newNeighbors.has(k)) lost.push(k);
+    }
+    if (lost.length > 0) {
+      this._aoiExits.push({ entityId, lostCells: lost });
+    }
+    const gained = [];
+    for (const k of newNeighbors) {
+      if (!oldNeighbors.has(k)) gained.push(k);
+    }
+    if (gained.length > 0) {
+      const entity = this.entities.get(entityId);
+      if (entity) {
+        const snap = wireSnapshot(entity);
+        for (const gk of gained) {
+          const cellSet = this.aoi.cells.get(gk);
+          if (!cellSet) continue;
+          for (const recipientId of cellSet) {
+            if (recipientId === entityId) continue;
+            const ws = this.conns.get(recipientId);
+            if (ws && ws.readyState === 1) {
+              const recipEntity = this.entities.get(recipientId);
+              const ack = recipEntity ? recipEntity.lastSeq : 0;
+              try { ws.send(makeDelta(this.tickId, this.id, [snap], [], ack)); } catch {}
+            }
+          }
+        }
+      }
+    }
+  }
+
   posSync(accountId, px, py, facing, mode, turtleId, vpx, vpy, vf) {
     const entityId = this.byAccount.get(accountId);
     if (!entityId) return false;
@@ -144,7 +181,8 @@ class Zone {
       entity.x = clampedX;
       entity.y = clampedY;
       const newCell = posToCell(clampedX, clampedY, 1);
-      this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
+      const cellChange = this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
+      if (cellChange) this._onCellChange(entityId, cellChange);
     }
 
     const dxB = Math.abs(px - entity._lastBcastPx);
@@ -174,7 +212,8 @@ class Zone {
     entity._lastBcastFacing = entity.facing;
     entity.intent = null;
     const newCell = posToCell(cx, cy, 1);
-    this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
+    const cellChange = this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
+    if (cellChange) this._onCellChange(entityId, cellChange);
     this._pendingTeleports.set(entityId, wireSnapshot(entity));
     presence.update(accountId, entity);
     return true;
@@ -226,7 +265,8 @@ class Zone {
           const newCell = posToCell(player.x, player.y, 1);
 
           if (cellKey(oldCell.cx, oldCell.cy) !== cellKey(newCell.cx, newCell.cy)) {
-            this.aoi.movePlayer(eid, newCell.cx, newCell.cy);
+            const cellChange = this.aoi.movePlayer(eid, newCell.cx, newCell.cy);
+            if (cellChange) this._onCellChange(eid, cellChange);
           }
 
           dirty = true;
@@ -246,8 +286,9 @@ class Zone {
     const hasUpserts = this.dirtyUpserts.size > 0;
     const hasPosDirty = this._posDirty.size > 0;
     const hasRemoves = this.dirtyRemoves.size > 0;
+    const hasAoiExits = this._aoiExits.length > 0;
 
-    if (!hasUpserts && !hasPosDirty && !hasRemoves) return;
+    if (!hasUpserts && !hasPosDirty && !hasRemoves && !hasAoiExits) return;
 
     const buckets = new Map();
     const ensureBucket = (ws) => {
@@ -304,6 +345,20 @@ class Zone {
         }
       }
     }
+
+    for (const exit of this._aoiExits) {
+      for (const lostKey of exit.lostCells) {
+        const cellSet = this.aoi.cells.get(lostKey);
+        if (!cellSet) continue;
+        for (const recipientId of cellSet) {
+          const ws = this.conns.get(recipientId);
+          if (ws && ws.readyState === 1) {
+            ensureBucket(ws).removes.push(exit.entityId);
+          }
+        }
+      }
+    }
+    this._aoiExits = [];
 
     const wsToEid = new Map();
     for (const [eid, w] of this.conns) wsToEid.set(w, eid);
