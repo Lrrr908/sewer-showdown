@@ -7708,15 +7708,20 @@ function draw() {
 
         drawTownProps(startX, startY, endX, endY);
 
-        // Draw remote multiplayer players
+        // Draw remote multiplayer players (viewport-culled for scalability)
         if (typeof MP !== 'undefined') {
             var _mpRemote = MP.getRemotePlayers();
             var _facingToDir = { n: 'up', s: 'down', e: 'right', w: 'left' };
             if (_mpRemote.length > 0) {
+                var _vpMargin = 256;
                 for (var _ri = 0; _ri < _mpRemote.length; _ri++) {
                     var _rp = _mpRemote[_ri];
-                    var _rpx = (_rp.px != null ? _rp.px : _rp.x * TILE_SIZE) - game.camera.x;
-                    var _rpy = (_rp.py != null ? _rp.py : _rp.y * TILE_SIZE) - game.camera.y;
+                    var _rpWorldX = _rp.px != null ? _rp.px : _rp.x * TILE_SIZE;
+                    var _rpWorldY = _rp.py != null ? _rp.py : _rp.y * TILE_SIZE;
+                    if (_rpWorldX < game.camera.x - _vpMargin || _rpWorldX > game.camera.x + CANVAS_WIDTH + _vpMargin ||
+                        _rpWorldY < game.camera.y - _vpMargin || _rpWorldY > game.camera.y + CANVAS_HEIGHT + _vpMargin) continue;
+                    var _rpx = _rpWorldX - game.camera.x;
+                    var _rpy = _rpWorldY - game.camera.y;
                     var _rDir = _facingToDir[_rp.facing] || 'down';
                     var _rFrameSet = game.wagonFrames[_rDir];
                     var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';

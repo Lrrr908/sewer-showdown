@@ -15,6 +15,7 @@ const ugcValidate = require('../ugc/ugc_validate');
 
 const AUTH_TIMEOUT_MS = 5000;
 const TRANSFER_IGNORE_NOTIFY_MS = 1000;
+const POS_SYNC_MIN_MS = 40;
 
 // accountId -> ws. Enforces single active connection per account.
 const connByAccount = new Map();
@@ -28,6 +29,7 @@ function initWsServer(wss) {
     let alive = true;
     let transferring = false;
     let lastTransferIgnoreNotify = 0;
+    let lastPosSyncMs = 0;
 
     // Phase tracking for disconnect-during-transfer safety.
     // null when no transfer active; { from, to, phase } during transfer.
@@ -149,12 +151,16 @@ function initWsServer(wss) {
           }
           break;
 
-        case 'pos_sync':
+        case 'pos_sync': {
+          const now = Date.now();
+          if (now - lastPosSyncMs < POS_SYNC_MIN_MS) break;
+          lastPosSyncMs = now;
           if (typeof msg.px === 'number' && typeof msg.py === 'number') {
             const zone = sim.getZoneForAccount(accountId);
             if (zone) zone.posSync(accountId, msg.px, msg.py, msg.facing);
           }
           break;
+        }
 
         case 'action':
           if (!validateAction(msg)) {

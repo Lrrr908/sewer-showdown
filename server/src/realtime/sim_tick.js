@@ -111,6 +111,11 @@ function fastTick() {
 
 function slowTick() {
   presence.cleanup();
+  for (const [zid, zone] of zoneManager.zones) {
+    if (zone.playerCount > 0) {
+      console.log('[zone] ' + zid + ': ' + zone.playerCount + ' players, ' + zone.aoi.cells.size + ' AOI cells');
+    }
+  }
 }
 
 function startSimLoop() {

@@ -1,9 +1,9 @@
 // Zone — owns entities, AOI, intent processing, tick, AOI-scoped broadcast.
-// Positions are tile-integer. MOVE_SPEED = 1 tile per tick.
-// Collision grid: per-zone boolean matrix. Server is authoritative on blocked tiles.
+// Supports both tile-based movement (intents) and pixel-position sync (pos_sync).
+// Designed for hundreds of concurrent players per zone.
 
 const { AOIGrid, posToCell, cellKey, neighborCells } = require('../realtime/aoi');
-const { makeDelta } = require('../realtime/messages');
+const { makeDelta, makePosUpdate } = require('../realtime/messages');
 const { loadBounds } = require('./zone_bounds');
 const { getSpawn } = require('./zone_spawn');
 const { parseZoneId } = require('./zone_id');
@@ -12,12 +12,10 @@ const presence = require('./presence');
 
 const MOVE_SPEED = 1;
 const VALID_FACING = { n: true, e: true, s: true, w: true };
+const POS_DIRTY_THRESHOLD_PX = 4;
+const TILE_PX = 64;
 
 class Zone {
-  /**
-   * @param {string} id - e.g. 'world:na', 'region:na:lexington', 'level:level_sewer'
-   * @param {'world'|'region'|'level'} type - auto-derived from id if not provided
-   */
   constructor(id, type) {
     this.id = id;
     const parsed = parseZoneId(id);
@@ -28,6 +26,7 @@ class Zone {
     this.aoi = new AOIGrid();
     this.dirtyUpserts = new Map();
     this._pendingTeleports = new Map();
+    this._posDirty = new Map();
     this.dirtyRemoves = new Set();
     this.tickId = 0;
 
@@ -47,6 +46,7 @@ class Zone {
   get spawnX() { return this._spawnX; }
   get spawnY() { return this._spawnY; }
   get collisionDescriptor() { return this._collisionDescriptor; }
+  get playerCount() { return this.conns.size; }
 
   blocked(x, y) {
     return isBlocked(this._collisionGrid, x, y, this.boundsW, this.boundsH);
@@ -54,6 +54,11 @@ class Zone {
 
   addEntity(entity, ws) {
     entity.zoneId = this.id;
+    entity.px = entity.px != null ? entity.px : entity.x * TILE_PX;
+    entity.py = entity.py != null ? entity.py : entity.y * TILE_PX;
+    entity._lastBcastPx = entity.px;
+    entity._lastBcastPy = entity.py;
+    entity._lastBcastFacing = entity.facing;
     this.entities.set(entity.id, entity);
     this.byAccount.set(entity.accountId, entity.id);
     if (ws) this.conns.set(entity.id, ws);
@@ -78,7 +83,6 @@ class Zone {
     return entityId;
   }
 
-  // Resets lastSeq + intent to neutral per spec.
   addConn(entity, ws) {
     entity.x = this._spawnX;
     entity.y = this._spawnY;
@@ -96,9 +100,6 @@ class Zone {
     return this.byAccount.get(accountId) || null;
   }
 
-  // Rejected input (seq <= lastSeq, or invalid payload caught upstream)
-  // must NOT mutate entity state: no intent overwrite, no lastSeq change.
-  // Existing intent persists and tick continues to process it.
   applyInput(accountId, intent) {
     const entityId = this.byAccount.get(accountId);
     if (!entityId) return;
@@ -118,20 +119,31 @@ class Zone {
     if (!entityId) return false;
     const entity = this.entities.get(entityId);
     if (!entity) return false;
+
     entity.px = px;
     entity.py = py;
     if (facing && VALID_FACING[facing]) entity.facing = facing;
-    const newTileX = Math.floor(px / 64);
-    const newTileY = Math.floor(py / 64);
+
+    const newTileX = Math.floor(px / TILE_PX);
+    const newTileY = Math.floor(py / TILE_PX);
     const clampedX = Math.max(0, Math.min(this.boundsW - 1, newTileX));
     const clampedY = Math.max(0, Math.min(this.boundsH - 1, newTileY));
+
     if (clampedX !== entity.x || clampedY !== entity.y) {
       entity.x = clampedX;
       entity.y = clampedY;
       const newCell = posToCell(clampedX, clampedY, 1);
       this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
     }
-    this._pendingTeleports.set(entityId, wireSnapshot(entity));
+
+    const dxB = Math.abs(px - entity._lastBcastPx);
+    const dyB = Math.abs(py - entity._lastBcastPy);
+    const facingChanged = entity.facing !== entity._lastBcastFacing;
+
+    if (dxB >= POS_DIRTY_THRESHOLD_PX || dyB >= POS_DIRTY_THRESHOLD_PX || facingChanged) {
+      this._posDirty.set(entityId, entity);
+    }
+
     return true;
   }
 
@@ -144,8 +156,11 @@ class Zone {
     const cy = Math.max(0, Math.min(this.boundsH - 1, Math.round(ty)));
     entity.x = cx;
     entity.y = cy;
-    entity.px = cx * 64;
-    entity.py = cy * 64;
+    entity.px = cx * TILE_PX;
+    entity.py = cy * TILE_PX;
+    entity._lastBcastPx = entity.px;
+    entity._lastBcastPy = entity.py;
+    entity._lastBcastFacing = entity.facing;
     entity.intent = null;
     const newCell = posToCell(cx, cy, 1);
     this.aoi.movePlayer(entityId, newCell.cx, newCell.cy);
@@ -158,7 +173,6 @@ class Zone {
     this.tickId++;
     this.dirtyUpserts.clear();
 
-    // Merge any teleports that happened between ticks
     for (const [eid, snap] of this._pendingTeleports) {
       this.dirtyUpserts.set(eid, snap);
     }
@@ -177,7 +191,6 @@ class Zone {
       let dx = player.intent.move.x || 0;
       let dy = player.intent.move.y || 0;
 
-      // Axis normalization: no diagonals. If both non-zero, X wins.
       if (dx !== 0 && dy !== 0) {
         dy = 0;
       }
@@ -192,13 +205,13 @@ class Zone {
         const clampedY = Math.max(0, Math.min(this.boundsH - 1, nextY));
 
         if (this.blocked(clampedX, clampedY)) {
-          // Collision denial: position unchanged. Mark dirty so client
-          // receives authoritative tile and can correct prediction.
           dirty = true;
         } else if (clampedX !== player.x || clampedY !== player.y) {
           const oldCell = posToCell(player.x, player.y, 1);
           player.x = clampedX;
           player.y = clampedY;
+          player.px = clampedX * TILE_PX;
+          player.py = clampedY * TILE_PX;
           const newCell = posToCell(player.x, player.y, 1);
 
           if (cellKey(oldCell.cx, oldCell.cy) !== cellKey(newCell.cx, newCell.cy)) {
@@ -207,7 +220,6 @@ class Zone {
 
           dirty = true;
         } else {
-          // Bounds-clamped to same position (at edge). Denial dirty.
           dirty = true;
         }
       }
@@ -220,17 +232,25 @@ class Zone {
   }
 
   broadcastDeltas(globalTick) {
-    if (this.dirtyUpserts.size === 0 && this.dirtyRemoves.size === 0) return;
+    const hasUpserts = this.dirtyUpserts.size > 0;
+    const hasPosDirty = this._posDirty.size > 0;
+    const hasRemoves = this.dirtyRemoves.size > 0;
+
+    if (!hasUpserts && !hasPosDirty && !hasRemoves) return;
 
     const buckets = new Map();
     const ensureBucket = (ws) => {
-      if (!buckets.has(ws)) buckets.set(ws, { upserts: [], removes: [] });
+      if (!buckets.has(ws)) buckets.set(ws, { upserts: [], posUpdates: [], removes: [] });
       return buckets.get(ws);
     };
 
     for (const [eid, snap] of this.dirtyUpserts) {
       const entity = this.entities.get(eid);
       if (!entity) continue;
+      this._posDirty.delete(eid);
+      entity._lastBcastPx = entity.px;
+      entity._lastBcastPy = entity.py;
+      entity._lastBcastFacing = entity.facing;
       const cell = posToCell(entity.x, entity.y, 1);
       const neighbors = neighborCells(cell.cx, cell.cy);
       for (const nk of neighbors) {
@@ -245,7 +265,27 @@ class Zone {
       }
     }
 
-    if (this.dirtyRemoves.size > 0) {
+    for (const [eid, entity] of this._posDirty) {
+      entity._lastBcastPx = entity.px;
+      entity._lastBcastPy = entity.py;
+      entity._lastBcastFacing = entity.facing;
+      const compact = [entity.id, entity.px, entity.py, entity.facing];
+      const cell = posToCell(entity.x, entity.y, 1);
+      const neighbors = neighborCells(cell.cx, cell.cy);
+      for (const nk of neighbors) {
+        const cellSet = this.aoi.cells.get(nk);
+        if (!cellSet) continue;
+        for (const recipientId of cellSet) {
+          const ws = this.conns.get(recipientId);
+          if (ws && ws.readyState === 1) {
+            ensureBucket(ws).posUpdates.push(compact);
+          }
+        }
+      }
+    }
+    this._posDirty.clear();
+
+    if (hasRemoves) {
       const removeIds = Array.from(this.dirtyRemoves);
       for (const [, ws] of this.conns) {
         if (ws && ws.readyState === 1) {
@@ -258,12 +298,19 @@ class Zone {
     for (const [eid, w] of this.conns) wsToEid.set(w, eid);
 
     for (const [ws, bucket] of buckets) {
+      const eid = wsToEid.get(ws);
+      const ent = eid ? this.entities.get(eid) : null;
+      const ackSeq = ent ? ent.lastSeq : 0;
+
       if (bucket.upserts.length > 0 || bucket.removes.length > 0) {
-        const eid = wsToEid.get(ws);
-        const ent = eid ? this.entities.get(eid) : null;
-        const ackSeq = ent ? ent.lastSeq : 0;
         try {
           ws.send(makeDelta(globalTick, this.id, bucket.upserts, bucket.removes, ackSeq));
+        } catch {}
+      }
+
+      if (bucket.posUpdates.length > 0) {
+        try {
+          ws.send(makePosUpdate(globalTick, this.id, bucket.posUpdates));
         } catch {}
       }
     }
@@ -299,8 +346,8 @@ function wireSnapshot(entity) {
     id: entity.id,
     x: entity.x,
     y: entity.y,
-    px: entity.px != null ? entity.px : entity.x * 64,
-    py: entity.py != null ? entity.py : entity.y * 64,
+    px: entity.px != null ? entity.px : entity.x * TILE_PX,
+    py: entity.py != null ? entity.py : entity.y * TILE_PX,
     facing: entity.facing,
     spriteRef: entity.spriteRef,
   };

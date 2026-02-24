@@ -87,6 +87,15 @@ function makeDelta(tick, zoneId, upserts, removes, ackSeq) {
   });
 }
 
+// Compact position-only update: each entry is [id, px, py, facing].
+function makePosUpdate(tick, zoneId, entries) {
+  return JSON.stringify({
+    t: 'pos_batch', v: PROTOCOL_VERSION,
+    zone: zoneId, tick,
+    p: entries,
+  });
+}
+
 function makeEvent(tick, eventType, data) {
   return JSON.stringify({
     t: 'event', v: PROTOCOL_VERSION,
@@ -137,7 +146,7 @@ module.exports = {
   PROTOCOL_VERSION,
   parseMessage,
   validateHello, validateInput, validateAction, validateUgcSubmit,
-  makeHelloOk, makeSnapshot, makeDelta, makeEvent,
+  makeHelloOk, makeSnapshot, makeDelta, makePosUpdate, makeEvent,
   makeUgcUpdate, makeTransferBegin, makeTransferCommit,
   makeCollisionFull, makeError,
 };

@@ -58,7 +58,11 @@ var MP = (function () {
     var collisionHash = null;
     var pendingSpawnPos = null;
     var _lastPosSyncTime = 0;
-    var POS_SYNC_INTERVAL_MS = 50;
+    var POS_SYNC_INTERVAL_MS = 100;
+    var _lastSentPx = -9999;
+    var _lastSentPy = -9999;
+    var _lastSentFacing = '';
+    var POS_SEND_THRESHOLD = 2;
 
     var ugcCache = {};
 
@@ -215,17 +219,47 @@ var MP = (function () {
         }
     }
 
+    var INTERP_DELAY_MS = 100;
+
     function updateRender() {
         var localTargetX = predTile.x * TILE_SIZE;
         var localTargetY = predTile.y * TILE_SIZE;
         interpolateToward(localRenderPx, localTargetX, localTargetY);
 
+        var renderTime = Date.now() - INTERP_DELAY_MS;
+
         for (var id in remotePlayers) {
             var rp = remotePlayers[id];
+            var tpx = rp.px != null ? rp.px : rp.x * TILE_SIZE;
+            var tpy = rp.py != null ? rp.py : rp.y * TILE_SIZE;
+
             if (!remoteRenderPx[id]) {
-                remoteRenderPx[id] = { x: rp.x * TILE_SIZE, y: rp.y * TILE_SIZE };
+                remoteRenderPx[id] = { x: tpx, y: tpy };
             }
-            interpolateToward(remoteRenderPx[id], rp.x * TILE_SIZE, rp.y * TILE_SIZE);
+
+            var buf = rp._interpBuf;
+            if (buf && buf.length >= 2) {
+                var a = null, b = null;
+                for (var bi = 0; bi < buf.length - 1; bi++) {
+                    if (buf[bi].t <= renderTime && buf[bi + 1].t >= renderTime) {
+                        a = buf[bi];
+                        b = buf[bi + 1];
+                        break;
+                    }
+                }
+                if (a && b) {
+                    var dt = b.t - a.t;
+                    var frac = dt > 0 ? Math.min(1, (renderTime - a.t) / dt) : 1;
+                    tpx = a.px + (b.px - a.px) * frac;
+                    tpy = a.py + (b.py - a.py) * frac;
+                } else if (buf.length > 0) {
+                    var last = buf[buf.length - 1];
+                    tpx = last.px;
+                    tpy = last.py;
+                }
+            }
+
+            interpolateToward(remoteRenderPx[id], tpx, tpy);
         }
 
         for (var rid in remoteRenderPx) {
@@ -433,6 +467,7 @@ var MP = (function () {
                 if (msg.ack) processAck(msg.ack.seq);
 
                 if (msg.upserts) {
+                    var now = Date.now();
                     for (var u = 0; u < msg.upserts.length; u++) {
                         var upd = msg.upserts[u];
                         if (upd.id === entityId) {
@@ -441,6 +476,16 @@ var MP = (function () {
                             authTile.y = upd.y;
                             replayPending();
                         } else {
+                            var existRp = remotePlayers[upd.id];
+                            if (existRp && existRp._interpBuf) {
+                                upd._interpBuf = existRp._interpBuf;
+                            } else {
+                                upd._interpBuf = [];
+                            }
+                            var tpx = upd.px != null ? upd.px : upd.x * TILE_SIZE;
+                            var tpy = upd.py != null ? upd.py : upd.y * TILE_SIZE;
+                            upd._interpBuf.push({ px: tpx, py: tpy, t: now });
+                            if (upd._interpBuf.length > 4) upd._interpBuf.shift();
                             remotePlayers[upd.id] = upd;
                         }
                     }
@@ -448,6 +493,31 @@ var MP = (function () {
                 if (msg.removes) {
                     for (var r = 0; r < msg.removes.length; r++) {
                         delete remotePlayers[msg.removes[r]];
+                    }
+                }
+                if (onDelta) onDelta(msg);
+                break;
+
+            case 'pos_batch':
+                if (msg.zone && msg.zone !== currentZone) break;
+                serverTick = msg.tick;
+                if (msg.p) {
+                    var now = Date.now();
+                    for (var bi = 0; bi < msg.p.length; bi++) {
+                        var be = msg.p[bi];
+                        var bid = be[0], bpx = be[1], bpy = be[2], bf = be[3];
+                        if (bid === entityId) continue;
+                        var rp = remotePlayers[bid];
+                        if (rp) {
+                            rp.px = bpx;
+                            rp.py = bpy;
+                            rp.facing = bf;
+                            if (!rp._interpBuf) rp._interpBuf = [];
+                            rp._interpBuf.push({ px: bpx, py: bpy, t: now });
+                            if (rp._interpBuf.length > 4) rp._interpBuf.shift();
+                        } else {
+                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }] };
+                        }
                     }
                 }
                 if (onDelta) onDelta(msg);
@@ -542,8 +612,17 @@ var MP = (function () {
         if (!ws || ws.readyState !== 1 || !authenticated || inputFrozen) return;
         var now = Date.now();
         if (now - _lastPosSyncTime < POS_SYNC_INTERVAL_MS) return;
+        var rpx = Math.round(px);
+        var rpy = Math.round(py);
+        var f = facing || 's';
+        var dxS = Math.abs(rpx - _lastSentPx);
+        var dyS = Math.abs(rpy - _lastSentPy);
+        if (dxS < POS_SEND_THRESHOLD && dyS < POS_SEND_THRESHOLD && f === _lastSentFacing) return;
         _lastPosSyncTime = now;
-        ws.send(JSON.stringify({ t: 'pos_sync', px: Math.round(px), py: Math.round(py), facing: facing || 's' }));
+        _lastSentPx = rpx;
+        _lastSentPy = rpy;
+        _lastSentFacing = f;
+        ws.send(JSON.stringify({ t: 'pos_sync', px: rpx, py: rpy, facing: f }));
     }
 
     function sendAction(actionType, data) {
