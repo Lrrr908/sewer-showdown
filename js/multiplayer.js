@@ -381,7 +381,8 @@ var MP = (function () {
             handleMessage(msg);
         };
 
-        ws.onclose = function () {
+        ws.onclose = function (evt) {
+            console.warn('[mp] WS closed: code=' + evt.code + ' reason=' + (evt.reason || 'none'));
             connected = false;
             authenticated = false;
             inputFrozen = false;
@@ -389,7 +390,7 @@ var MP = (function () {
             scheduleReconnect();
         };
 
-        ws.onerror = function () {};
+        ws.onerror = function (err) { console.warn('[mp] WS error', err); };
     }
 
     function disconnect() {
@@ -479,6 +480,8 @@ var MP = (function () {
             case 'delta':
                 if (msg.zone && msg.zone !== currentZone) break;
                 serverTick = msg.tick;
+                console.log('[mp] delta: upserts=' + (msg.upserts ? msg.upserts.length : 0) + ' removes=' + (msg.removes ? msg.removes.length : 0));
+                if (msg.upserts) { for (var _di = 0; _di < msg.upserts.length; _di++) { var _du = msg.upserts[_di]; console.log('[mp]   upsert: ' + _du.id + ' dn=' + (_du.dn||_du.displayName||'?') + ' px=' + _du.px + ',' + _du.py); } }
 
                 if (msg.ack) processAck(msg.ack.seq);
 
@@ -587,7 +590,7 @@ var MP = (function () {
                 break;
 
             case 'error':
-                console.warn('[mp] server error:', msg.code, msg.msg, msg.fatal ? '(fatal)' : '');
+                console.error('[mp] SERVER ERROR:', msg.code, msg.msg, msg.fatal ? '(FATAL)' : '(non-fatal)');
                 if (msg.fatal) {
                     setToken(null);
                     disconnect();

@@ -32,7 +32,6 @@ app.get('/health', async (_req, res) => {
     db: dbOk,
     dirStale: zoneDir.isStale(),
     uptime: (Date.now() - bootTime) / 1000,
-    build: config.BUILD_HASH || 'unknown',
   });
 });
 
@@ -54,6 +53,37 @@ app.get('/zones', (_req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/ugc', authMiddleware, ugcRoutes);
+
+app.get('/debug/zones', (_req, res) => {
+  const sim = require('./realtime/sim_tick');
+  const zones = {};
+  for (const [zid, zone] of sim.zoneManager.zones) {
+    const players = [];
+    for (const [eid, entity] of zone.entities) {
+      players.push({
+        id: eid,
+        account: entity.accountId,
+        dn: entity.displayName,
+        x: entity.x, y: entity.y,
+        px: entity.px, py: entity.py,
+        facing: entity.facing,
+        mode: entity.mode,
+        wsOpen: zone.conns.has(eid) && zone.conns.get(eid).readyState === 1,
+        aoiCell: zone.aoi.playerCells.get(eid) || 'none',
+      });
+    }
+    zones[zid] = {
+      playerCount: zone.playerCount,
+      entityCount: zone.entities.size,
+      connCount: zone.conns.size,
+      aoiCellCount: zone.aoi.cells.size,
+      boundsW: zone.boundsW,
+      boundsH: zone.boundsH,
+      players,
+    };
+  }
+  res.json({ ok: true, tick: sim.tickCount, zones });
+});
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });

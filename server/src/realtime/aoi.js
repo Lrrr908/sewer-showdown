@@ -50,7 +50,7 @@ class AOIGrid {
   movePlayer(playerId, cx, cy) {
     const newKey = cellKey(cx, cy);
     const oldKey = this.playerCells.get(playerId);
-    if (oldKey === newKey) return null;
+    if (oldKey === newKey) return false;
     const [oldCx, oldCy] = oldKey ? oldKey.split(',').map(Number) : [cx, cy];
     this.removePlayer(playerId);
     this.addPlayer(playerId, cx, cy);
