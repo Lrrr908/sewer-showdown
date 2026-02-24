@@ -420,6 +420,7 @@ var MP = (function () {
             case 'hello_ok':
                 authenticated = true;
                 console.log('[mp] hello_ok! entityId:', msg.you ? msg.you.entityId : 'none', 'zone:', msg.you ? msg.you.zone : 'none', 'server:', JSON.stringify(msg.server || {}));
+                fetch(API_URL + '/health').then(function(r){return r.json()}).then(function(d){console.log('[mp] health check: instance=' + d.instance + ' uptime=' + Math.round(d.uptime) + 's')}).catch(function(){});
                 if (msg.you) {
                     entityId = msg.you.entityId;
                     currentZone = msg.you.zone || currentZone;

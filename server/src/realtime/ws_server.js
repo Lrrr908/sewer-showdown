@@ -123,7 +123,7 @@ function initWsServer(wss) {
           }
         }
 
-        console.log(`[ws] ${entityId} (${accountId}) joined ${zoneId} (resume: ${resumeResult.reason})`);
+        console.log(`[ws] ${entityId} (${accountId}) joined ${zoneId} (resume: ${resumeResult.reason}) instance=${require('../config').INSTANCE_ID}`);
         return;
       }
 
@@ -324,7 +324,8 @@ function initWsServer(wss) {
       try { ws.send(makeCollisionFull(zone.id, desc)); } catch {}
     }
 
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
+      console.log(`[ws] CLOSE: ${entityId || 'unknown'} (${accountId || 'none'}) code=${code} reason=${reason || 'none'} instance=${require('../config').INSTANCE_ID}`);
       clearInterval(pingInterval);
       clearTimeout(authTimer);
       if (accountId) {

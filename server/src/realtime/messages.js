@@ -61,6 +61,7 @@ function makeHelloOk(entityId, accountId, zoneId, resumeResult) {
       tickHz: config.TICK_HZ,
       aoiCell: config.AOI_CELL_SIZE_TILES,
       resumeTtlSec: require('../zones/presence').RESUME_TTL_SECONDS,
+      instance: config.INSTANCE_ID,
     },
     dir: { ttlSec: 60 },
   });
