@@ -506,6 +506,7 @@ var MP = (function () {
                     for (var bi = 0; bi < msg.p.length; bi++) {
                         var be = msg.p[bi];
                         var bid = be[0], bpx = be[1], bpy = be[2], bf = be[3], bmode = be[4] || 'van', btid = be[5] || 'leo';
+                        var bvpx = be[6], bvpy = be[7], bvf = be[8];
                         if (bid === entityId) continue;
                         var rp = remotePlayers[bid];
                         if (rp) {
@@ -514,11 +515,14 @@ var MP = (function () {
                             rp.facing = bf;
                             rp.mode = bmode;
                             rp.tid = btid;
+                            rp.vpx = bvpx != null ? bvpx : rp.vpx;
+                            rp.vpy = bvpy != null ? bvpy : rp.vpy;
+                            rp.vf = bvf || rp.vf;
                             if (!rp._interpBuf) rp._interpBuf = [];
                             rp._interpBuf.push({ px: bpx, py: bpy, t: now });
                             if (rp._interpBuf.length > 4) rp._interpBuf.shift();
                         } else {
-                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }] };
+                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, vpx: bvpx, vpy: bvpy, vf: bvf, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }] };
                         }
                     }
                 }
@@ -613,7 +617,7 @@ var MP = (function () {
     var _lastSentMode = '';
     var _lastSentTurtleId = '';
 
-    function sendPosSync(px, py, facing, mode, turtleId) {
+    function sendPosSync(px, py, facing, mode, turtleId, vanPx, vanPy, vanDir) {
         if (!ws || ws.readyState !== 1 || !authenticated || inputFrozen) return;
         var now = Date.now();
         if (now - _lastPosSyncTime < POS_SYNC_INTERVAL_MS) return;
@@ -632,7 +636,13 @@ var MP = (function () {
         _lastSentFacing = f;
         _lastSentMode = m;
         _lastSentTurtleId = tid;
-        ws.send(JSON.stringify({ t: 'pos_sync', px: rpx, py: rpy, facing: f, mode: m, tid: tid }));
+        var msg = { t: 'pos_sync', px: rpx, py: rpy, facing: f, mode: m, tid: tid };
+        if (m === 'foot' && vanPx != null) {
+            msg.vpx = Math.round(vanPx);
+            msg.vpy = Math.round(vanPy);
+            msg.vf = vanDir || 's';
+        }
+        ws.send(JSON.stringify(msg));
     }
 
     function sendAction(actionType, data) {

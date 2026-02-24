@@ -5966,11 +5966,11 @@ function update(dt) {
 
             var _fFacing = ndx < 0 ? 'w' : ndx > 0 ? 'e' : ndy < 0 ? 'n' : 's';
             if (typeof MP !== 'undefined' && MP.isConnected()) {
-                MP.sendPosSync(t.x, t.y, _fFacing, 'foot', game.activeTurtle);
+                MP.sendPosSync(t.x, t.y, _fFacing, 'foot', game.activeTurtle, game.van.x, game.van.y, game.van.direction);
             }
         } else if (typeof MP !== 'undefined' && MP.isConnected()) {
             var _idleFootF = t.direction === 'left' ? 'w' : t.direction === 'right' ? 'e' : t.direction === 'up' ? 'n' : 's';
-            MP.sendPosSync(t.x, t.y, _idleFootF, 'foot', game.activeTurtle);
+            MP.sendPosSync(t.x, t.y, _idleFootF, 'foot', game.activeTurtle, game.van.x, game.van.y, game.van.direction);
         }
         t.moving = isMoving;
         if (isMoving) {
@@ -7730,6 +7730,35 @@ function draw() {
                     var _rTid = _rp.tid || 'leo';
 
                     if (_rMode === 'foot' && typeof NES !== 'undefined') {
+                        // Draw the parked van first (if position available)
+                        if (_rp.vpx != null && _rp.vpy != null) {
+                            var _rvx = _rp.vpx - game.camera.x;
+                            var _rvy = _rp.vpy - game.camera.y;
+                            var _rvDir = _rp.vf || 'right';
+                            var _rvDirMap = { n: 'up', s: 'down', e: 'right', w: 'left', up: 'up', down: 'down', left: 'left', right: 'right' };
+                            _rvDir = _rvDirMap[_rvDir] || 'right';
+                            var _rvDrawW = game.player.width || 128;
+                            var _rvDrawH = game.player.height || 128;
+                            var _rvFlip = (_rvDir === 'left');
+                            var _rvPatKey;
+                            if (_rvDir === 'left' || _rvDir === 'right') {
+                                _rvPatKey = 'wagonRight5';
+                            } else {
+                                var _rvFS = game.wagonFrames[_rvDir];
+                                _rvPatKey = _rvFS ? WAGON_PATTERN_MAP[_rvFS[0]] : 'wagonDown1';
+                            }
+                            ctx.save();
+                            ctx.imageSmoothingEnabled = false;
+                            ctx.globalAlpha = 0.85;
+                            ctx.translate(_rvx + _rvDrawW / 2, _rvy + _rvDrawH / 2);
+                            if (_rvFlip) ctx.scale(-1, 1);
+                            if (_rvPatKey) {
+                                var _rvScale = _rvDrawW / 32;
+                                NES.drawSprite(ctx, -_rvDrawW / 2, -_rvDrawH / 2, _rvPatKey, _rvScale);
+                            }
+                            ctx.restore();
+                        }
+                        // Then draw the turtle
                         var _tDrawW = game.turtle.width || 32;
                         var _tDrawH = game.turtle.height || 32;
                         var _tScale = _tDrawW / 16;
