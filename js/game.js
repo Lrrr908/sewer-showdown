@@ -7756,8 +7756,8 @@ function draw() {
         var rEnd = Math.min(WORLD_HEIGHT - 1, endY + 1);
 
         for (var ry = rStart; ry <= rEnd; ry++) {
-            // Y-sort: draw player BEFORE buildings on their row
-            // so buildings at/below the player render ON TOP (closer to camera)
+            // Y-sort: draw players BEFORE buildings on their row
+            // so buildings at/below render ON TOP (closer to camera)
             if (!_playerDrawn && ry >= _playerSortY) {
                 _playerDrawn = true;
                 if (game.controllerEntity === 'foot') {
@@ -7765,6 +7765,14 @@ function draw() {
                     drawOnFootTurtle();
                 } else {
                     drawPartyWagon();
+                }
+            }
+
+            // Remote players also drawn before buildings for same depth rule
+            var _rowRemote = _remoteByRow[ry];
+            if (_rowRemote) {
+                for (var _rri = 0; _rri < _rowRemote.length; _rri++) {
+                    _drawRemotePlayer(_rowRemote[_rri]);
                 }
             }
 
@@ -7795,14 +7803,6 @@ function draw() {
             if (lRow) for (var li = 0; li < lRow.length; li++) {
                 var lm = lRow[li];
                 if (lm.x >= startX - 2 && lm.x <= endX + 1) drawLandmark(lm);
-            }
-
-            // Draw remote players whose feet are on this row
-            var _rowRemote = _remoteByRow[ry];
-            if (_rowRemote) {
-                for (var _rri = 0; _rri < _rowRemote.length; _rri++) {
-                    _drawRemotePlayer(_rowRemote[_rri]);
-                }
             }
         }
 
