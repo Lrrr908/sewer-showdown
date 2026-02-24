@@ -17281,242 +17281,410 @@
     {
       "x": 22,
       "y": 34,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "commercial"
     },
     {
       "x": 25,
       "y": 37,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 24,
       "y": 34,
-      "kind": "apt_small"
+      "kind": "apt_small",
+      "zone": "commercial"
     },
     {
       "x": 19,
       "y": 21,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 20,
       "y": 8,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 20,
       "y": 8,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 42,
       "y": 18,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 40,
       "y": 18,
-      "kind": "office"
+      "kind": "office",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 44,
       "y": 18,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 35,
       "y": 22,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 49,
       "y": 28,
-      "kind": "office"
+      "kind": "office",
+      "zone": "downtown",
+      "fp": {
+        "w": 3,
+        "h": 1
+      }
     },
     {
       "x": 38,
       "y": 18,
-      "kind": "apt_small"
+      "kind": "apt_small",
+      "zone": "downtown"
     },
     {
       "x": 46,
       "y": 18,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 48,
       "y": 19,
-      "kind": "office"
+      "kind": "office",
+      "zone": "downtown",
+      "fp": {
+        "w": 3,
+        "h": 1
+      }
     },
     {
       "x": 35,
       "y": 20,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 36,
       "y": 18,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "downtown"
     },
     {
       "x": 34,
       "y": 18,
-      "kind": "office"
+      "kind": "office",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 49,
       "y": 36,
-      "kind": "apt_small"
+      "kind": "apt_small",
+      "zone": "downtown"
     },
     {
       "x": 53,
       "y": 50,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 59,
       "y": 50,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 50,
       "y": 37,
-      "kind": "apt_small"
+      "kind": "apt_small",
+      "zone": "commercial"
     },
     {
       "x": 50,
       "y": 49,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 61,
       "y": 50,
-      "kind": "office"
+      "kind": "office",
+      "zone": "commercial",
+      "fp": {
+        "w": 3,
+        "h": 1
+      }
     },
     {
       "x": 72,
       "y": 13,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 74,
       "y": 13,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 76,
       "y": 13,
-      "kind": "apt_small"
+      "kind": "apt_small",
+      "zone": "commercial"
     },
     {
       "x": 79,
       "y": 16,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 78,
       "y": 13,
-      "kind": "office"
+      "kind": "office",
+      "zone": "commercial",
+      "fp": {
+        "w": 3,
+        "h": 1
+      }
     },
     {
       "x": 65,
       "y": 30,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 82,
       "y": 12,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "commercial"
     },
     {
       "x": 79,
       "y": 33,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 77,
       "y": 47,
-      "kind": "office"
+      "kind": "office",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 75,
       "y": 47,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 103,
       "y": 8,
-      "kind": "apt_tall"
+      "kind": "apt_tall",
+      "zone": "downtown",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 102,
       "y": 5,
-      "kind": "office"
+      "kind": "office",
+      "zone": "downtown",
+      "fp": {
+        "w": 3,
+        "h": 1
+      }
     },
     {
       "x": 49,
       "y": 72,
-      "kind": "house"
+      "kind": "house",
+      "zone": "residential"
     },
     {
       "x": 47,
       "y": 72,
-      "kind": "house"
+      "kind": "house",
+      "zone": "residential"
     },
     {
       "x": 109,
       "y": 8,
-      "kind": "house"
+      "kind": "house",
+      "zone": "residential"
     },
     {
       "x": 118,
       "y": 8,
-      "kind": "house"
+      "kind": "house",
+      "zone": "residential"
     },
     {
       "x": 35,
       "y": 22,
-      "kind": "house"
+      "kind": "house",
+      "zone": "residential"
     },
     {
       "x": 34,
       "y": 19,
-      "kind": "house"
+      "kind": "house",
+      "zone": "residential"
     },
     {
       "x": 36,
       "y": 18,
-      "kind": "apt_small"
+      "kind": "apt_small",
+      "zone": "residential"
     },
     {
       "x": 65,
       "y": 30,
-      "kind": "house"
+      "kind": "house",
+      "zone": "residential"
     },
     {
       "x": 32,
       "y": 49,
-      "kind": "shopfront"
+      "kind": "shopfront",
+      "zone": "commercial",
+      "fp": {
+        "w": 2,
+        "h": 1
+      }
     },
     {
       "x": 30,
       "y": 49,
-      "kind": "house"
+      "kind": "house",
+      "zone": "commercial"
     },
     {
       "x": 84,
       "y": 12,
-      "kind": "warehouse_bg"
+      "kind": "warehouse_bg",
+      "zone": "industrial",
+      "fp": {
+        "w": 3,
+        "h": 1
+      }
     },
     {
       "x": 82,
       "y": 12,
-      "kind": "warehouse_bg"
+      "kind": "warehouse_bg",
+      "zone": "industrial",
+      "fp": {
+        "w": 3,
+        "h": 1
+      }
     },
     {
       "x": 19,
       "y": 21,
-      "kind": "house"
+      "kind": "house",
+      "zone": "residential"
     }
   ],
   "townProps": [
