@@ -7767,10 +7767,23 @@ function draw() {
     }
     if (typeof MP !== 'undefined') {
         var _dbgRemote = MP.getRemotePlayers();
-        ctx.font = '9px monospace'; ctx.fillStyle = '#0f0'; ctx.textAlign = 'left';
-        var _dbgText = 'MP:' + (MP.isConnected() ? 'ON' : 'OFF') + ' r:' + _dbgRemote.length;
-        if (_dbgRemote.length > 0) { var _dr = _dbgRemote[0]; _dbgText += ' px:' + (_dr.px||'?') + ',' + (_dr.py||'?') + ' id:' + (_dr.id||'?').substr(0,6); }
-        ctx.fillText(_dbgText, 4, CANVAS_HEIGHT - 4);
+        ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
+        var _mpOn = MP.isConnected();
+        var _line1 = 'MP:' + (_mpOn ? 'CONNECTED' : 'OFFLINE') + ' remote:' + _dbgRemote.length;
+        if (MP.entityId) _line1 += ' eid:' + MP.entityId.substr(0,8);
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(2, CANVAS_HEIGHT - 30, 380, 28);
+        ctx.fillStyle = _mpOn ? '#0f0' : '#f00';
+        ctx.fillText(_line1, 6, CANVAS_HEIGHT - 18);
+        if (_dbgRemote.length > 0) {
+            var _dr = _dbgRemote[0];
+            var _line2 = 'r0: ' + (_dr.displayName||_dr.id||'?').substr(0,12) + ' px:' + Math.round(_dr.px||0) + ',' + Math.round(_dr.py||0) + ' m:' + (_dr.mode||'?');
+            ctx.fillStyle = '#ff0';
+            ctx.fillText(_line2, 6, CANVAS_HEIGHT - 6);
+        } else if (_mpOn) {
+            ctx.fillStyle = '#ff0';
+            ctx.fillText('No remote players in view', 6, CANVAS_HEIGHT - 6);
+        }
     }
     
     // Draw player for WORLD mode only (region player already drawn in y-sort above)
