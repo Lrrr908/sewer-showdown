@@ -7709,35 +7709,42 @@ function draw() {
         // Draw remote multiplayer players
         if (typeof MP !== 'undefined') {
             var _mpRemote = MP.getRemotePlayers();
+            var _facingToDir = { n: 'up', s: 'down', e: 'right', w: 'left' };
             if (_mpRemote.length > 0) {
                 for (var _ri = 0; _ri < _mpRemote.length; _ri++) {
                     var _rp = _mpRemote[_ri];
                     var _rpx = _rp.x * TILE_SIZE - game.camera.x;
                     var _rpy = _rp.y * TILE_SIZE - game.camera.y;
-                    // Bright green box so it's unmissable
-                    ctx.fillStyle = '#00ff00';
-                    ctx.fillRect(_rpx - 2, _rpy - 2, TILE_SIZE + 4, TILE_SIZE + 4);
-                    // Party wagon sprite on top
-                    var _rSprite = game.sprites.partyWagon;
-                    if (_rSprite && _rSprite.complete) {
-                        ctx.drawImage(_rSprite, _rpx, _rpy, TILE_SIZE, TILE_SIZE);
+                    var _rDir = _facingToDir[_rp.facing] || 'down';
+                    var _rFrameSet = game.wagonFrames[_rDir];
+                    var _rFrameKey = _rFrameSet ? _rFrameSet[0] : 'down1';
+                    var _rPatKey = WAGON_PATTERN_MAP[_rFrameKey];
+                    var _rDrawW = game.player.width || 128;
+                    var _rDrawH = game.player.height || 128;
+                    var _rFlip = (_rDir === 'left');
+                    ctx.save();
+                    ctx.imageSmoothingEnabled = false;
+                    ctx.translate(_rpx + _rDrawW / 2, _rpy + _rDrawH / 2);
+                    if (_rFlip) ctx.scale(-1, 1);
+                    if (_rPatKey && typeof NES !== 'undefined') {
+                        var _rScale = _rDrawW / 32;
+                        NES.drawSprite(ctx, -_rDrawW / 2, -_rDrawH / 2, _rPatKey, _rScale);
+                    } else {
+                        ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
+                        ctx.fillRect(-_rDrawW / 2, -_rDrawH / 2, _rDrawW, _rDrawH);
                     }
+                    ctx.restore();
                     // Name tag
                     ctx.font = '8px monospace';
                     ctx.textAlign = 'center';
                     var _rlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
-                    ctx.fillStyle = '#000';
-                    ctx.fillRect(_rpx + TILE_SIZE/2 - 30, _rpy - 14, 60, 12);
-                    ctx.fillStyle = '#0f0';
-                    ctx.fillText(_rlabel, _rpx + TILE_SIZE/2, _rpy - 4);
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(_rpx + _rDrawW / 2 - 30, _rpy - 14, 60, 12);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(_rlabel, _rpx + _rDrawW / 2, _rpy - 4);
                     ctx.textAlign = 'left';
                 }
             }
-            // Debug: show MP status on screen
-            ctx.font = '9px monospace';
-            ctx.fillStyle = '#0f0';
-            ctx.textAlign = 'left';
-            ctx.fillText('MP: ' + (MP.isConnected() ? 'ON' : 'OFF') + ' remote:' + _mpRemote.length + ' eid:' + (MP.entityId || 'none'), 4, CANVAS_HEIGHT - 4);
         }
     }
     
