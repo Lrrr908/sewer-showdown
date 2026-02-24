@@ -8022,6 +8022,9 @@ const keyToDirection = {
 };
 
 document.addEventListener('keydown', (e) => {
+    var _ae = document.activeElement;
+    if (_ae && (_ae.tagName === 'INPUT' || _ae.tagName === 'TEXTAREA' || _ae.tagName === 'SELECT')) return;
+    if (document.getElementById('loginOverlay') && document.getElementById('loginOverlay').style.display !== 'none') return;
     // Blimp menu intercepts all input while active
     if (game.blimpMenu.active) {
         e.preventDefault();
@@ -8102,6 +8105,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keyup', (e) => {
+    var _ae = document.activeElement;
+    if (_ae && (_ae.tagName === 'INPUT' || _ae.tagName === 'TEXTAREA' || _ae.tagName === 'SELECT')) return;
     const dir = keyToDirection[e.code];
     if (dir) {
         e.preventDefault();
