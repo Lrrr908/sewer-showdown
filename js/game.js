@@ -25,6 +25,7 @@ const SAVE_VERSION = 3;
 function saveGame() {
     try {
         var entity = (game.controllerEntity === 'foot') ? game.turtle : game.player;
+        if (!entity || (entity.x <= 0 && entity.y <= 0)) return;
         var blob = {
             version: SAVE_VERSION,
             timestamp: Date.now(),
@@ -10621,7 +10622,15 @@ async function init() {
     var _regionFile = 'data/regions/' + _restoreRegion + '.json';
     await loadMap(_regionFile);
     resizeCanvas();
-    if (_sp) {
+    var _spValid = false;
+    if (_sp && _sp.x > 0 && _sp.y > 0) {
+        var _spTX2 = Math.floor(_sp.x / TILE_SIZE);
+        var _spTY2 = Math.floor(_sp.y / TILE_SIZE);
+        if (TERRAIN_GRID && TERRAIN_GRID[_spTY2] && TERRAIN_GRID[_spTY2][_spTX2] >= 2) {
+            _spValid = true;
+        }
+    }
+    if (_spValid) {
         game.player.x = _sp.x;
         game.player.y = _sp.y;
         game.player.direction = _sp.direction || 'down';
@@ -10637,7 +10646,7 @@ async function init() {
         game.player.x = spawnPos.x;
         game.player.y = spawnPos.y;
     }
-    game.mode = (_sp && _sp.mode) ? _sp.mode : 'REGION';
+    game.mode = (_spValid && _sp.mode) ? _sp.mode : 'REGION';
     game.currentRegionId = _restoreRegion;
     if (typeof MP !== 'undefined' && MP.sendSpawnPos) {
         var _spTX = Math.round(game.player.x / TILE_SIZE);
