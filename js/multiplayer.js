@@ -21,6 +21,7 @@ var MP = (function () {
     var SMOOTH_FACTOR = 0.35;
 
     var ws = null;
+    var _keepaliveTimer = null;
     var connected = false;
     var authenticated = false;
     var token = localStorage.getItem('ss_token') || null;
@@ -373,6 +374,12 @@ var MP = (function () {
                 dn: displayName || '',
                 client: { build: 'dev', ua: navigator.userAgent },
             }));
+            if (_keepaliveTimer) clearInterval(_keepaliveTimer);
+            _keepaliveTimer = setInterval(function() {
+                if (ws && ws.readyState === 1) {
+                    ws.send(JSON.stringify({ t: 'ping' }));
+                }
+            }, 15000);
         };
 
         ws.onmessage = function (evt) {
@@ -394,6 +401,7 @@ var MP = (function () {
     }
 
     function disconnect() {
+        if (_keepaliveTimer) { clearInterval(_keepaliveTimer); _keepaliveTimer = null; }
         if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         if (ws) { ws.onclose = null; ws.close(); ws = null; }
         connected = false;
