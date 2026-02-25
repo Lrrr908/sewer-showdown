@@ -5008,6 +5008,153 @@ function _drawRemotePlayer(_rp) {
     }
 }
 
+// --- Speech Bubble Rendering ---
+var _chatInputActive = false;
+
+function drawSpeechBubble(ctx, text, screenX, screenY, spriteW, bubbleColor) {
+    var maxCharsPerLine = 18;
+    var words = text.split(' ');
+    var lines = [];
+    var current = '';
+    for (var i = 0; i < words.length; i++) {
+        var test = current ? current + ' ' + words[i] : words[i];
+        if (test.length > maxCharsPerLine && current.length > 0) {
+            lines.push(current);
+            current = words[i];
+        } else {
+            current = test;
+        }
+    }
+    if (current) lines.push(current);
+
+    var fontSize = 12;
+    var lineHeight = fontSize + 3;
+    var padX = 8;
+    var padY = 6;
+    ctx.font = fontSize + 'px monospace';
+
+    var maxW = 0;
+    for (var l = 0; l < lines.length; l++) {
+        var w = ctx.measureText(lines[l]).width;
+        if (w > maxW) maxW = w;
+    }
+
+    var bgColor = bubbleColor || '#fff';
+    var borderColor = bubbleColor === '#58d8f8' ? '#2088b8' : bubbleColor === '#80ff80' ? '#208820' : '#222';
+
+    var bubbleW = maxW + padX * 2;
+    var bubbleH = lines.length * lineHeight + padY * 2;
+    var bubbleX = screenX + spriteW / 2 - bubbleW / 2;
+    var bubbleY = screenY - bubbleH - 14;
+    var tailX = screenX + spriteW / 2;
+
+    ctx.save();
+
+    var r = 6;
+    ctx.fillStyle = bgColor;
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bubbleX + r, bubbleY);
+    ctx.lineTo(bubbleX + bubbleW - r, bubbleY);
+    ctx.quadraticCurveTo(bubbleX + bubbleW, bubbleY, bubbleX + bubbleW, bubbleY + r);
+    ctx.lineTo(bubbleX + bubbleW, bubbleY + bubbleH - r);
+    ctx.quadraticCurveTo(bubbleX + bubbleW, bubbleY + bubbleH, bubbleX + bubbleW - r, bubbleY + bubbleH);
+    ctx.lineTo(tailX + 5, bubbleY + bubbleH);
+    ctx.lineTo(tailX, bubbleY + bubbleH + 8);
+    ctx.lineTo(tailX - 5, bubbleY + bubbleH);
+    ctx.lineTo(bubbleX + r, bubbleY + bubbleH);
+    ctx.quadraticCurveTo(bubbleX, bubbleY + bubbleH, bubbleX, bubbleY + bubbleH - r);
+    ctx.lineTo(bubbleX, bubbleY + r);
+    ctx.quadraticCurveTo(bubbleX, bubbleY, bubbleX + r, bubbleY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#111';
+    ctx.textAlign = 'center';
+    var textX = bubbleX + bubbleW / 2;
+    var textY = bubbleY + padY + fontSize;
+    for (var li = 0; li < lines.length; li++) {
+        ctx.fillText(lines[li], textX, textY + li * lineHeight);
+    }
+
+    ctx.restore();
+}
+
+function drawAllChatBubbles() {
+    if (typeof MP === 'undefined') return;
+    var bubbles = MP.getChatBubbles();
+    var now = Date.now();
+
+    for (var key in bubbles) {
+        if (now >= bubbles[key].expire) delete bubbles[key];
+    }
+
+    if (bubbles['__self__']) {
+        var p = game.player;
+        var sx, sy, sw;
+        if (game.controllerEntity === 'foot') {
+            var t = game.turtle;
+            sx = t.x - game.camera.x;
+            sy = t.y - game.camera.y;
+            sw = t.width || 32;
+        } else {
+            sx = p.x - game.camera.x;
+            sy = p.y - game.camera.y;
+            sw = p.width || 128;
+        }
+        drawSpeechBubble(ctx, bubbles['__self__'].text, sx, sy, sw, '#58d8f8');
+    }
+
+    var remotes = MP.getRemotePlayers();
+    for (var i = 0; i < remotes.length; i++) {
+        var rp = remotes[i];
+        if (!bubbles[rp.id]) continue;
+        var st = _remoteAnimState[rp.id];
+        var wx = st ? st.rx : (rp.x * TILE_SIZE);
+        var wy = st ? st.ry : (rp.y * TILE_SIZE);
+        var rpx = wx - game.camera.x;
+        var rpy = wy - game.camera.y;
+        var rpMode = rp.mode || 'van';
+        var rpW = rpMode === 'foot' ? (game.turtle.width || 32) : (game.player.width || 128);
+        drawSpeechBubble(ctx, bubbles[rp.id].text, rpx, rpy, rpW, '#80ff80');
+    }
+}
+
+function openChatInput() {
+    if (_chatInputActive) return;
+    _chatInputActive = true;
+    console.log('[chat] opening chat input');
+    var wrap = document.getElementById('chatInputWrap');
+    var input = document.getElementById('chatInput');
+    var counter = document.getElementById('chatCharCount');
+    if (!wrap || !input) { console.warn('[chat] chatInputWrap or chatInput not found!'); return; }
+    wrap.style.display = 'block';
+    input.value = '';
+    counter.textContent = '0/60';
+    setTimeout(function() { input.focus(); }, 50);
+}
+
+function closeChatInput() {
+    _chatInputActive = false;
+    var wrap = document.getElementById('chatInputWrap');
+    var input = document.getElementById('chatInput');
+    if (wrap) wrap.style.display = 'none';
+    if (input) input.blur();
+}
+
+function submitChatInput() {
+    var input = document.getElementById('chatInput');
+    if (!input) return;
+    var text = input.value.trim();
+    console.log('[chat] submit:', text, 'connected:', typeof MP !== 'undefined' && MP.isConnected());
+    if (text.length > 0 && typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendChat(text);
+        console.log('[chat] sent! bubbles:', JSON.stringify(MP.getChatBubbles()));
+    }
+    closeChatInput();
+}
 var _blimpAnimTimer = 0;
 var _blimpAnimFrame = 0;
 var BLIMP_FRAMES = ['blimp1', 'blimp2', 'blimp3'];
@@ -7805,6 +7952,7 @@ function draw() {
         if (typeof MP !== 'undefined') { var _all = MP.getRemotePlayers(); for (var _ci = 0; _ci < _all.length; _ci++) _activeRemoteIds[_all[_ci].id] = true; }
         for (var _sid in _remoteAnimState) { if (!_activeRemoteIds[_sid]) delete _remoteAnimState[_sid]; }
     }
+    drawAllChatBubbles();
     if (typeof MP !== 'undefined') {
         var _dbgRemote = MP.getRemotePlayers();
         ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
@@ -7823,6 +7971,13 @@ function draw() {
         } else if (_mpOn) {
             ctx.fillStyle = '#ff0';
             ctx.fillText('No remote players in view', 6, CANVAS_HEIGHT - 6);
+        }
+        if (_mpOn && !_chatInputActive) {
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillText('[C] Chat', CANVAS_WIDTH - 8, CANVAS_HEIGHT - 8);
+            ctx.textAlign = 'left';
         }
     }
     
@@ -8232,6 +8387,12 @@ document.addEventListener('keydown', (e) => {
     }
 
     // H = toggle high score board
+
+    if (e.code === 'KeyC' && game.mode !== 'LEVEL' && !_chatInputActive) {
+        e.preventDefault();
+        openChatInput();
+        return;
+    }
     if (e.code === 'KeyH' && game.mode !== 'LEVEL') {
         game.showScoreBoard = !game.showScoreBoard;
         return;
@@ -8359,6 +8520,36 @@ window.addEventListener('beforeunload', saveGame);
 setInterval(saveGame, 10000);
 
 // ============================================
+
+// ============================================
+// CHAT INPUT WIRING
+// ============================================
+
+(function() {
+    var chatInput = document.getElementById('chatInput');
+    var chatCounter = document.getElementById('chatCharCount');
+    if (!chatInput) return;
+
+    chatInput.addEventListener('keydown', function(e) {
+        e.stopPropagation();
+        if (e.code === 'Enter') {
+            e.preventDefault();
+            submitChatInput();
+        } else if (e.code === 'Escape') {
+            e.preventDefault();
+            closeChatInput();
+        }
+    });
+
+    chatInput.addEventListener('keyup', function(e) { e.stopPropagation(); });
+
+    chatInput.addEventListener('input', function() {
+        var len = chatInput.value.length;
+        var max = (typeof MP !== 'undefined') ? MP.CHAT_MAX_LEN : 60;
+        if (chatCounter) chatCounter.textContent = len + '/' + max;
+    });
+})();
+
 // WORLD / REGION MAP TRANSITIONS
 // ============================================
 

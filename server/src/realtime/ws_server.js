@@ -7,7 +7,7 @@ const {
   PROTOCOL_VERSION,
   parseMessage, validateHello, validateInput, validateAction, validateUgcSubmit,
   makeHelloOk, makeSnapshot, makeDelta, makeError, makeUgcUpdate,
-  makeTransferBegin, makeTransferCommit, makeCollisionFull,
+  makeTransferBegin, makeTransferCommit, makeCollisionFull, makeChat,
 } = require('./messages');
 const sim = require('./sim_tick');
 const { wireSnapshot } = require('../zones/zone');
@@ -16,6 +16,8 @@ const ugcValidate = require('../ugc/ugc_validate');
 const AUTH_TIMEOUT_MS = 5000;
 const TRANSFER_IGNORE_NOTIFY_MS = 1000;
 const POS_SYNC_MIN_MS = 40;
+const CHAT_MAX_LEN = 60;
+const CHAT_COOLDOWN_MS = 1000;
 
 // accountId -> ws. Enforces single active connection per account.
 const connByAccount = new Map();
@@ -35,6 +37,7 @@ function initWsServer(wss) {
     // null when no transfer active; { from, to, phase } during transfer.
     // phase: 'begin_sent' | 'commit_sent' | 'snapshot_sent'
     let pendingTransfer = null;
+    let lastChatMs = 0;
 
     const pingInterval = setInterval(() => {
       if (!alive) {
@@ -200,6 +203,32 @@ function initWsServer(wss) {
           } else {
             try { ws.send(makeError('MESSAGE_INVALID', 'bad ugc_submit payload', false)); } catch {}
           }
+          break;
+
+        case 'chat': {
+          const now = Date.now();
+          if (now - lastChatMs < CHAT_COOLDOWN_MS) break;
+          if (typeof msg.text !== 'string') break;
+          const text = msg.text.trim().substring(0, CHAT_MAX_LEN);
+          if (text.length === 0) break;
+          lastChatMs = now;
+          const zone = sim.getZoneForAccount(accountId);
+          if (zone) {
+            const entity = zone.entities.get(entityId);
+            const dn = (entity && entity.displayName) || accountId.substring(0, 8);
+            const chatMsg = makeChat(zone.id, entityId, dn, text);
+            for (const [, pws] of zone.conns) {
+              if (pws.readyState === 1) {
+                try { pws.send(chatMsg); } catch {}
+              }
+            }
+          }
+          break;
+        }
+
+        case 'ping':
+          alive = true;
+          try { ws.send(JSON.stringify({ t: 'pong' })); } catch {}
           break;
 
         default:

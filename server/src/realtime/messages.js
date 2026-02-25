@@ -136,6 +136,13 @@ function makeCollisionFull(zoneId, collision) {
   });
 }
 
+function makeChat(zoneId, entityId, displayName, text) {
+  return JSON.stringify({
+    t: 'chat', v: PROTOCOL_VERSION,
+    zone: zoneId, from: entityId, dn: displayName, text,
+  });
+}
+
 function makeError(code, msg, fatal) {
   return JSON.stringify({
     t: 'error', v: PROTOCOL_VERSION,
@@ -149,5 +156,5 @@ module.exports = {
   validateHello, validateInput, validateAction, validateUgcSubmit,
   makeHelloOk, makeSnapshot, makeDelta, makePosUpdate, makeEvent,
   makeUgcUpdate, makeTransferBegin, makeTransferCommit,
-  makeCollisionFull, makeError,
+  makeCollisionFull, makeChat, makeError,
 };

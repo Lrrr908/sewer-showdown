@@ -9,11 +9,30 @@ const { limiter } = require('./ratelimit');
 const router = Router();
 const SALT_ROUNDS = 12;
 
+// In-memory test accounts for local dev (no DB)
+const _testAccounts = {};
+(async function _initTestAccounts() {
+  const h1 = await bcrypt.hash('testtest', SALT_ROUNDS);
+  const h2 = await bcrypt.hash('testtest', SALT_ROUNDS);
+  _testAccounts['test@test.com'] = { account_id: 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', display_name: 'Player1', password_hash: h1, is_guest: false };
+  _testAccounts['test2@test.com'] = { account_id: 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', display_name: 'Player2', password_hash: h2, is_guest: false };
+  console.log('[auth] test accounts loaded (no-DB mode): test@test.com, test2@test.com');
+})();
+
 function clientIp(req) {
   return req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
 }
 
+let _dbAvailable = null;
+async function checkDb() {
+  if (_dbAvailable !== null) return _dbAvailable;
+  try { await pool.query('SELECT 1'); _dbAvailable = true; } catch { _dbAvailable = false; }
+  return _dbAvailable;
+}
+
 async function createSession(accountId, token, req) {
+  const dbOk = await checkDb();
+  if (!dbOk) return;
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + config.JWT_EXPIRES_IN_SECONDS * 1000);
   const ip = clientIp(req);
@@ -23,13 +42,6 @@ async function createSession(accountId, token, req) {
      VALUES ($1, $2, $3, $4, $5)`,
     [accountId, tokenHash, expiresAt, ip, ua]
   );
-}
-
-let _dbAvailable = null;
-async function checkDb() {
-  if (_dbAvailable !== null) return _dbAvailable;
-  try { await pool.query('SELECT 1'); _dbAvailable = true; } catch { _dbAvailable = false; }
-  return _dbAvailable;
 }
 
 router.post('/guest', async (req, res) => {
@@ -127,15 +139,23 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'email and password are required' });
     }
 
-    const result = await pool.query(
-      `SELECT account_id, display_name, password_hash FROM accounts WHERE email = $1 AND is_guest = FALSE`,
-      [email.trim().toLowerCase()]
-    );
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+    const dbOk = await checkDb();
+    let account;
+    if (dbOk) {
+      const result = await pool.query(
+        `SELECT account_id, display_name, password_hash FROM accounts WHERE email = $1 AND is_guest = FALSE`,
+        [email.trim().toLowerCase()]
+      );
+      if (result.rows.length === 0) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+      account = result.rows[0];
+    } else {
+      account = _testAccounts[email.trim().toLowerCase()];
+      if (!account) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
     }
-
-    const account = result.rows[0];
     const match = await bcrypt.compare(password, account.password_hash);
     if (!match) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -162,10 +182,13 @@ router.post('/logout', async (req, res) => {
     }
     const token = header.slice(7);
     const tokenHash = hashToken(token);
-    await pool.query(
-      `UPDATE sessions SET revoked_at = now() WHERE refresh_token_hash = $1 AND revoked_at IS NULL`,
-      [tokenHash]
-    );
+    const dbOk = await checkDb();
+    if (dbOk) {
+      await pool.query(
+        `UPDATE sessions SET revoked_at = now() WHERE refresh_token_hash = $1 AND revoked_at IS NULL`,
+        [tokenHash]
+      );
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error('[auth] logout error:', e.message);

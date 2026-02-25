@@ -21,6 +21,7 @@ var MP = (function () {
     var SMOOTH_FACTOR = 0.35;
 
     var ws = null;
+    var _keepaliveTimer = null;
     var connected = false;
     var authenticated = false;
     var token = localStorage.getItem('ss_token') || null;
@@ -74,6 +75,10 @@ var MP = (function () {
     var onAuthChange = null;
     var onTransferBegin = null;
     var onTransferCommit = null;
+    var onChatReceived = null;
+
+    var chatBubbles = {};
+    var CHAT_MAX_LEN = 60;
 
     // --- Prediction helpers ---
 
@@ -373,6 +378,12 @@ var MP = (function () {
                 dn: displayName || '',
                 client: { build: 'dev', ua: navigator.userAgent },
             }));
+            if (_keepaliveTimer) clearInterval(_keepaliveTimer);
+            _keepaliveTimer = setInterval(function() {
+                if (ws && ws.readyState === 1) {
+                    ws.send(JSON.stringify({ t: 'ping' }));
+                }
+            }, 15000);
         };
 
         ws.onmessage = function (evt) {
@@ -383,6 +394,7 @@ var MP = (function () {
 
         ws.onclose = function (evt) {
             console.warn('[mp] WS closed: code=' + evt.code + ' reason=' + (evt.reason || 'none'));
+            if (_keepaliveTimer) { clearInterval(_keepaliveTimer); _keepaliveTimer = null; }
             connected = false;
             authenticated = false;
             inputFrozen = false;
@@ -590,6 +602,19 @@ var MP = (function () {
                 if (onUgcUpdate) onUgcUpdate(msg);
                 break;
 
+            case 'chat':
+                if (msg.zone && msg.zone !== currentZone) break;
+                if (msg.from && msg.text) {
+                    var bubbleDuration = Math.max(3000, Math.min(msg.text.length * 60, 7000));
+                    chatBubbles[msg.from] = {
+                        text: msg.text,
+                        dn: msg.dn || '',
+                        expire: Date.now() + bubbleDuration
+                    };
+                    if (onChatReceived) onChatReceived(msg);
+                }
+                break;
+
             case 'error':
                 console.error('[mp] SERVER ERROR:', msg.code, msg.msg, msg.fatal ? '(FATAL)' : '(non-fatal)');
                 if (msg.fatal) {
@@ -694,6 +719,18 @@ var MP = (function () {
         ws.send(JSON.stringify({ t: 'ugc_submit', baseSpriteKey: baseSpriteKey, width: width, height: height, rows: rows }));
     }
 
+
+    function sendChat(text) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        if (typeof text !== 'string') return;
+        text = text.trim().substring(0, CHAT_MAX_LEN);
+        if (text.length === 0) return;
+        ws.send(JSON.stringify({ t: 'chat', text: text }));
+        var bubbleDuration = Math.max(3000, Math.min(text.length * 60, 7000));
+        chatBubbles['__self__'] = { text: text, dn: displayName || '', expire: Date.now() + bubbleDuration };
+    }
+
+    function getChatBubbles() { return chatBubbles; }
     // --- UGC cache ---
 
     function fetchUgcSprite(ugcId, spriteRef) {
@@ -776,6 +813,8 @@ var MP = (function () {
         requestTransfer: requestTransfer,
         requestCollision: requestCollision,
         submitUgcSprite: submitUgcSprite,
+        sendChat: sendChat,
+        getChatBubbles: getChatBubbles,
 
         updateRender: updateRender,
 
@@ -807,6 +846,7 @@ var MP = (function () {
         set onAuthChange(fn) { onAuthChange = fn; },
         set onTransferBegin(fn) { onTransferBegin = fn; },
         set onTransferCommit(fn) { onTransferCommit = fn; },
+        set onChatReceived(fn) { onChatReceived = fn; },
 
         setTileSize: function(s) { TILE_SIZE = s; },
         getTileSize: function() { return TILE_SIZE; },
@@ -816,6 +856,7 @@ var MP = (function () {
         TILE_SIZE: TILE_SIZE,
         SNAP_DIST_PX: SNAP_DIST_PX,
         SMOOTH_FACTOR: SMOOTH_FACTOR,
+        CHAT_MAX_LEN: CHAT_MAX_LEN,
         WS_URL: WS_URL,
         API_URL: API_URL,
 

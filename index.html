@@ -402,6 +402,15 @@
 <body>
     <canvas id="gameCanvas"></canvas>
     
+    <!-- Chat input -->
+    <div id="chatInputWrap" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:500;font-family:'Press Start 2P',monospace;">
+        <div style="background:#111;border:2px solid #fcfc00;border-radius:6px;padding:6px 10px;display:flex;align-items:center;gap:8px;">
+            <input id="chatInput" type="text" maxlength="60" placeholder="Say something..." autocomplete="off"
+                style="width:280px;padding:6px 8px;font-family:inherit;font-size:10px;background:#222;color:#fff;border:1px solid #444;border-radius:4px;outline:none;">
+            <span id="chatCharCount" style="color:#888;font-size:8px;min-width:32px;text-align:right;">0/60</span>
+        </div>
+    </div>
+    
     <!-- Info panel that shows when near a building -->
     <div id="infoPanel" class="hidden">
         <h2 id="artistName">Artist Name</h2>
@@ -466,7 +475,7 @@
     <script src="js/shared/level_schema.js"></script>
     <script src="js/shared/building_fp.js"></script>
     <!-- Multiplayer networking -->
-    <script src="js/multiplayer.js?v=80"></script>
+    <script src="js/multiplayer.js?v=82"></script>
     <!-- Admin bridge (dev-only) -->
     <script src="js/admin-bridge.js?v=41"></script>
     <script>
@@ -489,7 +498,7 @@
     })();
     </script>
     <script src="js/building_pixels.js?v=3"></script>
-    <script src="js/game.js?v=81"></script>
+    <script src="js/game.js?v=82"></script>
     <script>
     // Login overlay wiring
     (function() {
