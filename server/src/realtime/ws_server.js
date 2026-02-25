@@ -60,6 +60,7 @@ function initWsServer(wss) {
     }
 
     ws.on('message', async (raw) => {
+      alive = true;
       const msg = parseMessage(raw);
       if (!msg) return;
 
@@ -199,11 +200,6 @@ function initWsServer(wss) {
           } else {
             try { ws.send(makeError('MESSAGE_INVALID', 'bad ugc_submit payload', false)); } catch {}
           }
-          break;
-
-        case 'ping':
-          alive = true;
-          try { ws.send(JSON.stringify({ t: 'pong' })); } catch {}
           break;
 
         default:
@@ -402,4 +398,4 @@ function errorMsgFor(code, msg) {
   }
 }
 
-module.exports = { initWsServer, connByAccount, getRecentEvents };
+module.exports = { initWsServer, connByAccount };
