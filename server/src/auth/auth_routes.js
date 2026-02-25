@@ -98,7 +98,7 @@ router.post('/register', async (req, res) => {
       [email.trim().toLowerCase(), passwordHash, displayName.trim()]
     );
     const account = result.rows[0];
-    const token = signToken({ sub: account.account_id, is_guest: false, dn: account.display_name, email: email.trim().toLowerCase() });
+    const token = signToken({ sub: account.account_id, is_guest: false, dn: account.display_name });
     await createSession(account.account_id, token, req);
 
     res.status(201).json({
@@ -141,7 +141,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const token = signToken({ sub: account.account_id, is_guest: false, dn: account.display_name, email: account.email });
+    const token = signToken({ sub: account.account_id, is_guest: false, dn: account.display_name });
     await createSession(account.account_id, token, req);
 
     res.json({

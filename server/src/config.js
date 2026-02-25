@@ -31,8 +31,6 @@ module.exports = {
   GUEST_RATE_LIMIT_PER_MIN: parseInt(process.env.GUEST_RATE_LIMIT_PER_MIN, 10) || 10,
   LOGIN_RATE_LIMIT_PER_MIN: parseInt(process.env.LOGIN_RATE_LIMIT_PER_MIN, 10) || 10,
   REGISTER_RATE_LIMIT_PER_MIN: parseInt(process.env.REGISTER_RATE_LIMIT_PER_MIN, 10) || 5,
-
-  TECHNODROME_ALLOWED_EMAILS: (process.env.TECHNODROME_ALLOWED_EMAILS || 'digitalagony@gmail.com,lrr908@gmail.com').split(',').map(e => e.trim().toLowerCase()),
 };
 
 // Build identifier for deploy verification
