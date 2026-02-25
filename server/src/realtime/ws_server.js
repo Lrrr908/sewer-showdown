@@ -62,7 +62,6 @@ function initWsServer(wss) {
     ws.on('message', async (raw) => {
       const msg = parseMessage(raw);
       if (!msg) return;
-      alive = true;
 
       // --- Pre-auth: must be hello ---
       if (!authenticated) {
@@ -403,4 +402,4 @@ function errorMsgFor(code, msg) {
   }
 }
 
-module.exports = { initWsServer, connByAccount };
+module.exports = { initWsServer, connByAccount, getRecentEvents };

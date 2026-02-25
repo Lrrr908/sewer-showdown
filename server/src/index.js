@@ -83,7 +83,8 @@ app.get('/debug/zones', (_req, res) => {
       players,
     };
   }
-  res.json({ ok: true, tick: sim.tickCount, instance: config.INSTANCE_ID, zones });
+  const { getRecentEvents } = require('./realtime/ws_server');
+  res.json({ ok: true, tick: sim.tickCount, instance: config.INSTANCE_ID, zones, recentEvents: getRecentEvents() });
 });
 
 const server = http.createServer(app);
