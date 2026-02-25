@@ -24,6 +24,7 @@ function initWsServer(wss) {
   wss.on('connection', (ws) => {
     let authenticated = false;
     let accountId = null;
+    let accountEmail = null;
     let entityId = null;
     let zoneId = null;
     let alive = true;
@@ -80,6 +81,7 @@ function initWsServer(wss) {
         }
 
         accountId = decoded.sub;
+        accountEmail = (decoded.email || '').toLowerCase();
         clearTimeout(authTimer);
 
         // Single connection per account: close old if exists.
@@ -174,6 +176,10 @@ function initWsServer(wss) {
             handleCollisionRequest(ws, msg);
           } else if (msg.action === 'spawn_pos') {
             handleSpawnPos(msg);
+          } else if (msg.action === 'techno_enter') {
+            handleTechnoEnter(ws);
+          } else if (msg.action === 'techno_exit') {
+            handleTechnoExit(ws);
           }
           break;
 
@@ -199,6 +205,11 @@ function initWsServer(wss) {
           } else {
             try { ws.send(makeError('MESSAGE_INVALID', 'bad ugc_submit payload', false)); } catch {}
           }
+          break;
+
+        case 'ping':
+          alive = true;
+          try { ws.send(JSON.stringify({ t: 'pong' })); } catch {}
           break;
 
         default:
@@ -322,6 +333,30 @@ function initWsServer(wss) {
       const desc = zone.collisionDescriptor;
       if (!desc) return;
       try { ws.send(makeCollisionFull(zone.id, desc)); } catch {}
+    }
+
+    function handleTechnoEnter(ws) {
+      var allowed = config.TECHNODROME_ALLOWED_EMAILS || [];
+      if (accountEmail && allowed.length > 0 && !allowed.includes(accountEmail)) {
+        try { ws.send(JSON.stringify({ t: 'event', event: 'techno_ack', ok: false, reason: 'not_authorized' })); } catch {}
+        return;
+      }
+      var zone = sim.getZoneForAccount(accountId);
+      if (!zone) {
+        try { ws.send(JSON.stringify({ t: 'event', event: 'techno_ack', ok: false, reason: 'no_zone' })); } catch {}
+        return;
+      }
+      var ok = zone.lockTechnodrome(entityId, accountId);
+      try { ws.send(JSON.stringify({ t: 'event', event: 'techno_ack', ok: ok, action: 'enter' })); } catch {}
+      if (ok) console.log('[ws] ' + entityId + ' (' + accountEmail + ') entered technodrome');
+    }
+
+    function handleTechnoExit(ws) {
+      var zone = sim.getZoneForAccount(accountId);
+      if (!zone) return;
+      zone.unlockTechnodrome(entityId);
+      try { ws.send(JSON.stringify({ t: 'event', event: 'techno_ack', ok: true, action: 'exit' })); } catch {}
+      console.log('[ws] ' + entityId + ' exited technodrome');
     }
 
     ws.on('close', (code, reason) => {

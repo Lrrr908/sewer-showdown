@@ -3681,6 +3681,12 @@ const game = {
         direction: 'right',    // last direction van was facing
         frame: 0
     },
+    technodrome: {
+        x: 0, y: 0, direction: 'right', frame: 0,
+        ownerId: null, ownerName: null,
+        eyeFrame: 0, eyeTimer: 0, trackFrame: 0, trackTimer: 0,
+        spawned: false
+    },
     turtle: {
         x: 0, y: 0,
         width: 32, height: 32,
@@ -4039,7 +4045,17 @@ const SPRITE_MANIFEST = {
     blimp:             'sprites/world/blimp1.png',
     blimp1:            'sprites/world/blimp1.png',
     blimp2:            'sprites/world/blimp2.png',
-    blimp3:            'sprites/world/blimp3.png'
+    blimp3:            'sprites/world/blimp3.png',
+
+    // Technodrome
+    technoBase:        'sprites/technodrome/base.png',
+    technoTrack1:      'sprites/technodrome/track1.png',
+    technoTrack2:      'sprites/technodrome/track2.png',
+    technoWeaponL:     'sprites/technodrome/weapon_left.png',
+    technoWeaponR:     'sprites/technodrome/weapon_right.png',
+    technoEye1:        'sprites/technodrome/eye1.png',
+    technoEye2:        'sprites/technodrome/eye2.png',
+    technoEye3:        'sprites/technodrome/eye3.png'
 };
 
 const REQUIRED_SPRITE_KEYS = [
@@ -4697,21 +4713,104 @@ const BUILDING_TYPE_DRAWERS = {
 };
 
 function drawBuildingDimensionX(x, y, bw, bh) {
-    var unlocked = Object.keys(game.progress.collectedItems).length >= 10;
-    drawBldgSprite(x, y, bw, bh, 'bldgRedBlue', 'DIM-X', NES.PAL.N, unlocked);
-    if (!unlocked) {
-        ctx.strokeStyle = NES.PAL.P;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(x + 20, y + 40); ctx.lineTo(x + bw - 20, y + bh - 20);
-        ctx.moveTo(x + bw - 20, y + 40); ctx.lineTo(x + 20, y + bh - 20);
-        ctx.stroke();
-        ctx.fillStyle = NES.PAL.R;
-        ctx.font = 'bold 8px "Press Start 2P", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('LOCKED', x + bw / 2, y + bh / 2 + 3);
-        ctx.textAlign = 'left';
+    var baseSprite = game.sprites.technoBase;
+    if (baseSprite) {
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        var scale = bw / baseSprite.width;
+        var sh = baseSprite.height * scale;
+        ctx.drawImage(baseSprite, x, y + bh - sh, bw, sh);
+        ctx.restore();
+    } else {
+        drawBldgSprite(x, y, bw, bh, 'bldgRedBlue', 'DIM-X', NES.PAL.N, false);
     }
+    ctx.fillStyle = '#8800ff';
+    ctx.font = 'bold 7px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('DIM-X', x + bw / 2, y + 10);
+    ctx.textAlign = 'left';
+}
+
+// ── Technodrome composite rendering ─────────────────────────────
+var _technoEyeTimer = 0;
+var _technoEyeFrame = 0;
+var _technoTrackTimer = 0;
+var _technoTrackFrame = 0;
+var TECHNO_EYE_KEYS = ['technoEye1', 'technoEye2', 'technoEye3', 'technoEye2'];
+var TECHNO_TRACK_KEYS = ['technoTrack1', 'technoTrack2'];
+var TECHNO_DRAW_W = 192;
+var TECHNO_DRAW_H = 144;
+
+function drawTechnodromeComposite(sx, sy, direction, moving) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    var baseSprite = game.sprites.technoBase;
+    if (!baseSprite) { ctx.fillStyle = '#4444aa'; ctx.fillRect(sx, sy, TECHNO_DRAW_W, TECHNO_DRAW_H); ctx.restore(); return; }
+
+    var flipX = (direction === 'left');
+    var dw = TECHNO_DRAW_W, dh = TECHNO_DRAW_H;
+
+    ctx.translate(sx + dw / 2, sy + dh / 2);
+    if (flipX) ctx.scale(-1, 1);
+
+    ctx.drawImage(baseSprite, -dw / 2, -dh / 2, dw, dh);
+
+    if (moving) {
+        _technoTrackTimer += 0.016;
+        if (_technoTrackTimer >= 0.12) { _technoTrackTimer = 0; _technoTrackFrame = (_technoTrackFrame + 1) % 2; }
+    }
+    var trackSprite = game.sprites[TECHNO_TRACK_KEYS[_technoTrackFrame]];
+    if (trackSprite) {
+        var tw = dw * 0.75, th = dh * 0.18;
+        ctx.drawImage(trackSprite, -tw / 2, dh / 2 - th - 2, tw, th);
+    }
+
+    _technoEyeTimer += 0.016;
+    if (_technoEyeTimer >= 0.3) { _technoEyeTimer = 0; _technoEyeFrame = (_technoEyeFrame + 1) % 4; }
+    var eyeSprite = game.sprites[TECHNO_EYE_KEYS[_technoEyeFrame]];
+    if (eyeSprite) {
+        var ew = dw * 0.22, eh = dh * 0.22;
+        ctx.drawImage(eyeSprite, -ew / 2 + dw * 0.02, -dh / 2 + dh * 0.05, ew, eh);
+    }
+
+    var wlSprite = game.sprites.technoWeaponL;
+    if (wlSprite) {
+        var wlw = dw * 0.28, wlh = dh * 0.25;
+        ctx.drawImage(wlSprite, -dw / 2 - wlw * 0.3, dh * 0.05, wlw, wlh);
+    }
+    var wrSprite = game.sprites.technoWeaponR;
+    if (wrSprite) {
+        var wrw = dw * 0.18, wrh = dh * 0.18;
+        ctx.drawImage(wrSprite, dw / 2 - wrw * 0.7, dh * 0.05, wrw, wrh);
+    }
+
+    ctx.restore();
+}
+
+function drawParkedTechnodrome() {
+    if (!game.technodrome.spawned) return;
+    if (game.controllerEntity === 'technodrome') return;
+    var t = game.technodrome;
+    var sx = t.x - game.camera.x;
+    var sy = t.y - game.camera.y;
+    if (sx < -256 || sx > CANVAS_WIDTH + 256 || sy < -256 || sy > CANVAS_HEIGHT + 256) return;
+    drawTechnodromeComposite(sx, sy, t.direction, false);
+    ctx.font = '7px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(sx + TECHNO_DRAW_W / 2 - 40, sy - 14, 80, 12);
+    ctx.fillStyle = '#ff44ff';
+    ctx.fillText('TECHNODROME', sx + TECHNO_DRAW_W / 2, sy - 4);
+    ctx.textAlign = 'left';
+}
+
+function drawDrivenTechnodrome() {
+    if (game.controllerEntity !== 'technodrome') return;
+    var p = game.player;
+    var sx = p.x - game.camera.x;
+    var sy = p.y - game.camera.y;
+    var moving = inputState.up || inputState.down || inputState.left || inputState.right;
+    drawTechnodromeComposite(sx, sy, p.direction, moving);
 }
 
 function drawBuilding(b, index) {
@@ -4962,6 +5061,14 @@ function _drawRemotePlayer(_rp) {
     var _rpy = _rpWorldY - game.camera.y;
     var _rDir = _drFacingToDir[_rp.facing] || 'down';
     var _rMode = _rp.mode || 'van';
+    if (_rMode === 'technodrome') {
+        drawTechnodromeComposite(_rpx, _rpy, _rDir, sm.moving);
+        ctx.font = '8px monospace'; ctx.textAlign = 'center';
+        var _tLabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(_rpx + TECHNO_DRAW_W/2 - 30, _rpy - 14, 60, 12);
+        ctx.fillStyle = '#ff44ff'; ctx.fillText(_tLabel, _rpx + TECHNO_DRAW_W/2, _rpy - 4); ctx.textAlign = 'left';
+        return;
+    }
     var _rTid = _rp.tid || 'leo';
     if (_rMode === 'foot' && typeof NES !== 'undefined') {
         if (_rp.vpx != null && _rp.vpy != null) {
@@ -5192,9 +5299,13 @@ function drawUI() {
     if (game.mode === 'WORLD') {
         ctx.fillText('ARROWS:Move  ENTER:Region', 10, CANVAS_HEIGHT - 8);
     } else if (game.controllerEntity === 'foot') {
-        ctx.fillText('ARROWS:Move  ENTER:Visit/Level  T:Van', 10, CANVAS_HEIGHT - 8);
+        ctx.fillText('ARROWS:Move  ENTER:Visit/Level/Board  T:Van', 10, CANVAS_HEIGHT - 8);
     } else {
-        ctx.fillText('ARROWS:Move  ENTER:Visit  T:Exit Van  M:World', 10, CANVAS_HEIGHT - 8);
+        if (game.controllerEntity === 'technodrome') {
+            ctx.fillText('ARROWS:Move  T:Exit Technodrome', 10, CANVAS_HEIGHT - 8);
+        } else {
+            ctx.fillText('ARROWS:Move  ENTER:Visit  T:Exit Van  M:World', 10, CANVAS_HEIGHT - 8);
+        }
     }
 }
 
@@ -5551,7 +5662,7 @@ function setActiveBuilding(buildingId) {
 // ============================================
 
 function canEnterActiveBuilding() {
-    return game.state === 'OVERWORLD' && game.activeBuildingId !== null;
+    return game.state === 'OVERWORLD' && game.activeBuildingId !== null && game.controllerEntity === 'foot';
 }
 
 function requestEnterActiveBuilding() {
@@ -5636,6 +5747,18 @@ function requestPrimaryAction() {
         var levelCtx = getLevelForContext();
         if (levelCtx) {
             startEnterLevelFromContext(levelCtx);
+            return;
+        }
+    }
+
+    // Technodrome boarding: on foot near parked Technodrome
+    if (game.controllerEntity === 'foot' && game.technodrome.spawned) {
+        var t = game.turtle;
+        var tech = game.technodrome;
+        var tdist = Math.hypot((t.x + t.width/2) - (tech.x + TECHNO_DRAW_W/2),
+                               (t.y + t.height/2) - (tech.y + TECHNO_DRAW_H/2));
+        if (tdist <= TECHNO_DRAW_W * 0.8) {
+            enterTechnodrome();
             return;
         }
     }
@@ -5918,6 +6041,10 @@ function updateTransition(dt) {
 function attemptToggleVanFoot() {
     if (game.mode !== 'REGION') return;
     if (game.state !== 'OVERWORLD') return;
+    if (game.controllerEntity === 'technodrome') {
+        exitTechnodrome();
+        return;
+    }
     if (game.mapTransition.active || game.blimpFade.active) return;
 
     var p = game.player;
@@ -5968,6 +6095,48 @@ function attemptToggleVanFoot() {
         p.direction = game.van.direction;
         game.controllerEntity = 'van';
     }
+}
+
+
+function enterTechnodrome() {
+    if (game.controllerEntity !== 'foot') return;
+    if (!game.technodrome.spawned) return;
+    var t = game.turtle;
+    var tech = game.technodrome;
+    var dist = Math.hypot((t.x + t.width/2) - (tech.x + TECHNO_DRAW_W/2),
+                          (t.y + t.height/2) - (tech.y + TECHNO_DRAW_H/2));
+    if (dist > TECHNO_DRAW_W) return;
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendAction('techno_enter', {});
+    }
+    game.player.x = tech.x;
+    game.player.y = tech.y;
+    game.player.direction = tech.direction;
+    game.player.width = TECHNO_DRAW_W;
+    game.player.height = TECHNO_DRAW_H;
+    game.player.pxPerSecond = 200;
+    game.controllerEntity = 'technodrome';
+}
+
+function exitTechnodrome() {
+    if (game.controllerEntity !== 'technodrome') return;
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendAction('techno_exit', {});
+    }
+    var p = game.player;
+    game.technodrome.x = p.x;
+    game.technodrome.y = p.y;
+    game.technodrome.direction = p.direction;
+    var t = game.turtle;
+    t.x = p.x + TECHNO_DRAW_W + 8;
+    t.y = p.y + TECHNO_DRAW_H / 2;
+    if (checkTurtleCollision(t.x, t.y)) {
+        t.x = p.x - t.width - 8;
+    }
+    p.width = 128;
+    p.height = 128;
+    p.pxPerSecond = 300;
+    game.controllerEntity = 'foot';
 }
 
 function getVanReenterDist() {
@@ -6102,11 +6271,11 @@ function update(dt) {
 
         var _facing = dx < 0 ? 'w' : dx > 0 ? 'e' : dy < 0 ? 'n' : 's';
         if (typeof MP !== 'undefined' && MP.isConnected()) {
-            MP.sendPosSync(p.x, p.y, _facing, 'van', game.activeTurtle);
+            MP.sendPosSync(p.x, p.y, _facing, game.controllerEntity === 'technodrome' ? 'technodrome' : 'van', game.activeTurtle);
         }
     } else if (typeof MP !== 'undefined' && MP.isConnected()) {
         var _idleFacing = p.direction === 'left' ? 'w' : p.direction === 'right' ? 'e' : p.direction === 'up' ? 'n' : 's';
-        MP.sendPosSync(p.x, p.y, _idleFacing, game.controllerEntity === 'foot' ? 'foot' : 'van', game.activeTurtle);
+        MP.sendPosSync(p.x, p.y, _idleFacing, game.controllerEntity, game.activeTurtle);
     }
     
     p.moving = isMoving;
@@ -7745,9 +7914,12 @@ function draw() {
             // so buildings at/below the player render ON TOP (closer to camera)
             if (!_playerDrawn && ry >= _playerSortY) {
                 _playerDrawn = true;
+                drawParkedTechnodrome();
                 if (game.controllerEntity === 'foot') {
                     drawParkedVan();
                     drawOnFootTurtle();
+                } else if (game.controllerEntity === 'technodrome') {
+                    drawDrivenTechnodrome();
                 } else {
                     drawPartyWagon();
                 }
@@ -7788,9 +7960,12 @@ function draw() {
 
         // If player wasn't drawn (below all buildings), draw now
         if (!_playerDrawn) {
+            drawParkedTechnodrome();
             if (game.controllerEntity === 'foot') {
                 drawParkedVan();
                 drawOnFootTurtle();
+            } else if (game.controllerEntity === 'technodrome') {
+                drawDrivenTechnodrome();
             } else {
                 drawPartyWagon();
             }
@@ -10820,6 +10995,30 @@ async function init() {
     loadPackRegistry().then(function() { return loadAllSprites(); }).then(function() {
         game.spritesReady = true;
         console.log('Sprites loaded.');
+    // Spawn Technodrome at Dimension X Toys building
+    (function spawnTechnodrome() {
+        for (var i = 0; i < BUILDINGS.length; i++) {
+            if (BUILDINGS[i].id === 'dimension_x_toys' || BUILDINGS[i].buildingType === 'dimension_x') {
+                game.technodrome.x = BUILDINGS[i].worldX;
+                game.technodrome.y = BUILDINGS[i].worldY - TECHNO_DRAW_H + TILE_SIZE;
+                game.technodrome.spawned = true;
+                console.log('Technodrome spawned at', game.technodrome.x, game.technodrome.y);
+                break;
+            }
+        }
+        if (!game.technodrome.spawned) {
+            for (var fi = 0; fi < FILLER_BUILDINGS.length; fi++) {
+                var fb = FILLER_BUILDINGS[fi];
+                if (fb.id === 'dimension_x_toys' || fb.buildingType === 'dimension_x') {
+                    game.technodrome.x = (fb.x || 0) * TILE_SIZE;
+                    game.technodrome.y = (fb.y || 0) * TILE_SIZE;
+                    game.technodrome.spawned = true;
+                    console.log('Technodrome spawned at filler', game.technodrome.x, game.technodrome.y);
+                    break;
+                }
+            }
+        }
+    })();
     });
 }
 

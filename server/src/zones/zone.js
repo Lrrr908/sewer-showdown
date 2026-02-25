@@ -72,10 +72,32 @@ class Zone {
   removeEntity(entityId) {
     const entity = this.entities.get(entityId);
     if (entity) this.byAccount.delete(entity.accountId);
+    if (this._technodromeOwner === entityId) {
+      this._technodromeOwner = null;
+      this._technodromeOwnerAccount = null;
+    }
     this.entities.delete(entityId);
     this.conns.delete(entityId);
     this.aoi.removePlayer(entityId);
     this.dirtyRemoves.add(entityId);
+  }
+
+  lockTechnodrome(entityId, accountId) {
+    if (this._technodromeOwner && this._technodromeOwner !== entityId) return false;
+    this._technodromeOwner = entityId;
+    this._technodromeOwnerAccount = accountId;
+    return true;
+  }
+
+  unlockTechnodrome(entityId) {
+    if (this._technodromeOwner !== entityId) return false;
+    this._technodromeOwner = null;
+    this._technodromeOwnerAccount = null;
+    return true;
+  }
+
+  getTechnodromeOwner() {
+    return { entityId: this._technodromeOwner, accountId: this._technodromeOwnerAccount };
   }
 
   removeConn(entityId) {

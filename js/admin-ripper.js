@@ -59,7 +59,8 @@
             { v: 'sprites/enemies.png', t: 'enemies.png' },
             { v: 'sprites/items.png', t: 'items.png' },
             { v: 'sprites/title.png', t: 'title.png' },
-            { v: 'sprites/shredder.png', t: 'shredder.png' }
+            { v: 'sprites/shredder.png', t: 'shredder.png' },
+            { v: 'sprites/technodrome.png', t: 'technodrome.png' }
         ];
         knownSheets.forEach(function (s) { quickSel.appendChild(el('option', { value: s.v, textContent: s.t })); });
         quickSel.addEventListener('change', function () { if (this.value) quickLoadSheet(this.value); this.selectedIndex = 0; });
