@@ -1,0 +1,252 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>IG Curated Feed Admin</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px; max-width: 980px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; }
+    h2 { margin-top: 22px; }
+    input, select, button { padding: 10px; font-size: 16px; }
+    button { cursor: pointer; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 10px 0; }
+    .muted { color: #666; }
+    .small { font-size: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .w200 { min-width: 200px; }
+    .grow { flex: 1; min-width: 260px; }
+    .pill { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #f2f2f2; font-size: 12px; }
+    .ok { background: #e8f8ea; }
+    .fail { background: #fde8e8; }
+    .missing { background: #f3f3f3; }
+    .hr { border-top: 1px solid #eee; margin: 18px 0; }
+    .danger { background: #fff3f3; border: 1px solid #ffd1d1; padding: 10px; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <h1>IG Curated Feed Admin</h1>
+  <div class="muted">Manage artists and curated Instagram post URLs.</div>
+  <div class="hr"></div>
+
+  <h2>Admin key</h2>
+  <div class="row">
+    <input id="adminKey" class="grow" placeholder="Paste admin key" />
+    <button id="saveKey">Save</button>
+    <button id="clearKey">Clear</button>
+    <span id="keyStatus" class="muted small"></span>
+  </div>
+  <div class="danger small">
+    Tip: use <span class="mono">/admin/ig#key=YOUR_KEY</span> once &mdash; key is saved to localStorage and
+    stripped from the URL.
+  </div>
+  <div class="hr"></div>
+
+  <h2>Create / update artist</h2>
+  <div class="row">
+    <input id="artistId" class="w200" placeholder="id (slug, e.g. pixel_dan)" />
+    <input id="artistName" class="grow" placeholder="display_name" />
+  </div>
+  <div class="row">
+    <input id="artistHandle" class="w200" placeholder="ig_handle (optional)" />
+    <input id="artistSort" class="w200" placeholder="sort_order (0..)" />
+    <button id="saveArtist">Save Artist</button>
+    <span id="artistStatus" class="muted small"></span>
+  </div>
+  <div class="hr"></div>
+
+  <h2>Add curated post URL</h2>
+  <div class="row">
+    <select id="artistSelect" class="w200"></select>
+    <input id="postUrl" class="grow" placeholder="https://www.instagram.com/p/..." />
+    <button id="addPost">Add</button>
+    <span id="addPostStatus" class="muted small"></span>
+  </div>
+  <div class="hr"></div>
+
+  <h2>Refresh oEmbed cache</h2>
+  <div class="row">
+    <button id="refreshAll">Refresh All Stale</button>
+    <button id="refreshArtist">Refresh Selected Artist</button>
+    <span id="refreshStatus" class="muted small"></span>
+  </div>
+  <div class="hr"></div>
+
+  <h2>Current curated posts</h2>
+  <div id="posts" class="muted">Loading&hellip;</div>
+
+<script>
+  const keyFromHash = new URLSearchParams(location.hash.slice(1)).get("key");
+  if (keyFromHash) {
+    localStorage.setItem("IG_ADMIN_KEY", keyFromHash);
+    history.replaceState(null, "", "/admin/ig");
+  }
+
+  const $ = (id) => document.getElementById(id);
+  const getKey = () => localStorage.getItem("IG_ADMIN_KEY");
+  const setKey = (k) => k ? localStorage.setItem("IG_ADMIN_KEY", k) : localStorage.removeItem("IG_ADMIN_KEY");
+  const setText = (id, text) => $(id).textContent = text || "";
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+    ));
+  }
+
+  async function adminFetch(url, opts={}) {
+    const key = getKey();
+    if (!key) throw new Error("Missing admin key");
+    const res = await fetch(url, {
+      ...opts,
+      headers: { ...(opts.headers||{}), "content-type": "application/json", "x-admin-key": key }
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (!res.ok) throw new Error(data?.error || data?.message || "HTTP " + res.status);
+    return data;
+  }
+
+  function statusPill(status) {
+    if (!status) return '<span class="pill missing">none</span>';
+    const s = String(status).toLowerCase();
+    if (s === "ok") return '<span class="pill ok">ok</span>';
+    if (s === "fail") return '<span class="pill fail">fail</span>';
+    return '<span class="pill missing">' + status + '</span>';
+  }
+
+  $("adminKey").value = getKey() || "";
+  setText("keyStatus", getKey() ? "Key loaded." : "No key saved.");
+
+  $("saveKey").onclick = () => {
+    const k = $("adminKey").value.trim();
+    setKey(k);
+    setText("keyStatus", k ? "Saved." : "Cleared.");
+  };
+  $("clearKey").onclick = () => {
+    setKey("");
+    $("adminKey").value = "";
+    setText("keyStatus", "Cleared.");
+  };
+
+  async function loadArtistsDropdown() {
+    const res = await fetch("/ig/artists");
+    const data = await res.json();
+    const sel = $("artistSelect");
+    sel.innerHTML = "";
+    for (const a of (data.items || [])) {
+      const opt = document.createElement("option");
+      opt.value = a.id;
+      opt.textContent = a.display_name + " (" + a.id + ")";
+      sel.appendChild(opt);
+    }
+  }
+
+  async function loadPostsList() {
+    const wrap = $("posts");
+    wrap.innerHTML = "<div class='muted'>Loading&hellip;</div>";
+    if (!getKey()) { wrap.innerHTML = "<div class='muted'>Set admin key to load data.</div>"; return; }
+
+    let data;
+    try {
+      data = await adminFetch("/ig-admin/list", { method: "GET" });
+    } catch (err) {
+      wrap.innerHTML = "<div class='muted' style='color:#a00;'>Failed to load: " + esc(err.message) + "</div>";
+      return;
+    }
+    const items = data.items || [];
+    if (!items.length) { wrap.innerHTML = "<div class='muted'>No posts yet.</div>"; return; }
+
+    wrap.innerHTML = "";
+    for (const p of items) {
+      const div = document.createElement("div");
+      div.className = "card";
+      const thumb = p.cached_thumb_path ? "/ig-thumbs/" + p.cached_thumb_path : null;
+      div.innerHTML =
+        '<div><strong>' + esc(p.artistName) + '</strong> <span class="muted small">(' + esc(p.artistId) + ')</span></div>' +
+        '<div class="small mono" style="margin-top:6px;word-break:break-all;">' + esc(p.postUrl) + '</div>' +
+        '<div class="row" style="margin-top:10px;">' +
+          '<button data-act="toggle" data-id="' + esc(p.id) + '">' + (p.is_active ? "Disable" : "Enable") + '</button>' +
+          '<button data-act="pin" data-id="' + esc(p.id) + '">' + (p.is_pinned ? "Unpin" : "Pin") + '</button>' +
+          '<button data-act="refresh" data-url="' + esc(p.postUrl) + '">Refresh One</button>' +
+          '<a href="' + esc(p.postUrl) + '" target="_blank" rel="noreferrer" class="small">Open on IG</a> ' +
+          statusPill(p.cache_status) +
+        '</div>' +
+        '<div class="small muted">thumb: ' + esc(p.cached_thumb_path||"none") + ' | fetched: ' + esc(p.fetched_at||"none") + '</div>' +
+        (thumb ? '<img src="' + esc(thumb) + '" style="max-width:220px;border-radius:8px;border:1px solid #eee;margin-top:10px;" />' : "") +
+        (p.error ? '<div class="small" style="margin-top:8px;color:#a00;">' + esc(p.error) + '</div>' : "");
+      wrap.appendChild(div);
+    }
+
+    wrap.onclick = async (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      try {
+        const act = btn.dataset.act;
+        if (act === "toggle") await adminFetch("/ig-admin/post/toggle", { method:"POST", body: JSON.stringify({ id: Number(btn.dataset.id) }) });
+        else if (act === "pin") await adminFetch("/ig-admin/post/pin", { method:"POST", body: JSON.stringify({ id: Number(btn.dataset.id) }) });
+        else if (act === "refresh") await adminFetch("/ig-admin/refresh-one", { method:"POST", body: JSON.stringify({ postUrl: btn.dataset.url }) });
+        await loadPostsList();
+      } catch (err) { alert(err.message); }
+    };
+  }
+
+  $("saveArtist").onclick = async () => {
+    setText("artistStatus", "");
+    try {
+      const id = $("artistId").value.trim();
+      const display_name = $("artistName").value.trim();
+      if (!id || !display_name) { setText("artistStatus", "id + display_name required."); return; }
+      await adminFetch("/ig-admin/artist", { method:"POST", body: JSON.stringify({
+        id, display_name,
+        ig_handle: $("artistHandle").value.trim() || null,
+        sort_order: Number($("artistSort").value || "0") || 0
+      })});
+      setText("artistStatus", "Saved.");
+      await loadArtistsDropdown();
+    } catch (err) { setText("artistStatus", "Error: " + err.message); }
+  };
+
+  $("addPost").onclick = async () => {
+    setText("addPostStatus", "");
+    try {
+      const artistId = $("artistSelect").value;
+      const postUrl = $("postUrl").value.trim();
+      if (!artistId) throw new Error("No artist selected");
+      if (!postUrl) throw new Error("Paste a post URL");
+      await adminFetch("/ig-admin/artist/" + encodeURIComponent(artistId) + "/post", {
+        method:"POST", body: JSON.stringify({ postUrl })
+      });
+      $("postUrl").value = "";
+      setText("addPostStatus", "Added.");
+      await loadPostsList();
+    } catch (err) { setText("addPostStatus", "Error: " + err.message); }
+  };
+
+  $("refreshAll").onclick = async () => {
+    setText("refreshStatus", "Refreshing...");
+    try {
+      const data = await adminFetch("/ig-admin/refresh-oembed", { method:"POST", body: JSON.stringify({}) });
+      setText("refreshStatus", "Done. ok=" + data.ok + " fail=" + data.fail + " refreshed=" + data.refreshed);
+      await loadPostsList();
+    } catch (err) { setText("refreshStatus", "Error: " + err.message); }
+  };
+
+  $("refreshArtist").onclick = async () => {
+    setText("refreshStatus", "Refreshing artist...");
+    try {
+      const data = await adminFetch("/ig-admin/refresh-oembed", { method:"POST", body: JSON.stringify({ artistId: $("artistSelect").value }) });
+      setText("refreshStatus", "Done. ok=" + data.ok + " fail=" + data.fail);
+      await loadPostsList();
+    } catch (err) { setText("refreshStatus", "Error: " + err.message); }
+  };
+
+  (async function init() {
+    await loadArtistsDropdown();
+    await loadPostsList();
+  })();
+</script>
+</body>
+</html>

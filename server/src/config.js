@@ -31,6 +31,12 @@ module.exports = {
   GUEST_RATE_LIMIT_PER_MIN: parseInt(process.env.GUEST_RATE_LIMIT_PER_MIN, 10) || 10,
   LOGIN_RATE_LIMIT_PER_MIN: parseInt(process.env.LOGIN_RATE_LIMIT_PER_MIN, 10) || 10,
   REGISTER_RATE_LIMIT_PER_MIN: parseInt(process.env.REGISTER_RATE_LIMIT_PER_MIN, 10) || 5,
+
+  IG_ADMIN_KEY:        process.env.IG_ADMIN_KEY        || 'dev-ig-admin-key',
+  IG_OEMBED_TOKEN:     process.env.IG_OEMBED_TOKEN     || null,
+  META_GRAPH_VERSION:  process.env.META_GRAPH_VERSION  || 'v21.0',
+
+  TECHNODROME_ALLOWED_EMAILS: (process.env.TECHNODROME_ALLOWED_EMAILS || 'dimensionxtoys@gmail.com,digitalagony@gmail.com').split(',').map(e => e.trim().toLowerCase()),
 };
 
 // Build identifier for deploy verification

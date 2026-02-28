@@ -5779,7 +5779,7 @@ function requestPrimaryAction() {
     }
 
     // Level entrances: check building type or landmark (blocked during re-entry grace)
-    if (game.mode === 'REGION' && game.state === 'OVERWORLD' && game.levelReentryGrace <= 0) {
+    if (game.mode === 'REGION' && game.state === 'OVERWORLD' && game.levelReentryGrace <= 0 && !game.activeBuildingId) {
         var levelCtx = getLevelForContext();
         if (levelCtx) {
             startEnterLevelFromContext(levelCtx);
@@ -5866,6 +5866,10 @@ function openBuildingOverlay(buildingId) {
     const building = BUILDING_BY_ID[buildingId];
     if (!building) { console.error('openBuildingOverlay: building not found:', buildingId); return false; }
 
+    var enterBtn = document.getElementById('overlayEnterLevelBtn');
+    var hasLevel = !!(building.buildingType && LEVEL_ROUTES.buildingType[building.buildingType]) || (!building.buildingType || building.buildingType === 'gallery');
+    if (enterBtn) enterBtn.style.display = hasLevel ? '' : 'none';
+
     renderOverlayForBuilding(buildingId);
     overlay.classList.remove('hidden');
     return true;
@@ -5928,6 +5932,52 @@ function renderOverlayForBuilding(buildingId) {
         setHeroIndex(0);
     } else {
         showHeroEmpty();
+    }
+
+    var feedGrid = document.getElementById('overlayFeedGrid');
+    var heroWrap = document.getElementById('overlayHeroWrap');
+    var thumbsEl = document.getElementById('overlayThumbs');
+    if (heroWrap) heroWrap.style.display = 'none';
+    if (thumbsEl) thumbsEl.style.display = 'none';
+    if (feedGrid) {
+        feedGrid.innerHTML = '';
+        if (building && building.artistId) {
+            fetch('http://localhost:3000/ig/artist/' + building.artistId + '/feed')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!feedGrid) return;
+                    var posts = data.items || data.posts || [];
+                    if (posts.length > 0) {
+                        feedGrid.innerHTML = '';
+                        posts.forEach(function(post) {
+                            var card = document.createElement('a');
+                            card.href = post.openUrl || post.postUrl || '#';
+                            card.target = '_blank';
+                            card.className = 'feed-card';
+                            if (post.imageUrl) {
+                                var img = document.createElement('img');
+                                img.referrerPolicy = 'no-referrer';
+                                img.crossOrigin = 'anonymous';
+                                img.src = post.imageUrl;
+                                img.alt = post.authorName || '';
+                                img.className = 'feed-card-img';
+                                card.appendChild(img);
+                            } else {
+                                var ph = document.createElement('div');
+                                ph.className = 'feed-card-placeholder';
+                                ph.textContent = 'NO IMG';
+                                card.appendChild(ph);
+                            }
+                            feedGrid.appendChild(card);
+                        });
+                    } else {
+                        feedGrid.innerHTML = '';
+                    }
+                })
+                .catch(function() {
+                    feedGrid.innerHTML = '';
+                });
+        }
     }
 }
 
@@ -6520,8 +6570,8 @@ function drawHighwayOverlay(sx, sy, tx, ty) {
 
 // ── Highway micro-features (roadside dressing, pure visual) ─────
 
-const HW_DRESSING_INTERVAL = 11;
-const HW_DRESSING_TYPES = ['billboard', 'gas', 'rest_stop', 'mile_marker'];
+const HW_DRESSING_INTERVAL = 211;
+const HW_DRESSING_TYPES = ['rest_stop'];
 
 // ── Background buildings draw ────────────────────────────────────
 var _tintVariants = [
@@ -7207,8 +7257,8 @@ function drawRoadsideMileMarker(x, y, hash) {
 // ── Roadside POI system ─────────────────────────────────────────
 // Deterministic POIs reuse the same tileHash placement as dressing.
 // Types: 'gas' (heal to full HP in next level), 'rest_stop' (speed boost), 'billboard' used as 'view' (postcard).
-const POI_TYPES = { gas: true, rest_stop: true, billboard: true };
-const POI_PROMPTS = { gas: 'SUPPLIES (A)', rest_stop: 'REST (A)', billboard: 'VIEW (A)' };
+const POI_TYPES = { rest_stop: true };
+const POI_PROMPTS = { rest_stop: 'SPEED BOOTS (A)' };
 
 function updatePOIProximity() {
     if (!ROAD_GRID || !ROAD_TYPE_GRID) { game.activePOI = null; return; }
@@ -7659,7 +7709,7 @@ function drawLandmark(lm) {
     } else if (lm.id.indexOf('lm_hw_') === 0) {
         drawHighwaySignpost(sx, sy, lm.label);
     } else if (lm.id.indexOf('lm_welcome_') === 0) {
-        drawWelcomeSign(sx, sy, lm.label);
+        return;
     } else if (lm.id.indexOf('lm_town_') === 0) {
         drawTownSign(sx, sy, lm.label);
     } else if (lm.id.indexOf('lm_blimp_') === 0) {
@@ -8503,6 +8553,35 @@ if (overlayCloseBtn) {
     overlayCloseBtn.addEventListener('click', closeTrigger);
 }
 
+var overlayEnterBtn = document.getElementById('overlayEnterLevelBtn');
+if (overlayEnterBtn) {
+    overlayEnterBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var bid = game.overlay.buildingId;
+        if (!bid) return;
+        closeBuildingOverlay();
+        game.state = 'OVERWORLD';
+        var building = BUILDING_BY_ID[bid];
+        if (building) {
+            game.activeBuildingId = bid;
+            var levelCtx = getLevelForContext();
+            if (levelCtx) {
+                startEnterLevelFromContext(levelCtx);
+            }
+        }
+    });
+}
+
+var buildingOverlayEl = document.getElementById('buildingOverlay');
+if (buildingOverlayEl) {
+    buildingOverlayEl.addEventListener('click', function(e) {
+        if (e.target === buildingOverlayEl) {
+            requestBackAction();
+        }
+    });
+}
+
 // ============================================
 // FOCUS LOSS — clear input on blur/hidden to prevent stuck directions
 // ============================================
@@ -8910,6 +8989,10 @@ function getLevelForContext() {
         if (building && building.buildingType) {
             var route = LEVEL_ROUTES.buildingType[building.buildingType];
             if (route) return resolveRoute(route, game.activeBuildingId);
+        }
+        if (building && (!building.buildingType || building.buildingType === 'gallery')) {
+            var gRoute = LEVEL_ROUTES.buildingType['gallery'];
+            if (gRoute) return resolveRoute(gRoute, game.activeBuildingId);
         }
     }
     return null;
@@ -10177,12 +10260,19 @@ function updateLevel(dt) {
         return;
     }
 
-    // ── Camera ──────────────────────────────────────────────────
+    // ── Camera (center level when smaller than viewport) ───────
     var cw = CANVAS_WIDTH, ch = CANVAS_HEIGHT;
-    var maxCx = L.width * lts - cw;
-    var maxCy = L.height * lts - ch;
-    L.camera.x = Math.max(0, Math.min(maxCx, p.x - cw / 2));
-    L.camera.y = Math.max(0, Math.min(maxCy, p.y - ch / 2));
+    var worldW = L.width * lts, worldH = L.height * lts;
+    if (worldW <= cw) {
+        L.camera.x = -(cw - worldW) / 2;
+    } else {
+        L.camera.x = Math.max(0, Math.min(worldW - cw, p.x - cw / 2));
+    }
+    if (worldH <= ch) {
+        L.camera.y = -(ch - worldH) / 2;
+    } else {
+        L.camera.y = Math.max(0, Math.min(worldH - ch, p.y - ch / 2));
+    }
 }
 
 function levelTileCollision(L, x, y, w, h) {

@@ -1,4 +1,5 @@
 const http = require('http');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -9,6 +10,10 @@ const { PROTOCOL_VERSION } = require('./protocol/version');
 const authRoutes = require('./auth/auth_routes');
 const authMiddleware = require('./auth/auth_middleware');
 const ugcRoutes = require('./ugc/ugc_routes');
+const igPublicRoutes = require('./routes/ig_public');
+const igAdminRoutes  = require('./routes/ig_admin');
+const { refreshOEmbedAll } = require('./ig/refresh_job');
+const { CACHE_DIR }        = require('./ig/thumb_cache');
 const { initWsServer } = require('./realtime/ws_server');
 const { startSimLoop, stopSimLoop } = require('./realtime/sim_tick');
 const zoneDir = require('./zones/zone_directory');
@@ -16,7 +21,9 @@ const zoneDir = require('./zones/zone_directory');
 const app = express();
 const bootTime = Date.now();
 
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
@@ -54,6 +61,19 @@ app.get('/zones', (_req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/ugc', authMiddleware, ugcRoutes);
+
+app.use('/ig',       igPublicRoutes);
+app.use('/ig-admin', igAdminRoutes);
+
+app.get('/admin/ig', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'admin', 'ig.html'));
+});
+
+app.use('/ig-thumbs', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  const file = path.join(CACHE_DIR, path.basename(req.path));
+  res.sendFile(file, err => { if (err) res.status(404).end(); });
+});
 
 app.get('/debug/zones', (_req, res) => {
   const sim = require('./realtime/sim_tick');
@@ -98,8 +118,24 @@ async function boot() {
     console.warn('[db] not available, running without database:', e.message);
   }
 
+  try {
+    const migrate = require('./db/migrate');
+    await migrate();
+    console.log('[db] migrations complete');
+  } catch (e) {
+    console.warn('[db] migrations skipped:', e.message);
+  }
+
   zoneDir.start();
   startSimLoop();
+
+  if (process.env.OEMBED_BOOT_REFRESH !== '0') {
+    setTimeout(() => {
+      refreshOEmbedAll()
+        .then(r => console.log('[ig] boot refresh:', r.ok, 'ok', r.fail, 'fail'))
+        .catch(e => console.warn('[ig] boot refresh error:', e.message));
+    }, 5000);
+  }
 
   server.listen(config.PORT, () => {
     console.log(`[server] listening on :${config.PORT} (${config.NODE_ENV}) protocol v${PROTOCOL_VERSION}`);

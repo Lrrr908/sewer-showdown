@@ -136,7 +136,7 @@
             border: 3px solid #fff;
             border-radius: 50%;
             color: #fff;
-            font-size: 24px;
+            font-size: 32px;
             font-weight: bold;
             cursor: pointer;
             z-index: 200;
@@ -158,6 +158,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
             background: rgba(0, 0, 0, 0.95);
             z-index: 500;
             font-family: 'Press Start 2P', monospace;
@@ -174,8 +175,8 @@
 
         #buildingOverlay h1 {
             color: #fcfc00;
-            font-size: 14px;
-            margin: 8px 0 6px;
+            font-size: 18px;
+            margin: 0 0 8px;
             text-align: center;
             flex-shrink: 0;
             word-break: break-word;
@@ -296,27 +297,18 @@
             display: block;
         }
 
-        /* Sidebar container (portrait: column, landscape: side panel) */
-        .overlay-sidebar {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-            max-width: 500px;
-            flex-shrink: 0;
-        }
 
         /* Overlay action buttons */
         #buildingOverlay .overlay-ig {
             display: inline-block;
             background: #4ade80;
             color: #000;
-            padding: 8px 16px;
+            padding: 10px 20px;
             text-decoration: none;
             font-size: 10px;
-            border-radius: 4px;
-            margin-bottom: 8px;
+            border-radius: 6px;
             flex-shrink: 0;
+            transition: background 0.15s;
         }
 
         #buildingOverlay .overlay-ig:hover {
@@ -340,42 +332,130 @@
             background: rgba(255, 255, 255, 0.15);
         }
 
-        /* ── Landscape phone: side-by-side layout ── */
+        .overlay-sidebar {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            max-width: 900px;
+            flex-shrink: 0;
+        }
+
+        #buildingOverlay .overlay-enter-level {
+            background: #fcfc00;
+            color: #000;
+            border: none;
+            padding: 14px 32px;
+            font-size: 13px;
+            font-family: 'Press Start 2P', monospace;
+            border-radius: 6px;
+            cursor: pointer;
+            flex-shrink: 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 0 20px rgba(252, 252, 0, 0.3);
+            transition: background 0.15s, box-shadow 0.15s;
+        }
+
+        #buildingOverlay .overlay-enter-level:hover {
+            background: #e0e000;
+            box-shadow: 0 0 30px rgba(252, 252, 0, 0.5);
+        }
+
+
+
+        /* IG Feed grid */
+        .feed-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            width: 100%;
+            max-width: 900px;
+            margin: 16px auto 20px;
+            padding: 0 8px;
+            box-sizing: border-box;
+        }
+
+        .feed-grid:empty, .feed-grid.feed-empty {
+            display: none;
+        }
+
+        .feed-loading {
+            color: #666;
+            font-size: 10px;
+            text-align: center;
+            padding: 20px;
+            grid-column: 1 / -1;
+        }
+
+        .feed-card {
+            background: #1a1a1a;
+            border: 2px solid #333;
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+        }
+
+        .feed-card:hover {
+            border-color: #fcfc00;
+            transform: scale(1.04);
+            box-shadow: 0 0 20px rgba(252, 252, 0, 0.25);
+        }
+
+        .feed-card-img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            display: block;
+            background: #111;
+        }
+
+        .feed-card-placeholder {
+            width: 100%;
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #111;
+            color: #444;
+            font-size: 24px;
+        }
+
+        .feed-card-label {
+            padding: 10px 12px;
+            font-size: 8px;
+            color: #999;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+            background: #111;
+        }
+
+        .feed-no-posts {
+            color: #666;
+            font-size: 10px;
+            text-align: center;
+            padding: 20px;
+            grid-column: 1 / -1;
+        }
+
+        /* ── Landscape phone ── */
         @media (max-height: 500px) and (orientation: landscape) {
             #buildingOverlay {
-                flex-direction: row;
-                flex-wrap: wrap;
-                align-items: flex-start;
                 padding: 6px 10px;
-                gap: 8px;
+                gap: 6px;
             }
             #buildingOverlay h1 {
-                width: 100%;
                 font-size: 12px;
                 margin: 4px 0;
             }
-            #overlayHeroWrap {
-                flex: 1 1 50%;
-                max-width: 50%;
-                min-height: 0;
-                margin-bottom: 0;
-            }
-            #overlayHeroImg {
-                max-height: 60vh;
-            }
-            .overlay-sidebar {
-                flex: 1 1 40%;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 6px;
-                overflow-y: auto;
-                max-height: calc(100vh - 40px);
-            }
-            .thumbs {
-                flex-wrap: nowrap;
-                overflow-x: auto;
-                max-width: 100%;
+            .feed-grid {
+                max-height: 50vh;
             }
         }
 
@@ -450,6 +530,9 @@
     <!-- Building overlay (shown when inside a building) -->
     <div id="buildingOverlay" class="hidden">
         <h1 id="overlayArtistName">Artist Name</h1>
+        <p class="overlay-bio" id="overlayArtistBio"></p>
+
+        <div id="overlayFeedGrid" class="feed-grid"></div>
 
         <div id="overlayHeroWrap">
             <div id="overlayHeroPlaceholder">NO IMAGE YET</div>
@@ -457,10 +540,11 @@
             <div id="overlayError" class="hidden">IMAGE FAILED TO LOAD</div>
         </div>
 
+        <div id="overlayThumbs" class="thumbs hidden"></div>
+
         <div class="overlay-sidebar">
-            <p class="overlay-bio" id="overlayArtistBio">Bio here...</p>
-            <div id="overlayThumbs" class="thumbs hidden"></div>
             <a class="overlay-ig" id="overlayIgLink" href="#" target="_blank">VISIT INSTAGRAM →</a>
+            <button class="overlay-enter-level" id="overlayEnterLevelBtn" style="display:none;">ENTER BUILDING</button>
             <button class="overlay-close" id="overlayCloseBtn">← BACK TO MAP</button>
         </div>
     </div>
@@ -498,7 +582,7 @@
     })();
     </script>
     <script src="js/building_pixels.js?v=3"></script>
-    <script src="js/game.js?v=82"></script>
+    <script src="js/game.js?v=304"></script>
     <script>
     // Login overlay wiring
     (function() {

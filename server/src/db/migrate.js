@@ -30,10 +30,12 @@ async function migrate() {
   }
 
   console.log('[migrate] all migrations applied');
-  await pool.end();
 }
 
-migrate().catch(err => {
-  console.error('[migrate] failed:', err);
-  process.exit(1);
-});
+module.exports = migrate;
+
+if (require.main === module) {
+  migrate()
+    .then(() => pool.end())
+    .catch(err => { console.error('[migrate] failed:', err); process.exit(1); });
+}
