@@ -5942,7 +5942,7 @@ function renderOverlayForBuilding(buildingId) {
     if (feedGrid) {
         feedGrid.innerHTML = '';
         if (building && building.artistId) {
-            fetch('http://localhost:3000/ig/artist/' + building.artistId + '/feed')
+            fetch((window.MP && MP.API_URL ? MP.API_URL : 'http://localhost:3000') + '/ig/artist/' + building.artistId + '/feed')
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (!feedGrid) return;
