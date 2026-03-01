@@ -8565,6 +8565,7 @@ if (overlayEnterBtn) {
         var building = BUILDING_BY_ID[bid];
         if (building) {
             game.activeBuildingId = bid;
+            game.levelReturnPos = { x: game.player.x, y: game.player.y };
             var levelCtx = getLevelForContext();
             if (levelCtx) {
                 startEnterLevelFromContext(levelCtx);
@@ -8577,7 +8578,8 @@ var buildingOverlayEl = document.getElementById('buildingOverlay');
 if (buildingOverlayEl) {
     buildingOverlayEl.addEventListener('click', function(e) {
         if (e.target === buildingOverlayEl) {
-            requestBackAction();
+            closeBuildingOverlay();
+            game.state = 'OVERWORLD';
         }
     });
 }
@@ -9682,7 +9684,16 @@ function collectSpecialItem() {
 function exitLevel() {
     game.mode = 'REGION';
     game.levelState = null;
-    if (game.levelReturnTile) {
+    if (game.levelReturnPos) {
+        if (game.controllerEntity === 'foot') {
+            game.turtle.x = game.levelReturnPos.x;
+            game.turtle.y = game.levelReturnPos.y;
+        } else {
+            game.player.x = game.levelReturnPos.x;
+            game.player.y = game.levelReturnPos.y;
+        }
+        game.levelReturnPos = null;
+    } else if (game.levelReturnTile) {
         var offX = 0, offY = TILE_SIZE;
         if (game.player.direction === 'up') { offX = 0; offY = TILE_SIZE; }
         else if (game.player.direction === 'down') { offX = 0; offY = -TILE_SIZE; }
@@ -9691,7 +9702,6 @@ function exitLevel() {
         var retX = game.levelReturnTile.x * TILE_SIZE + offX;
         var retY = game.levelReturnTile.y * TILE_SIZE + offY;
         if (game.controllerEntity === 'foot') {
-            // On foot: move turtle to level exit, van stays parked
             game.turtle.x = retX;
             game.turtle.y = retY;
         } else {
@@ -9699,8 +9709,14 @@ function exitLevel() {
             game.player.y = retY;
         }
     }
+    if (game.controllerEntity === 'van') {
+        game.van.x = game.player.x;
+        game.van.y = game.player.y;
+        game.van.direction = game.player.direction;
+    }
     game.level = null;
     game.levelReentryGrace = 0.6;
+
     console.log('Exited level, back to region.');
 }
 
@@ -9720,9 +9736,8 @@ function showGalleryCompleteOverlay(artistId) {
     } else if (igLink) {
         igLink.style.display = 'none';
     }
+    game.state = 'BUILDING';
     overlay.classList.remove('hidden');
-    // Auto-close after 5s
-    setTimeout(function() { overlay.classList.add('hidden'); }, 5000);
 }
 
 // Attack phase timings (seconds)
