@@ -8565,7 +8565,8 @@ if (overlayEnterBtn) {
         var building = BUILDING_BY_ID[bid];
         if (building) {
             game.activeBuildingId = bid;
-            game.levelReturnPos = { x: game.player.x, y: game.player.y };
+            var _retEntity = (game.controllerEntity === 'foot') ? game.turtle : game.player;
+            game.levelReturnPos = { x: _retEntity.x, y: _retEntity.y };
             var levelCtx = getLevelForContext();
             if (levelCtx) {
                 startEnterLevelFromContext(levelCtx);
