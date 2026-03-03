@@ -5347,16 +5347,6 @@ function drawWaypointPips() {
     var vpRight = vpLeft + CANVAS_WIDTH;
     var vpBottom = vpTop + CANVAS_HEIGHT;
 
-    // Landmark waypoints (sewer, boss, etc.)
-    for (var i = 0; i < LANDMARKS.length; i++) {
-        var lm = LANDMARKS[i];
-        if (!WAYPOINT_IDS.has(lm.id)) continue;
-        var wx = lm.x * TILE_SIZE + TILE_SIZE / 2;
-        var wy = lm.y * TILE_SIZE + TILE_SIZE / 2;
-        var color = lm.id === 'lm_boss' ? '#ff0' : '#0f0';
-        drawWaypointPip(wx, wy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, color, lm.label);
-    }
-
     // Green van locator arrow when on foot
     if (game.controllerEntity === 'foot') {
         var vx = game.van.x + TILE_SIZE / 2;
