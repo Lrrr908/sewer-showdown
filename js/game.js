@@ -5297,8 +5297,8 @@ function drawTitle() {
 }
 
 const WAYPOINT_IDS = new Set(['lm_start', 'lm_info', 'lm_sewer', 'lm_boss']);
-const WAYPOINT_EDGE_PAD = 12;
-const WAYPOINT_SIZE = 6;
+const WAYPOINT_EDGE_PAD = 16;
+const WAYPOINT_SIZE = 8;
 
 function drawWaypointPip(wx, wy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, color, label) {
     var margin = TILE_SIZE;
@@ -5329,9 +5329,9 @@ function drawWaypointPip(wx, wy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, col
 
     if (label) {
         ctx.fillStyle = color;
-        ctx.font = '7px monospace';
+        ctx.font = '10px "Press Start 2P", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(label, edgeX, edgeY - WAYPOINT_SIZE - 2);
+        ctx.fillText(label, edgeX, edgeY - WAYPOINT_SIZE - 4);
         ctx.textAlign = 'left';
     }
 }
