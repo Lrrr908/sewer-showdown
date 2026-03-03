@@ -1,0 +1,37 @@
+{
+  "artistId": "jevahocreations",
+  "artistName": "JEVAHOCREATIONS",
+  "updatedAt": "2026-03-03T04:39:40.359Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/DVKPThEjIob/",
+      "authorName": "JEVAHOCREATIONS",
+      "authorUrl": "https://www.instagram.com/jevahocreations/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVKPThEjIob.jpg",
+      "openUrl": "https://www.instagram.com/p/DVKPThEjIob/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:39:40.359Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DUoIjs3DBTD/",
+      "authorName": "JEVAHOCREATIONS",
+      "authorUrl": "https://www.instagram.com/jevahocreations/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DUoIjs3DBTD.jpg",
+      "openUrl": "https://www.instagram.com/p/DUoIjs3DBTD/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:39:40.359Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DUlqMMSDFHY/",
+      "authorName": "JEVAHOCREATIONS",
+      "authorUrl": "https://www.instagram.com/jevahocreations/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DUlqMMSDFHY.jpg",
+      "openUrl": "https://www.instagram.com/p/DUlqMMSDFHY/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:39:40.359Z"
+    }
+  ]
+}

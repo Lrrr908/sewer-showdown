@@ -25,6 +25,12 @@
       "priority": 0
     },
     {
+      "id": "b_acid9toys",
+      "artistId": "acid9toys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_al_tres_de",
       "artistId": "al_tres_de",
       "buildingType": "gallery",
@@ -57,6 +63,12 @@
     {
       "id": "b_artebotetano",
       "artistId": "artebotetano",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_artofcorinwatson",
+      "artistId": "artofcorinwatson",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -127,6 +139,12 @@
       "priority": 0
     },
     {
+      "id": "b_cavedwellertoys",
+      "artistId": "cavedwellertoys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_charliescustomtoyshop",
       "artistId": "charliescustomtoyshop",
       "buildingType": "gallery",
@@ -145,8 +163,8 @@
       "priority": 0
     },
     {
-      "id": "b_dano_brown",
-      "artistId": "dano_brown",
+      "id": "b_deathbytoys",
+      "artistId": "deathbytoys",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -157,8 +175,20 @@
       "priority": 0
     },
     {
+      "id": "b_dirtyyetti",
+      "artistId": "dirtyyetti",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_dresease",
       "artistId": "dresease",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_donatellos_lair",
+      "artistId": "donatellos_lair",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -175,8 +205,8 @@
       "priority": 0
     },
     {
-      "id": "b_eddieanaya_",
-      "artistId": "eddieanaya_",
+      "id": "b_eddieanaya",
+      "artistId": "eddieanaya",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -195,6 +225,12 @@
     {
       "id": "b_epoxy_crusader",
       "artistId": "epoxy_crusader",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_erickmaterial",
+      "artistId": "erickmaterial",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -229,6 +265,12 @@
       "priority": 0
     },
     {
+      "id": "b_generalporpoise",
+      "artistId": "generalporpoise",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_goingturtlecrazy83",
       "artistId": "goingturtlecrazy83",
       "buildingType": "gallery",
@@ -241,8 +283,38 @@
       "priority": 0
     },
     {
+      "id": "b_graznador",
+      "artistId": "graznador",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_gustavoprofeta",
+      "artistId": "gustavoprofeta",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_hencedameat",
+      "artistId": "hencedameat",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_hey_mo_86",
+      "artistId": "hey_mo_86",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_hobotoyz",
       "artistId": "hobotoyz",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_idol_mind",
+      "artistId": "idol_mind",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -271,6 +343,12 @@
       "priority": 0
     },
     {
+      "id": "b_jevahocreations",
+      "artistId": "jevahocreations",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_jimmyfolklore",
       "artistId": "jimmyfolklore",
       "buildingType": "gallery",
@@ -279,6 +357,12 @@
     {
       "id": "b_joshuahfx",
       "artistId": "joshuahfx",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_k_huntdraws",
+      "artistId": "k_huntdraws",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -295,14 +379,14 @@
       "priority": 0
     },
     {
-      "id": "b_lamatitamuscaria",
-      "artistId": "lamatitamuscaria",
+      "id": "b_labmonkeynumber9",
+      "artistId": "labmonkeynumber9",
       "buildingType": "gallery",
       "priority": 0
     },
     {
-      "id": "b_lazyrobots",
-      "artistId": "lazyrobots",
+      "id": "b_lamatitamuscaria",
+      "artistId": "lamatitamuscaria",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -349,6 +433,12 @@
       "priority": 0
     },
     {
+      "id": "b_nix_lee",
+      "artistId": "nix_lee",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_nuke_tan",
       "artistId": "nuke_tan",
       "buildingType": "gallery",
@@ -361,8 +451,20 @@
       "priority": 0
     },
     {
-      "id": "b_oneiromancytoyworks",
-      "artistId": "oneiromancytoyworks",
+      "id": "b_oneiromancytoywork",
+      "artistId": "oneiromancytoywork",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_pabloperra",
+      "artistId": "pabloperra",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_pizzaplazm",
+      "artistId": "pizzaplazm",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -397,6 +499,12 @@
       "priority": 0
     },
     {
+      "id": "b_reelghostbusters",
+      "artistId": "reelghostbusters",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_recyclegalaxy",
       "artistId": "recyclegalaxy",
       "buildingType": "gallery",
@@ -421,14 +529,20 @@
       "priority": 0
     },
     {
-      "id": "b_sanfordarts_bad_chad",
-      "artistId": "sanfordarts_bad_chad",
+      "id": "b_sanfordarts",
+      "artistId": "sanfordarts",
       "buildingType": "gallery",
       "priority": 0
     },
     {
       "id": "b_sebastiangomeztoys",
       "artistId": "sebastiangomeztoys",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_shadow_bay",
+      "artistId": "shadow_bay",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -475,6 +589,12 @@
       "priority": 0
     },
     {
+      "id": "b_tacoboydesigns",
+      "artistId": "tacoboydesigns",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_tarcacreations",
       "artistId": "tarcacreations",
       "buildingType": "gallery",
@@ -493,6 +613,12 @@
       "priority": 0
     },
     {
+      "id": "b_the_forgotten_sewer",
+      "artistId": "the_forgotten_sewer",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_theoriginalcashbrand",
       "artistId": "theoriginalcashbrand",
       "buildingType": "gallery",
@@ -505,20 +631,26 @@
       "priority": 0
     },
     {
+      "id": "b_tmntplus",
+      "artistId": "tmntplus",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_tndtoybox",
       "artistId": "tndtoybox",
       "buildingType": "gallery",
       "priority": 0
     },
     {
-      "id": "b_tmnt_tcg",
-      "artistId": "tmnt_tcg",
+      "id": "b_tomski_figures",
+      "artistId": "tomski_figures",
       "buildingType": "gallery",
       "priority": 0
     },
     {
-      "id": "b_tomski_figures",
-      "artistId": "tomski_figures",
+      "id": "b_turt_ferguson",
+      "artistId": "turt_ferguson",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -532,6 +664,18 @@
       "id": "b_whackonaut",
       "artistId": "whackonaut",
       "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_whothefugawe",
+      "artistId": "whothefugawe",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_dimensionxtoys",
+      "artistId": "dimensionxtoys",
+      "buildingType": "dimension_x",
       "priority": 0
     }
   ],

@@ -122,6 +122,7 @@ let BRIDGE_COUNT = 0;
 let TERRAIN_GRID = null;  // 2D array from generator (0=ocean,1=coast,2=land,3=mountain,4=river)
 let LANDMARKS = [];
 let DISTRICTS = [];
+var DISTRICT_GRID = null;
 let FILLER_BUILDINGS = [];
 let BG_BUILDINGS = [];     // Non-enterable background buildings
 let BG_BUILDING_GRID = null; // Tile grid: 1 = BG building occupies this tile
@@ -2200,7 +2201,10 @@ var NES = (function () {
     function invalidateTileCache() {
         _tileCacheGeneration++;
         _turtleSpriteCache = {};
-    }
+        _coastCache = {}; _coastCacheSize = 0;
+    _roadCache = {}; _roadCacheSize = 0;
+    _procRenderCache = {}; _procRenderCacheSize = 0;
+}
 
     function drawTile(ctx, px, py, patternKey, scale) {
         var pat = PATTERNS[patternKey];
@@ -2729,9 +2733,15 @@ function applyPlacements(buildingDefs, placements, defaults) {
         entry.worldX = entry.x * TILE_SIZE;
         entry.worldY = entry.y * TILE_SIZE;
 
-        const cr = def.collisionRect || defCR;
-        const er = def.enterRect     || defER;
-        const xr = def.exitRect      || defXR;
+        var cr = def.collisionRect || defCR;
+        var er = def.enterRect     || defER;
+        var xr = def.exitRect      || defXR;
+
+        if (def.buildingType === 'dimension_x') {
+            cr = { ox: -80, oy: -96, w: 224, h: 224 };
+            er = { ox: -128, oy: -160, w: 320, h: 320 };
+            xr = { ox: -160, oy: -192, w: 384, h: 384 };
+        }
 
         entry.collisionWorld = { x: entry.worldX + cr.ox, y: entry.worldY + cr.oy, w: cr.w, h: cr.h };
         entry.enterWorld     = { x: entry.worldX + er.ox, y: entry.worldY + er.oy, w: er.w, h: er.h };
@@ -3055,6 +3065,22 @@ function applyMapData(mapData) {
     DISTRICTS = Array.isArray(mapData.districts) ? mapData.districts.filter(function(d) {
         return d.id && (typeof d.x0 === 'number' || typeof d.y0 === 'number');
     }) : [];
+
+    // Precompute district grid for O(1) lookup
+    DISTRICT_GRID = new Array(WORLD_WIDTH * WORLD_HEIGHT);
+    for (var _dgi = 0; _dgi < DISTRICT_GRID.length; _dgi++) DISTRICT_GRID[_dgi] = 'midtown';
+    for (var _ddi = 0; _ddi < DISTRICTS.length; _ddi++) {
+        var _dd = DISTRICTS[_ddi];
+        if (typeof _dd.x0 === 'number') {
+            for (var _dy = 0; _dy < WORLD_HEIGHT; _dy++)
+                for (var _dx = _dd.x0; _dx <= _dd.x1 && _dx < WORLD_WIDTH; _dx++)
+                    DISTRICT_GRID[_dy * WORLD_WIDTH + _dx] = _dd.id;
+        } else if (typeof _dd.y0 === 'number') {
+            for (var _dy2 = _dd.y0; _dy2 <= _dd.y1 && _dy2 < WORLD_HEIGHT; _dy2++)
+                for (var _dx2 = 0; _dx2 < WORLD_WIDTH; _dx2++)
+                    DISTRICT_GRID[_dy2 * WORLD_WIDTH + _dx2] = _dd.id;
+        }
+    }
 
     // ── Phase 7.3: Build blimp port list from landmarks ──
     game.blimpMenu.ports = LANDMARKS.filter(function(lm) { return lm.id.indexOf('lm_blimp_') === 0; });
@@ -3673,6 +3699,13 @@ const game = {
     },
     activeBlimpId: null,         // region: blimp port landmark nearby
     blimpMenu: { active: false, selectedIndex: 0, ports: [], activeLmId: null },
+    mouse: { sx: 0, sy: 0, active: false },
+    hoveredMarker: null,
+    hoveredArtistIdx: 0,
+    igFeedCache: {},
+    igThumbCache: {},
+    pendingVisitArtist: null,
+    expandedCluster: null,
     blimpFade: { active: false, t: 0, duration: 0.35, targetPort: null, phase: null },
     activeTurtle: 'leo',
     controllerEntity: 'van',  // 'van' = driving party wagon, 'foot' = turtle on foot
@@ -3776,13 +3809,8 @@ function getDistrictForTileY(ty) {
 }
 
 function getDistrictForTile(tx, ty) {
-    for (const d of DISTRICTS) {
-        if (typeof d.x0 === 'number') {
-            if (tx >= d.x0 && tx <= d.x1) return d.id;
-        } else if (typeof d.y0 === 'number') {
-            if (ty >= d.y0 && ty <= d.y1) return d.id;
-        }
-    }
+    if (DISTRICT_GRID && tx >= 0 && tx < WORLD_WIDTH && ty >= 0 && ty < WORLD_HEIGHT)
+        return DISTRICT_GRID[ty * WORLD_WIDTH + tx];
     return 'midtown';
 }
 
@@ -3845,7 +3873,13 @@ var HIRES_BUILDING_DEFS = [
     { key: 'gas_spr',           src: 'sprites/buildings/gas_station.png', w: 128, h: 52 },
     { key: 'mall',              src: 'sprites/buildings/mall.png',        w: 128, h: 64 },
     { key: 'fastfood',          src: 'sprites/buildings/fastfood.png',    w: 128, h: 72 },
-    { key: 'pizza',             src: 'sprites/buildings/pizza.png',       w: 108, h: 72 }
+    { key: 'pizza',             src: 'sprites/buildings/pizza.png',       w: 108, h: 72 },
+    { key: 'technodrome_bldg', src: 'sprites/technodrome/base.png',     w: 217, h: 164 },
+    { key: 'techno_eye1',     src: 'sprites/technodrome/eye1.png',     w: 48,  h: 41 },
+    { key: 'techno_eye2',     src: 'sprites/technodrome/eye2.png',     w: 48,  h: 41 },
+    { key: 'techno_eye3',     src: 'sprites/technodrome/eye3.png',     w: 48,  h: 41 },
+    { key: 'techno_track1',   src: 'sprites/technodrome/track1.png',   w: 162, h: 32 },
+    { key: 'techno_track2',   src: 'sprites/technodrome/track2.png',   w: 162, h: 32 }
 ];
 
 (function preloadHiresBuildings() {
@@ -4191,10 +4225,7 @@ function updateCamera(dt) {
     let targetX = p.x + p.width / 2 - CANVAS_WIDTH / 2;
     let targetY = p.y + p.height / 2 - CANVAS_HEIGHT / 2;
     
-    const maxX = WORLD_WIDTH * TILE_SIZE - CANVAS_WIDTH;
     const maxY = WORLD_HEIGHT * TILE_SIZE - CANVAS_HEIGHT;
-    
-    targetX = Math.max(0, Math.min(maxX, targetX));
     targetY = Math.max(0, Math.min(maxY, targetY));
     
     if (!game.camera.initialized) {
@@ -4204,10 +4235,19 @@ function updateCamera(dt) {
         return;
     }
     
-    // Lerp toward target (frame-rate independent)
-    const smoothing = 8; // chase rate per second
-    const t = Math.min(1, smoothing * dt);
-    game.camera.x += (targetX - game.camera.x) * t;
+    const smoothing = 8;
+    var t = Math.min(1, smoothing * dt);
+    if (game.mode === 'WORLD') {
+        var worldPxW = WORLD_WIDTH * TILE_SIZE;
+        var diff = targetX - game.camera.x;
+        if (diff > worldPxW / 2) diff -= worldPxW;
+        else if (diff < -worldPxW / 2) diff += worldPxW;
+        game.camera.x += diff * t;
+    } else {
+        var maxX = WORLD_WIDTH * TILE_SIZE - CANVAS_WIDTH;
+        targetX = Math.max(0, Math.min(maxX, targetX));
+        game.camera.x += (targetX - game.camera.x) * t;
+    }
     game.camera.y += (targetY - game.camera.y) * t;
 }
 
@@ -4303,7 +4343,7 @@ const DISTRICT_TERRAIN = {
 
 // Directional coast: detects which edges face water and draws
 // grass base + sandy beach transition + water that matches the real water tiles
-function drawCoastTile(px, py, tx, ty) {
+function drawCoastTile(_ctx, px, py, tx, ty) {
     var ts = TILE_SIZE;
     var ww = WORLD_WIDTH, hh = WORLD_HEIGHT;
 
@@ -4343,72 +4383,72 @@ function drawCoastTile(px, py, tx, ty) {
     // Draw water + sand on each edge that faces water
     // North edge: water at top, sand below it, rest is grass
     if (wN) {
-        ctx.fillStyle = waterC;
-        ctx.fillRect(px, py, ts, waterW);
+        _ctx.fillStyle = waterC;
+        _ctx.fillRect(px, py, ts, waterW);
         // Wave highlights
-        ctx.fillStyle = waveC;
+        _ctx.fillStyle = waveC;
         var waveY = py + Math.max(1, waterW - 4);
         for (var wx = 0; wx < ts; wx += 6) {
             if ((NES.tileHash(tx * 16 + wx, ty) & 3) === 0)
-                ctx.fillRect(px + wx, py + ((wx * 3 + ty * 7) % Math.max(1, waterW - 2)), 3, 1);
+                _ctx.fillRect(px + wx, py + ((wx * 3 + ty * 7) % Math.max(1, waterW - 2)), 3, 1);
         }
         // Foam line
-        ctx.fillStyle = foamC;
-        ctx.fillRect(px, py + waterW - 2, ts, 1);
+        _ctx.fillStyle = foamC;
+        _ctx.fillRect(px, py + waterW - 2, ts, 1);
         // Sand strip
-        ctx.fillStyle = sandC;
-        ctx.fillRect(px, py + waterW, ts, sandW);
-        ctx.fillStyle = sandDarkC;
-        ctx.fillRect(px, py + waterW, ts, 1);
+        _ctx.fillStyle = sandC;
+        _ctx.fillRect(px, py + waterW, ts, sandW);
+        _ctx.fillStyle = sandDarkC;
+        _ctx.fillRect(px, py + waterW, ts, 1);
     }
     // South edge
     if (wS) {
         var sBase = py + ts - totalEdge;
-        ctx.fillStyle = sandC;
-        ctx.fillRect(px, sBase, ts, sandW);
-        ctx.fillStyle = sandDarkC;
-        ctx.fillRect(px, sBase + sandW - 1, ts, 1);
-        ctx.fillStyle = foamC;
-        ctx.fillRect(px, sBase + sandW, ts, 1);
-        ctx.fillStyle = waterC;
-        ctx.fillRect(px, sBase + sandW, ts, waterW);
-        ctx.fillStyle = waveC;
+        _ctx.fillStyle = sandC;
+        _ctx.fillRect(px, sBase, ts, sandW);
+        _ctx.fillStyle = sandDarkC;
+        _ctx.fillRect(px, sBase + sandW - 1, ts, 1);
+        _ctx.fillStyle = foamC;
+        _ctx.fillRect(px, sBase + sandW, ts, 1);
+        _ctx.fillStyle = waterC;
+        _ctx.fillRect(px, sBase + sandW, ts, waterW);
+        _ctx.fillStyle = waveC;
         for (var wx2 = 0; wx2 < ts; wx2 += 6) {
             if ((NES.tileHash(tx * 16 + wx2, ty + 99) & 3) === 0)
-                ctx.fillRect(px + wx2, sBase + sandW + 2 + ((wx2 * 5 + ty * 3) % Math.max(1, waterW - 4)), 3, 1);
+                _ctx.fillRect(px + wx2, sBase + sandW + 2 + ((wx2 * 5 + ty * 3) % Math.max(1, waterW - 4)), 3, 1);
         }
     }
     // West edge
     if (wW) {
-        ctx.fillStyle = waterC;
-        ctx.fillRect(px, py, waterW, ts);
-        ctx.fillStyle = waveC;
+        _ctx.fillStyle = waterC;
+        _ctx.fillRect(px, py, waterW, ts);
+        _ctx.fillStyle = waveC;
         for (var wy = 0; wy < ts; wy += 6) {
             if ((NES.tileHash(tx, ty * 16 + wy) & 3) === 0)
-                ctx.fillRect(px + ((wy * 3 + tx * 7) % Math.max(1, waterW - 2)), py + wy, 1, 3);
+                _ctx.fillRect(px + ((wy * 3 + tx * 7) % Math.max(1, waterW - 2)), py + wy, 1, 3);
         }
-        ctx.fillStyle = foamC;
-        ctx.fillRect(px + waterW - 2, py, 1, ts);
-        ctx.fillStyle = sandC;
-        ctx.fillRect(px + waterW, py, sandW, ts);
-        ctx.fillStyle = sandDarkC;
-        ctx.fillRect(px + waterW, py, 1, ts);
+        _ctx.fillStyle = foamC;
+        _ctx.fillRect(px + waterW - 2, py, 1, ts);
+        _ctx.fillStyle = sandC;
+        _ctx.fillRect(px + waterW, py, sandW, ts);
+        _ctx.fillStyle = sandDarkC;
+        _ctx.fillRect(px + waterW, py, 1, ts);
     }
     // East edge
     if (wE) {
         var eBase = px + ts - totalEdge;
-        ctx.fillStyle = sandC;
-        ctx.fillRect(eBase, py, sandW, ts);
-        ctx.fillStyle = sandDarkC;
-        ctx.fillRect(eBase + sandW - 1, py, 1, ts);
-        ctx.fillStyle = foamC;
-        ctx.fillRect(eBase + sandW, py, 1, ts);
-        ctx.fillStyle = waterC;
-        ctx.fillRect(eBase + sandW, py, waterW, ts);
-        ctx.fillStyle = waveC;
+        _ctx.fillStyle = sandC;
+        _ctx.fillRect(eBase, py, sandW, ts);
+        _ctx.fillStyle = sandDarkC;
+        _ctx.fillRect(eBase + sandW - 1, py, 1, ts);
+        _ctx.fillStyle = foamC;
+        _ctx.fillRect(eBase + sandW, py, 1, ts);
+        _ctx.fillStyle = waterC;
+        _ctx.fillRect(eBase + sandW, py, waterW, ts);
+        _ctx.fillStyle = waveC;
         for (var wy2 = 0; wy2 < ts; wy2 += 6) {
             if ((NES.tileHash(tx + 99, ty * 16 + wy2) & 3) === 0)
-                ctx.fillRect(eBase + sandW + 2 + ((wy2 * 5 + tx * 3) % Math.max(1, waterW - 4)), py + wy2, 1, 3);
+                _ctx.fillRect(eBase + sandW + 2 + ((wy2 * 5 + tx * 3) % Math.max(1, waterW - 4)), py + wy2, 1, 3);
         }
     }
 
@@ -4416,52 +4456,52 @@ function drawCoastTile(px, py, tx, ty) {
     // These create the rounded inner-corner beach effect
     var cornerR = Math.max(4, Math.round(ts * 0.25));
     if (wNW && !wN && !wW) {
-        ctx.fillStyle = waterC;
-        ctx.beginPath();
-        ctx.arc(px, py, cornerR, 0, Math.PI * 0.5);
-        ctx.lineTo(px, py);
-        ctx.fill();
-        ctx.fillStyle = sandC;
-        ctx.beginPath();
-        ctx.arc(px, py, cornerR + sandW, 0, Math.PI * 0.5);
-        ctx.arc(px, py, cornerR, Math.PI * 0.5, 0, true);
-        ctx.fill();
+        _ctx.fillStyle = waterC;
+        _ctx.beginPath();
+        _ctx.arc(px, py, cornerR, 0, Math.PI * 0.5);
+        _ctx.lineTo(px, py);
+        _ctx.fill();
+        _ctx.fillStyle = sandC;
+        _ctx.beginPath();
+        _ctx.arc(px, py, cornerR + sandW, 0, Math.PI * 0.5);
+        _ctx.arc(px, py, cornerR, Math.PI * 0.5, 0, true);
+        _ctx.fill();
     }
     if (wNE && !wN && !wE) {
-        ctx.fillStyle = waterC;
-        ctx.beginPath();
-        ctx.arc(px + ts, py, cornerR, Math.PI * 0.5, Math.PI);
-        ctx.lineTo(px + ts, py);
-        ctx.fill();
-        ctx.fillStyle = sandC;
-        ctx.beginPath();
-        ctx.arc(px + ts, py, cornerR + sandW, Math.PI * 0.5, Math.PI);
-        ctx.arc(px + ts, py, cornerR, Math.PI, Math.PI * 0.5, true);
-        ctx.fill();
+        _ctx.fillStyle = waterC;
+        _ctx.beginPath();
+        _ctx.arc(px + ts, py, cornerR, Math.PI * 0.5, Math.PI);
+        _ctx.lineTo(px + ts, py);
+        _ctx.fill();
+        _ctx.fillStyle = sandC;
+        _ctx.beginPath();
+        _ctx.arc(px + ts, py, cornerR + sandW, Math.PI * 0.5, Math.PI);
+        _ctx.arc(px + ts, py, cornerR, Math.PI, Math.PI * 0.5, true);
+        _ctx.fill();
     }
     if (wSW && !wS && !wW) {
-        ctx.fillStyle = waterC;
-        ctx.beginPath();
-        ctx.arc(px, py + ts, cornerR, -Math.PI * 0.5, 0);
-        ctx.lineTo(px, py + ts);
-        ctx.fill();
-        ctx.fillStyle = sandC;
-        ctx.beginPath();
-        ctx.arc(px, py + ts, cornerR + sandW, -Math.PI * 0.5, 0);
-        ctx.arc(px, py + ts, cornerR, 0, -Math.PI * 0.5, true);
-        ctx.fill();
+        _ctx.fillStyle = waterC;
+        _ctx.beginPath();
+        _ctx.arc(px, py + ts, cornerR, -Math.PI * 0.5, 0);
+        _ctx.lineTo(px, py + ts);
+        _ctx.fill();
+        _ctx.fillStyle = sandC;
+        _ctx.beginPath();
+        _ctx.arc(px, py + ts, cornerR + sandW, -Math.PI * 0.5, 0);
+        _ctx.arc(px, py + ts, cornerR, 0, -Math.PI * 0.5, true);
+        _ctx.fill();
     }
     if (wSE && !wS && !wE) {
-        ctx.fillStyle = waterC;
-        ctx.beginPath();
-        ctx.arc(px + ts, py + ts, cornerR, Math.PI, Math.PI * 1.5);
-        ctx.lineTo(px + ts, py + ts);
-        ctx.fill();
-        ctx.fillStyle = sandC;
-        ctx.beginPath();
-        ctx.arc(px + ts, py + ts, cornerR + sandW, Math.PI, Math.PI * 1.5);
-        ctx.arc(px + ts, py + ts, cornerR, Math.PI * 1.5, Math.PI, true);
-        ctx.fill();
+        _ctx.fillStyle = waterC;
+        _ctx.beginPath();
+        _ctx.arc(px + ts, py + ts, cornerR, Math.PI, Math.PI * 1.5);
+        _ctx.lineTo(px + ts, py + ts);
+        _ctx.fill();
+        _ctx.fillStyle = sandC;
+        _ctx.beginPath();
+        _ctx.arc(px + ts, py + ts, cornerR + sandW, Math.PI, Math.PI * 1.5);
+        _ctx.arc(px + ts, py + ts, cornerR, Math.PI * 1.5, Math.PI, true);
+        _ctx.fill();
     }
 }
 
@@ -4470,8 +4510,6 @@ function drawTile(x, y, type, rowVariants, distId) {
     const py = y * TILE_SIZE - game.camera.y;
 
     if (px < -TILE_SIZE || px > CANVAS_WIDTH || py < -TILE_SIZE || py > CANVAS_HEIGHT) return;
-
-    ctx.imageSmoothingEnabled = false;
 
     if (TERRAIN_GRID) {
         if (type === 2 && distId) {
@@ -4487,7 +4525,7 @@ function drawTile(x, y, type, rowVariants, distId) {
         if (type === 0) nesPat = NES.waterFrame();
         else if (type === 4) nesPat = NES.waterFrame();
         else if (type === 1) {
-            drawCoastTile(px, py, x, y);
+            _drawCoastCached(drawCoastTile, px, py, x, y, false);
             return;
         }
         else if (type === 3) nesPat = 'mountain';
@@ -4698,18 +4736,62 @@ const BUILDING_TYPE_DRAWERS = {
 
 function drawBuildingDimensionX(x, y, bw, bh) {
     var unlocked = Object.keys(game.progress.collectedItems).length >= 10;
-    drawBldgSprite(x, y, bw, bh, 'bldgRedBlue', 'DIM-X', NES.PAL.N, unlocked);
+    var hires = HIRES_BUILDINGS['technodrome_bldg'];
+    if (!hires) {
+        drawBldgSprite(x, y, bw, bh, 'bldgRedBlue', 'DIM-X', NES.PAL.N, unlocked);
+        return;
+    }
+
+    var now = Date.now();
+    var t = now / 1000;
+
+    var sway = Math.sin(t * 0.8) * 2;
+
+    var scale = Math.min(bw / hires.w, (bh * 0.85) / hires.h);
+    var sw = hires.w * scale;
+    var sh = hires.h * scale;
+    var dx = x + (bw - sw) / 2 + sway;
+    var dy = y + bh - sh;
+
+    if (!unlocked) ctx.globalAlpha = 0.55;
+
+    ctx.drawImage(hires.img, dx, dy, sw, sh);
+
+    var eyeFrames = ['techno_eye1', 'techno_eye2', 'techno_eye3', 'techno_eye2'];
+    var eyeIdx = Math.floor(t * 1.5) % eyeFrames.length;
+    var eyeImg = HIRES_BUILDINGS[eyeFrames[eyeIdx]];
+    if (eyeImg) {
+        var eyeScale = scale * 1.1;
+        var ew = eyeImg.w * eyeScale;
+        var eh = eyeImg.h * eyeScale;
+        var ex = dx + sw * 0.52 - ew / 2;
+        var ey = dy + sh * 0.02;
+        ctx.drawImage(eyeImg.img, ex, ey, ew, eh);
+    }
+
+    var trackIdx = Math.floor(t * 3) % 2;
+    var trackKey = trackIdx === 0 ? 'techno_track1' : 'techno_track2';
+    var trackImg = HIRES_BUILDINGS[trackKey];
+    if (trackImg) {
+        var tw = sw * 0.82;
+        var th = tw * (trackImg.h / trackImg.w);
+        var tx = dx + (sw - tw) / 2;
+        var ty = dy + sh - th - sh * 0.02;
+        ctx.drawImage(trackImg.img, tx, ty, tw, th);
+    }
+
+    ctx.globalAlpha = 1.0;
+
     if (!unlocked) {
-        ctx.strokeStyle = NES.PAL.P;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(x + 20, y + 40); ctx.lineTo(x + bw - 20, y + bh - 20);
-        ctx.moveTo(x + bw - 20, y + 40); ctx.lineTo(x + 20, y + bh - 20);
-        ctx.stroke();
-        ctx.fillStyle = NES.PAL.R;
-        ctx.font = 'bold 8px "Press Start 2P", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('LOCKED', x + bw / 2, y + bh / 2 + 3);
+        var collected = Object.keys(game.progress.collectedItems).length;
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(x + bw - 52, y + bh - 14, 48, 12);
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = '#ff44ff';
+        ctx.font = '6px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(collected + '/10', x + bw - 8, y + bh - 5);
         ctx.textAlign = 'left';
     }
 }
@@ -4718,17 +4800,18 @@ function drawBuilding(b, index) {
     const sx = b.worldX - game.camera.x;
     const sy = b.worldY - game.camera.y;
 
-    if (sx < -128 || sx > CANVAS_WIDTH + 128 || sy < -128 || sy > CANVAS_HEIGHT + 128) return;
+    const bt = b.buildingType;
+    const isDimX = bt === 'dimension_x';
+    const cullSize = isDimX ? 384 : 128;
+    if (sx < -cullSize || sx > CANVAS_WIDTH + cullSize || sy < -cullSize || sy > CANVAS_HEIGHT + cullSize) return;
 
     const isActive = b.id === game.activeBuildingId;
-    ctx.imageSmoothingEnabled = false;
 
-    const bw = 128, bh = 128;
+    const bw = isDimX ? 320 : 128;
+    const bh = isDimX ? 256 : 128;
     const ox = (TILE_SIZE - bw) / 2;
     const oy = TILE_SIZE - bh;
     const bx = sx + ox, by = sy + oy;
-
-    const bt = b.buildingType;
     const hasArtist = b.artistId && ARTISTS[b.artistId];
     const isGallery = !bt || bt === 'gallery';
 
@@ -5162,9 +5245,11 @@ var BLIMP_FRAMES = ['blimp1', 'blimp2', 'blimp3'];
 function drawBlimp() {
     var p = game.player;
     var sx = p.x - game.camera.x;
+    var worldPxW = WORLD_WIDTH * TILE_SIZE;
+    if (sx > worldPxW / 2) sx -= worldPxW;
+    else if (sx < -worldPxW / 2) sx += worldPxW;
     var sy = p.y - game.camera.y;
 
-    // Animate propeller between 3 frames
     _blimpAnimTimer += 0.016;
     if (_blimpAnimTimer >= 0.12) {
         _blimpAnimTimer = 0;
@@ -5178,8 +5263,13 @@ function drawBlimp() {
     if (blimpSprite) {
         var bw = p.width;
         var bh = p.height;
-        // Add a gentle bobbing motion
         var bob = Math.sin(Date.now() / 600) * 3;
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.ellipse(sx + bw / 2, sy + bh + 8 + bob * 0.3, bw * 0.35, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
         if (p.direction === 'left') {
             ctx.translate(sx + bw / 2, sy + bh / 2 + bob);
             ctx.scale(-1, 1);
@@ -5187,12 +5277,6 @@ function drawBlimp() {
         } else {
             ctx.drawImage(blimpSprite, sx, sy + bob, bw, bh);
         }
-        // Shadow on the ground
-        ctx.globalAlpha = 0.2;
-        ctx.fillStyle = '#000';
-        ctx.beginPath();
-        ctx.ellipse(sx + bw / 2, sy + bh + 8 + bob * 0.3, bw * 0.35, 4, 0, 0, Math.PI * 2);
-        ctx.fill();
     } else {
         ctx.fillStyle = '#28a828';
         ctx.fillRect(sx + 4, sy + 8, p.width - 8, p.height - 20);
@@ -5273,16 +5357,11 @@ function drawWaypointPips() {
         drawWaypointPip(wx, wy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, color, lm.label);
     }
 
-    // Artist building locator arrows (yellow pips for unvisited, dim for visited)
-    for (var b = 0; b < BUILDINGS.length; b++) {
-        var bld = BUILDINGS[b];
-        if (!bld.artistId) continue;
-        var bwx = bld.worldX + TILE_SIZE / 2;
-        var bwy = bld.worldY + TILE_SIZE / 2;
-        var visited = bld.artistId && game.progress.galleriesVisited[bld.artistId];
-        var bcolor = visited ? '#555' : '#fcfc00';
-        var bnum = (b + 1).toString();
-        drawWaypointPip(bwx, bwy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, bcolor, visited ? null : bnum);
+    // Green van locator arrow when on foot
+    if (game.controllerEntity === 'foot') {
+        var vx = game.van.x + TILE_SIZE / 2;
+        var vy = game.van.y + TILE_SIZE / 2;
+        drawWaypointPip(vx, vy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#00ff00', 'VAN');
     }
 
     if (typeof MP !== 'undefined' && MP.isConnected()) {
@@ -5337,7 +5416,7 @@ function drawUI() {
     ctx.fillStyle = '#58d8f8';
     ctx.font = '8px "Press Start 2P", monospace';
     if (game.mode === 'WORLD') {
-        ctx.fillText('ARROWS:Move  ENTER:Region', 10, CANVAS_HEIGHT - 8);
+        ctx.fillText(game.hoveredMarker ? 'L/R:Cycle  ENTER:Visit  ARROWS:Fly' : 'ARROWS:Move  ENTER:Region', 10, CANVAS_HEIGHT - 8);
     } else if (game.controllerEntity === 'foot') {
         ctx.fillText('ARROWS:Move  ENTER:Visit/Level  T:Van', 10, CANVAS_HEIGHT - 8);
     } else {
@@ -5364,11 +5443,17 @@ function rectHitsCollisionGrid(rx, ry, rw, rh) {
 }
 
 function rectHitsBuildingCollision(rx, ry, rw, rh) {
-    for (var i = 0; i < BUILDINGS.length; i++) {
-        var c = BUILDINGS[i].collisionWorld;
-        if (!c) continue;
-        if (rx < c.x + c.w && rx + rw > c.x &&
-            ry < c.y + c.h && ry + rh > c.y) return true;
+    var rowMin = Math.max(0, Math.floor(ry / TILE_SIZE) - 3);
+    var rowMax = Math.min(WORLD_HEIGHT - 1, Math.floor((ry + rh) / TILE_SIZE) + 3);
+    for (var row = rowMin; row <= rowMax; row++) {
+        var bucket = ROW_BUILDINGS[row];
+        if (!bucket) continue;
+        for (var i = 0; i < bucket.length; i++) {
+            var c = bucket[i].collisionWorld;
+            if (!c) continue;
+            if (rx < c.x + c.w && rx + rw > c.x &&
+                ry < c.y + c.h && ry + rh > c.y) return true;
+        }
     }
     return false;
 }
@@ -5406,7 +5491,16 @@ function updateInteraction() {
         else { setActiveBuilding(null); }
     }
     
-    const candidates = BUILDINGS.filter(b => rectsOverlap(pRect, b.enterWorld));
+    var _iRowMin = Math.max(0, Math.floor(pRect.y / TILE_SIZE) - 4);
+    var _iRowMax = Math.min(WORLD_HEIGHT - 1, Math.floor((pRect.y + pRect.h) / TILE_SIZE) + 4);
+    var candidates = [];
+    for (var _ir = _iRowMin; _ir <= _iRowMax; _ir++) {
+        var _ib = ROW_BUILDINGS[_ir];
+        if (!_ib) continue;
+        for (var _ii = 0; _ii < _ib.length; _ii++) {
+            if (rectsOverlap(pRect, _ib[_ii].enterWorld)) candidates.push(_ib[_ii]);
+        }
+    }
     if (candidates.length === 0) return;
     
     // Sort: nearest first, then lower priority number wins, then stable ID
@@ -5759,6 +5853,10 @@ function requestPrimaryAction() {
             travelToBlimp(sel);
         }
         return;
+    }
+
+    if (game.mode === 'WORLD' && game.hoveredMarker) {
+        if (typeof enterHoveredArtist === 'function' && enterHoveredArtist()) return;
     }
 
     if (game.mode === 'WORLD' && game.activeNodeId) {
@@ -6290,7 +6388,8 @@ function update(dt) {
         const newY = p.y + dy * p.pxPerSecond * dt;
         
         if (game.mode === 'WORLD') {
-            p.x = Math.max(0, Math.min(newX, (WORLD_WIDTH - 1) * TILE_SIZE));
+            var worldPxW = WORLD_WIDTH * TILE_SIZE;
+            p.x = ((newX % worldPxW) + worldPxW) % worldPxW;
             p.y = Math.max(0, Math.min(newY, (WORLD_HEIGHT - 1) * TILE_SIZE));
         } else {
             if (!checkCollision(newX, p.y)) p.x = newX;
@@ -6332,6 +6431,7 @@ function update(dt) {
     updateCamera(dt);
     if (game.mode === 'WORLD') {
         updateWorldInteraction();
+        if (typeof updateBlimpHover === 'function') updateBlimpHover(dt);
     } else {
         updateInteraction();
         updateBlimpInteraction();
@@ -6426,6 +6526,9 @@ function roadFlowDir(tx, ty) {
     return 'h';
 }
 
+var _roadCache = {};
+var _roadCacheSize = 0;
+
 function drawRoadOverlay(sx, sy, tx, ty) {
     var sprite = game.sprites.roadOverlay;
     if (sprite) {
@@ -6433,7 +6536,27 @@ function drawRoadOverlay(sx, sy, tx, ty) {
         return;
     }
 
+    // Road tile cache
     var nb = roadNeighbors(tx, ty);
+    var nbMask = (nb.n?1:0)|(nb.s?2:0)|(nb.w?4:0)|(nb.e?8:0);
+    var clMask = ROAD_CENTER_MASK ? ROAD_CENTER_MASK[ty * WORLD_WIDTH + tx] : 0;
+    var rkey = 'rd|' + nbMask + '|' + clMask + '|' + TILE_SIZE;
+    if (_roadCache[rkey]) {
+        ctx.drawImage(_roadCache[rkey], sx, sy);
+        return;
+    }
+    var _roc = document.createElement('canvas');
+    _roc.width = TILE_SIZE; _roc.height = TILE_SIZE;
+    var _offCtx = _roc.getContext('2d');
+    _offCtx.imageSmoothingEnabled = false;
+    _drawRoadOverlayInner(_offCtx, 0, 0, nb, clMask);
+    _roadCache[rkey] = _roc;
+    _roadCacheSize++;
+    if (_roadCacheSize > 500) { _roadCache = {}; _roadCacheSize = 0; }
+    ctx.drawImage(_roc, sx, sy);
+}
+
+function _drawRoadOverlayInner(_ctx, sx, sy, nb, clMask) {
     var ts = TILE_SIZE;
 
     var curbC   = '#505050';
@@ -6445,63 +6568,62 @@ function drawRoadOverlay(sx, sy, tx, ty) {
     var ew2 = Math.max(1, Math.round(ts * 0.03));
 
     // Solid dark asphalt base
-    ctx.fillStyle = '#383838';
-    ctx.fillRect(sx, sy, ts, ts);
+    _ctx.fillStyle = '#383838';
+    _ctx.fillRect(sx, sy, ts, ts);
 
     // Curb + gutter on non-road edges only
-    if (!nb.n) { ctx.fillStyle = curbC; ctx.fillRect(sx, sy, ts, ew); ctx.fillStyle = edgeC; ctx.fillRect(sx, sy + ew, ts, ew2); }
-    if (!nb.s) { ctx.fillStyle = curbC; ctx.fillRect(sx, sy + ts - ew, ts, ew); ctx.fillStyle = edgeC; ctx.fillRect(sx, sy + ts - ew - ew2, ts, ew2); }
-    if (!nb.w) { ctx.fillStyle = curbC; ctx.fillRect(sx, sy, ew, ts); ctx.fillStyle = edgeC; ctx.fillRect(sx + ew, sy, ew2, ts); }
-    if (!nb.e) { ctx.fillStyle = curbC; ctx.fillRect(sx + ts - ew, sy, ew, ts); ctx.fillStyle = edgeC; ctx.fillRect(sx + ts - ew - ew2, sy, ew2, ts); }
+    if (!nb.n) { _ctx.fillStyle = curbC; _ctx.fillRect(sx, sy, ts, ew); _ctx.fillStyle = edgeC; _ctx.fillRect(sx, sy + ew, ts, ew2); }
+    if (!nb.s) { _ctx.fillStyle = curbC; _ctx.fillRect(sx, sy + ts - ew, ts, ew); _ctx.fillStyle = edgeC; _ctx.fillRect(sx, sy + ts - ew - ew2, ts, ew2); }
+    if (!nb.w) { _ctx.fillStyle = curbC; _ctx.fillRect(sx, sy, ew, ts); _ctx.fillStyle = edgeC; _ctx.fillRect(sx + ew, sy, ew2, ts); }
+    if (!nb.e) { _ctx.fillStyle = curbC; _ctx.fillRect(sx + ts - ew, sy, ew, ts); _ctx.fillStyle = edgeC; _ctx.fillRect(sx + ts - ew - ew2, sy, ew2, ts); }
 
     // Curb corners where two edges meet
     var cr = Math.max(3, Math.round(ts * 0.10));
-    if (!nb.n && !nb.w) { ctx.fillStyle = curbC; ctx.fillRect(sx, sy, cr, cr); }
-    if (!nb.n && !nb.e) { ctx.fillStyle = curbC; ctx.fillRect(sx + ts - cr, sy, cr, cr); }
-    if (!nb.s && !nb.w) { ctx.fillStyle = curbC; ctx.fillRect(sx, sy + ts - cr, cr, cr); }
-    if (!nb.s && !nb.e) { ctx.fillStyle = curbC; ctx.fillRect(sx + ts - cr, sy + ts - cr, cr, cr); }
+    if (!nb.n && !nb.w) { _ctx.fillStyle = curbC; _ctx.fillRect(sx, sy, cr, cr); }
+    if (!nb.n && !nb.e) { _ctx.fillStyle = curbC; _ctx.fillRect(sx + ts - cr, sy, cr, cr); }
+    if (!nb.s && !nb.w) { _ctx.fillStyle = curbC; _ctx.fillRect(sx, sy + ts - cr, cr, cr); }
+    if (!nb.s && !nb.e) { _ctx.fillStyle = curbC; _ctx.fillRect(sx + ts - cr, sy + ts - cr, cr, cr); }
 
     // Center-line dashes: ONLY on centerline tiles with straight mask
     // Vertical (mask=5=N|S): dashes at right edge (seam with east expansion)
     // Horizontal (mask=10=E|W): dashes at bottom edge (seam with south expansion)
     // Corners/T/4-way/expansion tiles: NO center lines
-    var clMask = ROAD_CENTER_MASK ? ROAD_CENTER_MASK[ty * WORLD_WIDTH + tx] : 0;
     var dashLen = Math.max(8, Math.round(ts * 0.18));
     var dashGap = Math.max(6, Math.round(ts * 0.14));
     var dashW   = Math.max(2, Math.round(ts * 0.04));
 
     if (clMask === 5) {
         // Vertical straight: yellow dashes at right edge (seam between 2 surface tiles)
-        ctx.fillStyle = yellowC;
+        _ctx.fillStyle = yellowC;
         var dashX = sx + ts - dashW;
         for (var dyV = sy + dashGap; dyV < sy + ts - dashGap; dyV += dashLen + dashGap)
-            ctx.fillRect(dashX, dyV, dashW, Math.min(dashLen, sy + ts - dashGap - dyV));
+            _ctx.fillRect(dashX, dyV, dashW, Math.min(dashLen, sy + ts - dashGap - dyV));
     } else if (clMask === 10) {
         // Horizontal straight: yellow dashes at bottom edge (seam between 2 surface tiles)
-        ctx.fillStyle = yellowC;
+        _ctx.fillStyle = yellowC;
         var dashY = sy + ts - dashW;
         for (var dxH = sx + dashGap; dxH < sx + ts - dashGap; dxH += dashLen + dashGap)
-            ctx.fillRect(dxH, dashY, Math.min(dashLen, sx + ts - dashGap - dxH), dashW);
+            _ctx.fillRect(dxH, dashY, Math.min(dashLen, sx + ts - dashGap - dxH), dashW);
     }
     // Dead-end centerlines (mask=1 N-only, 4 S-only → vertical; mask=2 E-only, 8 W-only → horizontal)
     else if (clMask === 1 || clMask === 4) {
-        ctx.fillStyle = yellowC;
+        _ctx.fillStyle = yellowC;
         var dashX2 = sx + ts - dashW;
         for (var dyD = sy + dashGap; dyD < sy + ts - dashGap; dyD += dashLen + dashGap)
-            ctx.fillRect(dashX2, dyD, dashW, Math.min(dashLen, sy + ts - dashGap - dyD));
+            _ctx.fillRect(dashX2, dyD, dashW, Math.min(dashLen, sy + ts - dashGap - dyD));
     } else if (clMask === 2 || clMask === 8) {
-        ctx.fillStyle = yellowC;
+        _ctx.fillStyle = yellowC;
         var dashY2 = sy + ts - dashW;
         for (var dxD = sx + dashGap; dxD < sx + ts - dashGap; dxD += dashLen + dashGap)
-            ctx.fillRect(dxD, dashY2, Math.min(dashLen, sx + ts - dashGap - dxD), dashW);
+            _ctx.fillRect(dxD, dashY2, Math.min(dashLen, sx + ts - dashGap - dxD), dashW);
     }
     // All other masks (corners, T, 4-way, expansion tiles): clean asphalt, no dashes
 
     // Isolated tile: full curb border
     if (nb.count === 0) {
-        ctx.fillStyle = curbC;
-        ctx.fillRect(sx, sy, ts, ew); ctx.fillRect(sx, sy + ts - ew, ts, ew);
-        ctx.fillRect(sx, sy, ew, ts); ctx.fillRect(sx + ts - ew, sy, ew, ts);
+        _ctx.fillStyle = curbC;
+        _ctx.fillRect(sx, sy, ts, ew); _ctx.fillRect(sx, sy + ts - ew, ts, ew);
+        _ctx.fillRect(sx, sy, ew, ts); _ctx.fillRect(sx + ts - ew, sy, ew, ts);
     }
 }
 
@@ -6592,7 +6714,6 @@ function drawCustomBgBuilding(ctx, fpPxX, fpPxBottom, fpPxW, customType, tileX, 
         var dw = hb.w * scale, dh = hb.h * scale;
         var dx = fpPxX + (fpPxW - dw) / 2;
         var dy = fpPxBottom - dh;
-        ctx.imageSmoothingEnabled = false;
 
         var tint = _tintVariants[(colorVariant || 0) % _tintVariants.length];
         if (tint && typeof ctx.filter !== 'undefined') {
@@ -7074,6 +7195,45 @@ function drawProceduralBuilding(ctx, fpPxX, fpPxBottom, fpPxW, params) {
     }
 }
 
+// ── Coast tile cache (offscreen canvases) ──
+var _coastCache = {};
+var _coastCacheSize = 0;
+
+function _getCoastCacheKey(tx, ty, isWorld) {
+    var grid = isWorld ? MAP : TERRAIN_GRID;
+    if (!grid) return 'coast_no_grid';
+    var ww = WORLD_WIDTH, hh = WORLD_HEIGHT;
+    function _isW(nx, ny) {
+        if (nx < 0 || nx >= ww || ny < 0 || ny >= hh) return true;
+        if (!grid || !grid[ny]) return false;
+        var t = grid[ny][nx];
+        return t === 0 || t === 4;
+    }
+    var mask = (_isW(tx,ty-1)?1:0)|(_isW(tx,ty+1)?2:0)|(_isW(tx-1,ty)?4:0)|(_isW(tx+1,ty)?8:0)|
+               (_isW(tx-1,ty-1)?16:0)|(_isW(tx+1,ty-1)?32:0)|(_isW(tx-1,ty+1)?64:0)|(_isW(tx+1,ty+1)?128:0);
+    var gi = NES.tileHash(tx, ty) % 4;
+    return (isWorld ? 'wc|' : 'rc|') + mask + '|' + gi + '|' + TILE_SIZE;
+}
+
+function _drawCoastCached(drawFn, px, py, tx, ty, isWorld) {
+    var key = _getCoastCacheKey(tx, ty, isWorld);
+    var cached = _coastCache[key];
+    if (cached) {
+        ctx.drawImage(cached, px, py);
+        return;
+    }
+    var ts = TILE_SIZE;
+    var oc = document.createElement('canvas');
+    oc.width = ts; oc.height = ts;
+    var offCtx = oc.getContext('2d');
+    offCtx.imageSmoothingEnabled = false;
+    drawFn(offCtx, 0, 0, tx, ty);
+    _coastCache[key] = oc;
+    _coastCacheSize++;
+    if (_coastCacheSize > 2000) { _coastCache = {}; _coastCacheSize = 0; }
+    ctx.drawImage(oc, px, py);
+}
+
 // ── Procedural building param cache ──
 var _procParamCache = {};
 var _procParamCacheSize = 0;
@@ -7089,6 +7249,41 @@ function _getProceduralParams(bg) {
         _procParamCacheSize = 0;
     }
     return p;
+}
+
+var _procRenderCache = {};
+var _procRenderCacheSize = 0;
+
+function _procRenderKey(params, fpPxW) {
+    var p = params;
+    var k = fpPxW + '|' + p.floors + '|' + p.seed + '|' + (p.doorKey || '');
+    if (p.setbacks) {
+        for (var i = 0; i < p.setbacks.length; i++) {
+            var s = p.setbacks[i];
+            k += '|' + s.floors + ',' + (s.widthFrac || 1);
+        }
+    }
+    return k;
+}
+
+function drawProceduralBuildingCached(ctx, fpPxX, fpPxBottom, fpPxW, params) {
+    var key = _procRenderKey(params, fpPxW);
+    var cached = _procRenderCache[key];
+    if (cached) {
+        ctx.drawImage(cached, fpPxX, fpPxBottom - cached.height);
+        return;
+    }
+    var estH = Math.max(params.floors * 16 + 40, 120);
+    var oc = document.createElement('canvas');
+    oc.width = fpPxW + 16;
+    oc.height = estH + 40;
+    var offCtx = oc.getContext('2d');
+    offCtx.imageSmoothingEnabled = false;
+    drawProceduralBuilding(offCtx, 8, oc.height, fpPxW, params);
+    _procRenderCache[key] = oc;
+    _procRenderCacheSize++;
+    if (_procRenderCacheSize > 800) { _procRenderCache = {}; _procRenderCacheSize = 0; }
+    ctx.drawImage(oc, fpPxX - 8, fpPxBottom - oc.height);
 }
 
 function drawBgBuildings(startX, startY, endX, endY) {
@@ -7107,7 +7302,7 @@ function drawBgBuildings(startX, startY, endX, endY) {
         var fpPxBottom = (bg.y + 1) * TILE_SIZE - game.camera.y;
 
         var params = _getProceduralParams(bg);
-        drawProceduralBuilding(ctx, fpPxX, fpPxBottom, fpPxW, params);
+        drawProceduralBuildingCached(ctx, fpPxX, fpPxBottom, fpPxW, params);
         } // end bucket loop
     } // end row loop
 }
@@ -7459,10 +7654,11 @@ function drawBridgeTile(sx, sy, tx, ty) {
 
 function drawWorldTile(sx, sy, type, tx, ty) {
     if (type === 0 || type === 4) {
-        NES.drawTileStretched(ctx, sx, sy, TILE_SIZE, TILE_SIZE, NES.waterFrame());
+        ctx.fillStyle = type === 4 ? '#1838a8' : '#0c1850';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
     } else if (type === 1) {
         // Directional coast on world map too
-        drawWorldCoastTile(sx, sy, tx, ty);
+        _drawCoastCached(drawWorldCoastTile, sx, sy, tx, ty, true);
     } else if (type === 3) {
         NES.drawTileStretched(ctx, sx, sy, TILE_SIZE, TILE_SIZE, 'mountain');
     } else {
@@ -7472,7 +7668,7 @@ function drawWorldTile(sx, sy, type, tx, ty) {
     }
 }
 
-function drawWorldCoastTile(px, py, tx, ty) {
+function drawWorldCoastTile(_ctx, px, py, tx, ty) {
     var ts = TILE_SIZE;
     if (tx === undefined || ty === undefined) {
         NES.drawTileStretched(ctx, px, py, ts, ts, 'coastFallback');
@@ -7506,42 +7702,42 @@ function drawWorldCoastTile(px, py, tx, ty) {
     var foamC = '#a0d8f8';
 
     if (wN) {
-        ctx.fillStyle = waterC; ctx.fillRect(px, py, ts, waterW);
-        ctx.fillStyle = waveC;
-        for (var i = 0; i < ts; i += 4) if ((NES.tileHash(tx * 8 + i, ty) & 1) === 0) ctx.fillRect(px + i, py + waterW - 3, 2, 1);
-        ctx.fillStyle = foamC; ctx.fillRect(px, py + waterW - 1, ts, 1);
-        ctx.fillStyle = sandC; ctx.fillRect(px, py + waterW, ts, sandW);
+        _ctx.fillStyle = waterC; _ctx.fillRect(px, py, ts, waterW);
+        _ctx.fillStyle = waveC;
+        for (var i = 0; i < ts; i += 4) if ((NES.tileHash(tx * 8 + i, ty) & 1) === 0) _ctx.fillRect(px + i, py + waterW - 3, 2, 1);
+        _ctx.fillStyle = foamC; _ctx.fillRect(px, py + waterW - 1, ts, 1);
+        _ctx.fillStyle = sandC; _ctx.fillRect(px, py + waterW, ts, sandW);
     }
     if (wS) {
         var sb = py + ts - waterW - sandW;
-        ctx.fillStyle = sandC; ctx.fillRect(px, sb, ts, sandW);
-        ctx.fillStyle = foamC; ctx.fillRect(px, sb + sandW, ts, 1);
-        ctx.fillStyle = waterC; ctx.fillRect(px, sb + sandW, ts, waterW);
-        ctx.fillStyle = waveC;
-        for (var i2 = 0; i2 < ts; i2 += 4) if ((NES.tileHash(tx * 8 + i2, ty + 50) & 1) === 0) ctx.fillRect(px + i2, sb + sandW + 2, 2, 1);
+        _ctx.fillStyle = sandC; _ctx.fillRect(px, sb, ts, sandW);
+        _ctx.fillStyle = foamC; _ctx.fillRect(px, sb + sandW, ts, 1);
+        _ctx.fillStyle = waterC; _ctx.fillRect(px, sb + sandW, ts, waterW);
+        _ctx.fillStyle = waveC;
+        for (var i2 = 0; i2 < ts; i2 += 4) if ((NES.tileHash(tx * 8 + i2, ty + 50) & 1) === 0) _ctx.fillRect(px + i2, sb + sandW + 2, 2, 1);
     }
     if (wW) {
-        ctx.fillStyle = waterC; ctx.fillRect(px, py, waterW, ts);
-        ctx.fillStyle = waveC;
-        for (var j = 0; j < ts; j += 4) if ((NES.tileHash(tx, ty * 8 + j) & 1) === 0) ctx.fillRect(px + waterW - 3, py + j, 1, 2);
-        ctx.fillStyle = foamC; ctx.fillRect(px + waterW - 1, py, 1, ts);
-        ctx.fillStyle = sandC; ctx.fillRect(px + waterW, py, sandW, ts);
+        _ctx.fillStyle = waterC; _ctx.fillRect(px, py, waterW, ts);
+        _ctx.fillStyle = waveC;
+        for (var j = 0; j < ts; j += 4) if ((NES.tileHash(tx, ty * 8 + j) & 1) === 0) _ctx.fillRect(px + waterW - 3, py + j, 1, 2);
+        _ctx.fillStyle = foamC; _ctx.fillRect(px + waterW - 1, py, 1, ts);
+        _ctx.fillStyle = sandC; _ctx.fillRect(px + waterW, py, sandW, ts);
     }
     if (wE) {
         var eb = px + ts - waterW - sandW;
-        ctx.fillStyle = sandC; ctx.fillRect(eb, py, sandW, ts);
-        ctx.fillStyle = foamC; ctx.fillRect(eb + sandW, py, 1, ts);
-        ctx.fillStyle = waterC; ctx.fillRect(eb + sandW, py, waterW, ts);
-        ctx.fillStyle = waveC;
-        for (var j2 = 0; j2 < ts; j2 += 4) if ((NES.tileHash(tx + 50, ty * 8 + j2) & 1) === 0) ctx.fillRect(eb + sandW + 2, py + j2, 1, 2);
+        _ctx.fillStyle = sandC; _ctx.fillRect(eb, py, sandW, ts);
+        _ctx.fillStyle = foamC; _ctx.fillRect(eb + sandW, py, 1, ts);
+        _ctx.fillStyle = waterC; _ctx.fillRect(eb + sandW, py, waterW, ts);
+        _ctx.fillStyle = waveC;
+        for (var j2 = 0; j2 < ts; j2 += 4) if ((NES.tileHash(tx + 50, ty * 8 + j2) & 1) === 0) _ctx.fillRect(eb + sandW + 2, py + j2, 1, 2);
     }
 
     // Diagonal corner fills
     var cr = Math.max(2, Math.round(ts * 0.2));
-    if (wNW && !wN && !wW) { ctx.fillStyle = waterC; ctx.fillRect(px, py, cr, cr); ctx.fillStyle = sandC; ctx.fillRect(px + cr, py, sandW, cr); ctx.fillRect(px, py + cr, cr + sandW, sandW); }
-    if (wNE && !wN && !wE) { ctx.fillStyle = waterC; ctx.fillRect(px + ts - cr, py, cr, cr); ctx.fillStyle = sandC; ctx.fillRect(px + ts - cr - sandW, py, sandW, cr); ctx.fillRect(px + ts - cr - sandW, py + cr, cr + sandW, sandW); }
-    if (wSW && !wS && !wW) { ctx.fillStyle = waterC; ctx.fillRect(px, py + ts - cr, cr, cr); ctx.fillStyle = sandC; ctx.fillRect(px + cr, py + ts - cr, sandW, cr); ctx.fillRect(px, py + ts - cr - sandW, cr + sandW, sandW); }
-    if (wSE && !wS && !wE) { ctx.fillStyle = waterC; ctx.fillRect(px + ts - cr, py + ts - cr, cr, cr); ctx.fillStyle = sandC; ctx.fillRect(px + ts - cr - sandW, py + ts - cr, sandW, cr); ctx.fillRect(px + ts - cr - sandW, py + ts - cr - sandW, cr + sandW, sandW); }
+    if (wNW && !wN && !wW) { _ctx.fillStyle = waterC; _ctx.fillRect(px, py, cr, cr); _ctx.fillStyle = sandC; _ctx.fillRect(px + cr, py, sandW, cr); _ctx.fillRect(px, py + cr, cr + sandW, sandW); }
+    if (wNE && !wN && !wE) { _ctx.fillStyle = waterC; _ctx.fillRect(px + ts - cr, py, cr, cr); _ctx.fillStyle = sandC; _ctx.fillRect(px + ts - cr - sandW, py, sandW, cr); _ctx.fillRect(px + ts - cr - sandW, py + cr, cr + sandW, sandW); }
+    if (wSW && !wS && !wW) { _ctx.fillStyle = waterC; _ctx.fillRect(px, py + ts - cr, cr, cr); _ctx.fillStyle = sandC; _ctx.fillRect(px + cr, py + ts - cr, sandW, cr); _ctx.fillRect(px, py + ts - cr - sandW, cr + sandW, sandW); }
+    if (wSE && !wS && !wE) { _ctx.fillStyle = waterC; _ctx.fillRect(px + ts - cr, py + ts - cr, cr, cr); _ctx.fillStyle = sandC; _ctx.fillRect(px + ts - cr - sandW, py + ts - cr, sandW, cr); _ctx.fillRect(px + ts - cr - sandW, py + ts - cr - sandW, cr + sandW, sandW); }
 }
 
 // ── Phase 7.1: Type-specific landmark rendering ────────────────
@@ -7816,6 +8012,7 @@ function draw() {
         return;
     }
 
+    ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = game.mode === 'WORLD' ? NES.PAL.B : NES.PAL.G;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
@@ -7836,8 +8033,9 @@ function draw() {
                 const sy = y * TILE_SIZE - game.camera.y;
                 if (sx < -TILE_SIZE || sx > CANVAS_WIDTH || sy < -TILE_SIZE || sy > CANVAS_HEIGHT) continue;
                 let tile = 0;
-                if (inBoundsY && x >= 0 && x < WORLD_WIDTH) tile = MAP[y][x];
-                drawWorldTile(sx, sy, tile, x, y);
+                var wx = ((x % WORLD_WIDTH) + WORLD_WIDTH) % WORLD_WIDTH;
+                if (inBoundsY) tile = MAP[y][wx];
+                drawWorldTile(sx, sy, tile, wx, y);
             }
             continue;
         }
@@ -7964,7 +8162,7 @@ function draw() {
                     var _fpPxW = _fp.w * TILE_SIZE;
                     var _fpPxBottom = (bg.y + 1) * TILE_SIZE - game.camera.y;
                     var _pp = _getProceduralParams(bg);
-                    drawProceduralBuilding(ctx, _fpPxX, _fpPxBottom, _fpPxW, _pp);
+                    drawProceduralBuildingCached(ctx, _fpPxX, _fpPxBottom, _fpPxW, _pp);
                 }
             }
 
@@ -8400,6 +8598,14 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
+    if (game.mode === 'WORLD' && game.hoveredMarker && game.hoveredMarker.artists.length > 1) {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+            if (typeof cycleWorldArtist === 'function') cycleWorldArtist(-1);
+        } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+            if (typeof cycleWorldArtist === 'function') cycleWorldArtist(1);
+        }
+    }
+
     const dir = keyToDirection[e.code];
     if (dir) {
         e.preventDefault();
@@ -8731,10 +8937,15 @@ function drawWorldMarkers() {
     var savedFont = ctx.font;
     var savedAlign = ctx.textAlign;
     ctx.imageSmoothingEnabled = false;
+    var worldPxW = WORLD_WIDTH * TILE_SIZE;
 
     for (var i = 0; i < WORLD_MARKERS.length; i++) {
         var m = WORLD_MARKERS[i];
         var sx = m.worldX - game.camera.x;
+        if (game.mode === 'WORLD') {
+            if (sx > worldPxW / 2) sx -= worldPxW;
+            else if (sx < -worldPxW / 2) sx += worldPxW;
+        }
         var sy = m.worldY - game.camera.y;
         if (sx < -TILE_SIZE * 2 || sx > CANVAS_WIDTH + TILE_SIZE * 2 ||
             sy < -TILE_SIZE * 2 || sy > CANVAS_HEIGHT + TILE_SIZE * 2) continue;
@@ -8772,6 +8983,9 @@ function startEnterRegion(regionId) {
         console.error('startEnterRegion: unknown region', regionId);
         return;
     }
+    if (game.mode === 'WORLD') {
+        game._savedWorldPos = { x: game.player.x, y: game.player.y };
+    }
     game.mapTransition.active = true;
     game.mapTransition.dir = 'toRegion';
     game.mapTransition.t = 0;
@@ -8808,7 +9022,13 @@ async function completeEnterRegion(regionId) {
     }
     console.log('completeEnterRegion: map loaded, WORLD_WIDTH=' + WORLD_WIDTH + ' WORLD_HEIGHT=' + WORLD_HEIGHT + ' ROAD_COUNT=' + ROAD_COUNT + ' BUILDINGS=' + BUILDINGS.length + ' TERRAIN_GRID=' + (TERRAIN_GRID ? TERRAIN_GRID.length + ' rows' : 'NULL'));
     resizeCanvas();
-    var spawnPos = findSpawnOnRoad();
+    var spawnPos = null;
+    var visitArtist = game.pendingVisitArtist;
+    if (visitArtist) {
+        game.pendingVisitArtist = null;
+        spawnPos = _findSpawnNearArtist(visitArtist);
+    }
+    if (!spawnPos) spawnPos = findSpawnOnRoad();
     game.player.x = spawnPos.x;
     game.player.y = spawnPos.y;
     game.player.pxPerSecond = 300;
@@ -8825,6 +9045,31 @@ async function completeEnterRegion(regionId) {
     console.log('Region loaded:', regionId, 'spawn at', spawnPos.x, spawnPos.y);
 }
 
+function _findSpawnNearArtist(artistId) {
+    var bld = null;
+    for (var bi = 0; bi < BUILDINGS.length; bi++) {
+        if (BUILDINGS[bi].artistId === artistId) { bld = BUILDINGS[bi]; break; }
+    }
+    if (!bld) { console.warn('_findSpawnNearArtist: no building for', artistId); return null; }
+    var bx = bld.collisionWorld.x + bld.collisionWorld.w / 2;
+    var by = bld.collisionWorld.y + bld.collisionWorld.h / 2;
+    var ports = LANDMARKS.filter(function(lm) { return lm.id.indexOf('lm_blimp_') === 0; });
+    var bestPort = null, bestDist = Infinity;
+    for (var pi = 0; pi < ports.length; pi++) {
+        var ppx = ports[pi].x * TILE_SIZE, ppy = ports[pi].y * TILE_SIZE;
+        var d = Math.hypot(bx - ppx, by - ppy);
+        if (d < bestDist) { bestDist = d; bestPort = ports[pi]; }
+    }
+    if (bestPort) {
+        var pos = findSafeDrivablePos(bestPort.x, bestPort.y, 10, true);
+        if (pos) { console.log('_findSpawnNearArtist: blimp port', bestPort.id, 'near', artistId); return pos; }
+    }
+    var tileX = Math.floor(bx / TILE_SIZE), tileY = Math.floor(by / TILE_SIZE);
+    var pos2 = findSafeDrivablePos(tileX, tileY, 20, true);
+    if (pos2) { console.log('_findSpawnNearArtist: near building for', artistId); return pos2; }
+    return null;
+}
+
 async function completeReturnToWorld() {
     if (!WORLD_DATA || !WORLD_DATA.world) {
         console.error('completeReturnToWorld: no world data');
@@ -8835,17 +9080,23 @@ async function completeReturnToWorld() {
     applyWorldMapData();
     resizeCanvas();
 
-    const prevRegion = game.currentRegionId;
-    var node = null;
-    for (var i = 0; i < WORLD_NODES.length; i++) {
-        if (WORLD_NODES[i].regionId === prevRegion) { node = WORLD_NODES[i]; break; }
-    }
-    if (node) {
-        game.player.x = node.x * TILE_SIZE;
-        game.player.y = node.y * TILE_SIZE;
+    if (game._savedWorldPos) {
+        game.player.x = game._savedWorldPos.x;
+        game.player.y = game._savedWorldPos.y;
+        game._savedWorldPos = null;
     } else {
-        game.player.x = (WORLD_WIDTH >> 1) * TILE_SIZE;
-        game.player.y = (WORLD_HEIGHT >> 1) * TILE_SIZE;
+        const prevRegion = game.currentRegionId;
+        var node = null;
+        for (var i = 0; i < WORLD_NODES.length; i++) {
+            if (WORLD_NODES[i].regionId === prevRegion) { node = WORLD_NODES[i]; break; }
+        }
+        if (node) {
+            game.player.x = node.x * TILE_SIZE;
+            game.player.y = node.y * TILE_SIZE;
+        } else {
+            game.player.x = (WORLD_WIDTH >> 1) * TILE_SIZE;
+            game.player.y = (WORLD_HEIGHT >> 1) * TILE_SIZE;
+        }
     }
     game.player.pxPerSecond = 400;
     game.player.width = 96;
@@ -8888,6 +9139,8 @@ function updateWorldInteraction() {
     const p = game.player;
     const px = p.x + p.width / 2;
     const py = p.y + p.height / 2;
+    var worldPxW = WORLD_WIDTH * TILE_SIZE;
+    function wrapDistX(a, b) { var d = a - b; if (d > worldPxW / 2) d -= worldPxW; else if (d < -worldPxW / 2) d += worldPxW; return d; }
 
     // Hysteresis: if a node is active, keep it until player leaves exit radius
     if (game.activeNodeId) {
@@ -8925,13 +9178,16 @@ function updateWorldInteraction() {
 function drawWorldNodes() {
     if (WORLD_NODES.length === 0) return;
     ctx.imageSmoothingEnabled = false;
+    var worldPxW = WORLD_WIDTH * TILE_SIZE;
     const savedFont = ctx.font;
     const savedAlign = ctx.textAlign;
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
 
     for (const node of WORLD_NODES) {
-        const sx = node.x * TILE_SIZE - game.camera.x;
+        var sx = node.x * TILE_SIZE - game.camera.x;
+        if (sx > worldPxW / 2) sx -= worldPxW;
+        else if (sx < -worldPxW / 2) sx += worldPxW;
         const sy = node.y * TILE_SIZE - game.camera.y;
         if (sx < -TILE_SIZE * 2 || sx > CANVAS_WIDTH + TILE_SIZE * 2 ||
             sy < -TILE_SIZE * 2 || sy > CANVAS_HEIGHT + TILE_SIZE * 2) continue;
@@ -11102,8 +11358,37 @@ async function init() {
         game.player.x = spawnPos.x;
         game.player.y = spawnPos.y;
     }
-    game.mode = (_spValid && _sp.mode) ? _sp.mode : 'REGION';
-    game.currentRegionId = _restoreRegion;
+    if (_spValid && _sp.mode) {
+        game.mode = _sp.mode;
+        game.currentRegionId = _restoreRegion;
+        if (_sp.mode === 'WORLD') {
+            applyWorldMapData();
+        }
+    } else {
+        applyWorldMapData();
+        resizeCanvas();
+        game.mode = 'WORLD';
+        game.currentRegionId = null;
+        game.state = 'OVERWORLD';
+        game.controllerEntity = 'van';
+        game.activeBuildingId = null;
+        game.activeNodeId = null;
+        var _naNode = null;
+        for (var _ni = 0; _ni < WORLD_NODES.length; _ni++) {
+            if (WORLD_NODES[_ni].regionId === 'na') { _naNode = WORLD_NODES[_ni]; break; }
+        }
+        if (_naNode) {
+            game.player.x = _naNode.x * TILE_SIZE;
+            game.player.y = _naNode.y * TILE_SIZE;
+        } else {
+            game.player.x = WORLD_WIDTH * TILE_SIZE / 2;
+            game.player.y = WORLD_HEIGHT * TILE_SIZE * 0.35;
+        }
+        game.player.pxPerSecond = 400;
+        game.player.width = 96;
+        game.player.height = 96;
+        game.camera.initialized = false;
+    }
     if (typeof MP !== 'undefined' && MP.sendSpawnPos) {
         var _spTX = Math.round(game.player.x / TILE_SIZE);
         var _spTY = Math.round(game.player.y / TILE_SIZE);

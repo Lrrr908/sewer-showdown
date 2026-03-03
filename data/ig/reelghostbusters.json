@@ -1,0 +1,37 @@
+{
+  "artistId": "reelghostbusters",
+  "artistName": "REELGHOSTBUSTERS",
+  "updatedAt": "2026-03-03T04:34:42.913Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/ClxXztyMQyA/",
+      "authorName": "REELGHOSTBUSTERS",
+      "authorUrl": "https://www.instagram.com/reelghostbusters/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/ClxXztyMQyA.jpg",
+      "openUrl": "https://www.instagram.com/p/ClxXztyMQyA/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:34:42.913Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/CwstV3TuFaF/",
+      "authorName": "REELGHOSTBUSTERS",
+      "authorUrl": "https://www.instagram.com/reelghostbusters/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/CwstV3TuFaF.jpg",
+      "openUrl": "https://www.instagram.com/p/CwstV3TuFaF/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:34:42.913Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/C2ufoyDttm6/",
+      "authorName": "REELGHOSTBUSTERS",
+      "authorUrl": "https://www.instagram.com/reelghostbusters/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/C2ufoyDttm6.jpg",
+      "openUrl": "https://www.instagram.com/p/C2ufoyDttm6/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:34:42.913Z"
+    }
+  ]
+}

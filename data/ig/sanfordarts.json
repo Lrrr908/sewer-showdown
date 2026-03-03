@@ -1,0 +1,37 @@
+{
+  "artistId": "sanfordarts",
+  "artistName": "SANFORDARTS",
+  "updatedAt": "2026-03-03T04:40:25.453Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/DVY5631gM0f/",
+      "authorName": "SANFORDARTS",
+      "authorUrl": "https://www.instagram.com/sanfordarts/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVY5631gM0f.jpg",
+      "openUrl": "https://www.instagram.com/p/DVY5631gM0f/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:40:25.453Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DVRUF9jgOTv/",
+      "authorName": "SANFORDARTS",
+      "authorUrl": "https://www.instagram.com/sanfordarts/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVRUF9jgOTv.jpg",
+      "openUrl": "https://www.instagram.com/p/DVRUF9jgOTv/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:40:25.453Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DVRTurtgEeY/",
+      "authorName": "SANFORDARTS",
+      "authorUrl": "https://www.instagram.com/sanfordarts/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVRTurtgEeY.jpg",
+      "openUrl": "https://www.instagram.com/p/DVRTurtgEeY/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:40:25.453Z"
+    }
+  ]
+}

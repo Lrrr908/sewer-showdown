@@ -1,0 +1,37 @@
+{
+  "artistId": "erickmaterial",
+  "artistName": "ERICKMATERIAL",
+  "updatedAt": "2026-03-03T04:38:54.110Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/CNsYdQghUvD/",
+      "authorName": "ERICKMATERIAL",
+      "authorUrl": "https://www.instagram.com/erickmaterial/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/CNsYdQghUvD.jpg",
+      "openUrl": "https://www.instagram.com/p/CNsYdQghUvD/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:38:54.110Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/Bbp7gi2gAMN/",
+      "authorName": "ERICKMATERIAL",
+      "authorUrl": "https://www.instagram.com/erickmaterial/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/Bbp7gi2gAMN.jpg",
+      "openUrl": "https://www.instagram.com/p/Bbp7gi2gAMN/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:38:54.110Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/Ba1yZFfAKnK/",
+      "authorName": "ERICKMATERIAL",
+      "authorUrl": "https://www.instagram.com/erickmaterial/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/Ba1yZFfAKnK.jpg",
+      "openUrl": "https://www.instagram.com/p/Ba1yZFfAKnK/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:38:54.110Z"
+    }
+  ]
+}

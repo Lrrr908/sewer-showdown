@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // tools/gen_world_map.js
-// Generates NES-style world map tiles from Natural Earth 110m geometry.
+// Generates NES-style world map tiles from Natural Earth 50m geometry.
 // Downloads GeoJSON on first run, caches locally in tools/geo_cache/.
 // Output: data/world.json (tiles, regionNodes, regions, river)
 //
@@ -14,21 +14,21 @@ const path = require('path');
 const https = require('https');
 
 // ── Configuration ──────────────────────────────────────────────
-const WORLD_W = 160;
-const WORLD_H = 90;
-const TILE_SIZE = 32;
+const WORLD_W = 640;
+const WORLD_H = 320;
+const TILE_SIZE = 8;
 
 const CACHE_DIR = path.join(__dirname, 'geo_cache');
 const DATA_DIR  = path.join(__dirname, '..', 'data');
 const OUTPUT    = path.join(DATA_DIR, 'world.json');
 
 const NE_LAND = {
-    url:   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_land.geojson',
-    cache: path.join(CACHE_DIR, 'ne_110m_land.geojson')
+    url:   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson',
+    cache: path.join(CACHE_DIR, 'ne_50m_land.geojson')
 };
 const NE_RIVERS = {
-    url:   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_rivers_lake_centerlines.geojson',
-    cache: path.join(CACHE_DIR, 'ne_110m_rivers.geojson')
+    url:   'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_rivers_lake_centerlines.geojson',
+    cache: path.join(CACHE_DIR, 'ne_50m_rivers.geojson')
 };
 
 // Tile types
@@ -194,7 +194,7 @@ async function main() {
     console.log('Grid: ' + WORLD_W + 'x' + WORLD_H + '  tileSize: ' + TILE_SIZE);
 
     // 1. Load geodata
-    console.log('\nLoading Natural Earth 110m...');
+    console.log('\nLoading Natural Earth 50m...');
     let landGeo, riverGeo;
     try {
         landGeo  = await loadGeoJSON(NE_LAND);
@@ -254,7 +254,7 @@ async function main() {
             }
             if (landNeighbors < 8) continue;
             const h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
-            if (h % 6 === 0) {
+            if (h % 10 === 0) {
                 grid[ty][tx] = MOUNTAIN;
                 mountainCount++;
             }
@@ -262,12 +262,13 @@ async function main() {
     }
     console.log('  Mountain tiles: ' + mountainCount);
 
-    // Phase 3: Rasterize rivers
-    // Precedence: river overwrites LAND (2) and MOUNTAIN (3), never OCEAN (0) or COAST (1).
-    // Major rivers (scalerank <= 4) get 2-tile thickness; others get 1-tile.
-    console.log('Phase 3: Rasterizing rivers...');
+    // Phase 3: Rasterize rivers (landmark rivers only — scalerank <= 2)
+    // Only the most recognizable rivers: Nile, Amazon, Mississippi, Yangtze, Danube, Congo, etc.
+    // All rendered at 1-tile width to avoid flooding the map.
+    console.log('Phase 3: Rasterizing rivers (landmarks only, scalerank <= 2)...');
     let riverCount = 0;
     let riverOceanSkips = 0;
+    let riverSkipped = 0;
 
     function setRiver(x, y) {
         if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) return;
@@ -284,31 +285,19 @@ async function main() {
         if (geom.type === 'LineString') lines = [geom.coordinates];
         else if (geom.type === 'MultiLineString') lines = geom.coordinates;
 
-        // Major rivers: scalerank <= 4 get 2-tile width
         const rank = (feature.properties && typeof feature.properties.scalerank === 'number')
                    ? feature.properties.scalerank : 99;
-        const thick = rank <= 4;
+        if (rank > 2) { riverSkipped++; continue; }
 
         for (const line of lines) {
             for (let i = 0; i < line.length - 1; i++) {
                 const a = lonLatToTile(line[i][0], line[i][1]);
                 const b = lonLatToTile(line[i + 1][0], line[i + 1][1]);
-
-                // Primary line
                 bresenhamLine(a.tx, a.ty, b.tx, b.ty, setRiver);
-
-                // Thickness pass for major rivers: offset +1 in perpendicular
-                if (thick) {
-                    const dx = b.tx - a.tx, dy = b.ty - a.ty;
-                    // Perpendicular offset: if mostly horizontal, offset Y; if mostly vertical, offset X
-                    const offX = Math.abs(dy) >= Math.abs(dx) ? 1 : 0;
-                    const offY = Math.abs(dx) >= Math.abs(dy) ? 1 : 0;
-                    bresenhamLine(a.tx + offX, a.ty + offY, b.tx + offX, b.ty + offY, setRiver);
-                }
             }
         }
     }
-    console.log('  River tiles: ' + riverCount);
+    console.log('  River tiles: ' + riverCount + ' (skipped ' + riverSkipped + ' minor rivers)');
     console.log('  River→ocean skips: ' + riverOceanSkips + ' (correctly clamped)');
 
     // Phase 4: Generate coast (ocean tiles adjacent to land/mountain/river)
@@ -464,7 +453,7 @@ async function main() {
     };
 
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(OUTPUT, JSON.stringify(worldJson, null, 2) + '\n');
+    fs.writeFileSync(OUTPUT, JSON.stringify(worldJson) + '\n');
 
     console.log('\n=== Output: ' + OUTPUT + ' ===');
     console.log('  Size: ' + (fs.statSync(OUTPUT).size / 1024).toFixed(0) + ' KB');

@@ -1,0 +1,37 @@
+{
+  "artistId": "deathbytoys",
+  "artistName": "DEATHBYTOYS",
+  "updatedAt": "2026-03-03T04:44:13.575Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/CfAkK-os8yG/",
+      "authorName": "DEATHBYTOYS",
+      "authorUrl": "https://www.instagram.com/deathbytoys/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/CfAkK-os8yG.jpg",
+      "openUrl": "https://www.instagram.com/p/CfAkK-os8yG/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:44:13.575Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DVXyKrbDR1Z/",
+      "authorName": "DEATHBYTOYS",
+      "authorUrl": "https://www.instagram.com/deathbytoys/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVXyKrbDR1Z.jpg",
+      "openUrl": "https://www.instagram.com/p/DVXyKrbDR1Z/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:44:13.575Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DVUWz7pkQbK/",
+      "authorName": "DEATHBYTOYS",
+      "authorUrl": "https://www.instagram.com/deathbytoys/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVUWz7pkQbK.jpg",
+      "openUrl": "https://www.instagram.com/p/DVUWz7pkQbK/",
+      "status": "local",
+      "fetchedAt": "2026-03-03T04:44:13.575Z"
+    }
+  ]
+}
