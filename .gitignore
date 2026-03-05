@@ -12,4 +12,3 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
-tools/geo_cache/
