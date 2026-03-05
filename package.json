@@ -1,7 +1,9 @@
 {
   "name": "sewer-showdown",
   "private": true,
-  "workspaces": ["server"],
+  "workspaces": [
+    "server"
+  ],
   "scripts": {
     "dev": "npm run dev:server & npm run dev:client",
     "dev:server": "cd server && npm run dev",
@@ -10,5 +12,8 @@
     "migrate": "cd server && npm run migrate",
     "gen:map": "python3 scripts/urban_plan.py",
     "update-feed": "node server/src/db/update_feed.js"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
   }
 }
