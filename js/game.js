@@ -8885,9 +8885,11 @@ function updateVanProjectiles(dt) {
                         ce.stunTimer = 0;
                         ce.deathFlash = 0.25;
                         _owAddKillScore(ce.type, cecx, cecy);
+                        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(ce.id);
                     } else {
                         ce.aiState = 'stunned';
                         ce.stunTimer = OW_STUN_TIME;
+                        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyHit(ce.id, ce.hp);
                     }
                     // Sparks + shake
                     game.owScreenShake = 4;
@@ -8933,6 +8935,7 @@ function updateVanProjectiles(dt) {
                     _owAddKillScore(we.type, wecx, wecy);
                     game.owScreenShake = 2;
                     game.owHitSparks.push({ x: wecx, y: wecy, life: 0.18, maxLife: 0.18 });
+                    if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(we.id);
                 }
             }
         }
@@ -8963,6 +8966,48 @@ function updateRegionEnemies(dt) {
     var tgt      = isOnFoot ? game.turtle : game.player;
     var tgtCx    = tgt.x + (tgt.width  || 32) / 2;
     var tgtCy    = tgt.y + (tgt.height || 32) / 2;
+
+    // 3a. Apply incoming enemy sync events from remote players
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        var _inSyncs = MP.drainEnemySyncs();
+        if (_inSyncs) {
+            for (var _isi = 0; _isi < _inSyncs.length; _isi++) {
+                var _sync = _inSyncs[_isi];
+                // Apply kills
+                for (var _iki = 0; _iki < _sync.kills.length; _iki++) {
+                    var _kid = _sync.kills[_iki];
+                    for (var _kei = 0; _kei < game.regionEnemies.length; _kei++) {
+                        var _ke = game.regionEnemies[_kei];
+                        if (_ke.id === _kid && _ke.state !== 'dying' && _ke.state !== 'dead') {
+                            _ke.hp = 0;
+                            _ke.state = 'dying';
+                            _ke.deathTimer = REGION_ENEMY_DEATH_TIME;
+                            _ke.stunTimer = 0;
+                            _ke.deathFlash = 0.25;
+                            _ke.aiState = 'patrol';  // stop chasing after death
+                            var _kecx = _ke.x + (_ke.type === 'car' ? REGION_ENEMY_CAR_W : REGION_ENEMY_WALK_W) / 2;
+                            var _kecy = _ke.y + (_ke.type === 'car' ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H) / 2;
+                            game.owHitSparks.push({ x: _kecx, y: _kecy, life: 0.18, maxLife: 0.18 });
+                            break;
+                        }
+                    }
+                }
+                // Apply HP hits
+                for (var _ihi = 0; _ihi < _sync.hits.length; _ihi++) {
+                    var _hitData = _sync.hits[_ihi];
+                    for (var _hei = 0; _hei < game.regionEnemies.length; _hei++) {
+                        var _he = game.regionEnemies[_hei];
+                        if (_he.id === _hitData.id && _he.state !== 'dying' && _he.state !== 'dead') {
+                            _he.hp = _hitData.hp;
+                            _he.aiState = 'stunned';
+                            _he.stunTimer = OW_STUN_TIME;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // 3. Per-frame AI update pass (all non-dead/dying enemies)
     for (var ai = 0; ai < game.regionEnemies.length; ai++) {
@@ -9013,9 +9058,11 @@ function updateRegionEnemies(dt) {
                         he.stunTimer = 0;   // clear stun so dying sprite always renders
                         he.deathFlash = 0.25; // brief white flash on death
                         _owAddKillScore(he.type, hecx, hecy);
+                        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(he.id);
                     } else {
                         he.aiState = 'stunned';
                         he.stunTimer = OW_STUN_TIME;
+                        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyHit(he.id, he.hp);
                     }
                 }
             }

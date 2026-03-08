@@ -205,6 +205,27 @@ function initWsServer(wss) {
           }
           break;
 
+        case 'enemy_sync': {
+          // Relay enemy kill/hit events to all other players in the zone.
+          // Server is stateless here — just broadcast the payload as-is.
+          if (!Array.isArray(msg.kills) && !Array.isArray(msg.hits)) break;
+          const zone = sim.getZoneForAccount(accountId);
+          if (zone) {
+            const payload = JSON.stringify({
+              t: 'enemy_sync',
+              zone: zoneId,
+              kills: Array.isArray(msg.kills) ? msg.kills.slice(0, 50) : [],
+              hits:  Array.isArray(msg.hits)  ? msg.hits.slice(0, 50)  : [],
+            });
+            for (const [pid, pws] of zone.conns) {
+              if (pid !== entityId && pws.readyState === 1) {
+                try { pws.send(payload); } catch {}
+              }
+            }
+          }
+          break;
+        }
+
         case 'chat': {
           const now = Date.now();
           if (now - lastChatMs < CHAT_COOLDOWN_MS) break;

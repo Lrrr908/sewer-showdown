@@ -67,6 +67,16 @@ var MP = (function () {
 
     var ugcCache = {};
 
+    // --- Enemy sync state ---
+    // Outgoing: kills/hits queued by game, flushed on timer or immediately for kills.
+    var _outKills = [];
+    var _outHits  = [];
+    var _enemySyncLastFlush = 0;
+    var _ENEMY_SYNC_FLUSH_MS = 120;  // max 8 hit batches/sec
+
+    // Incoming: queued from server, drained each game frame.
+    var _inEnemySyncs = [];
+
     var onHelloOk = null;
     var onSnapshot = null;
     var onDelta = null;
@@ -226,10 +236,46 @@ var MP = (function () {
 
     var INTERP_DELAY_MS = 100;
 
+    function _flushEnemySync(force) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        if (_outKills.length === 0 && _outHits.length === 0) return;
+        var now = Date.now();
+        if (!force && now - _enemySyncLastFlush < _ENEMY_SYNC_FLUSH_MS) return;
+        _enemySyncLastFlush = now;
+        ws.send(JSON.stringify({ t: 'enemy_sync', kills: _outKills, hits: _outHits }));
+        _outKills = [];
+        _outHits  = [];
+    }
+
+    function sendEnemyKill(enemyId) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        _outKills.push(enemyId);
+        _flushEnemySync(true);  // kills go out immediately
+    }
+
+    function sendEnemyHit(enemyId, hp) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        // Deduplicate: keep only latest hp for same id in batch
+        for (var i = 0; i < _outHits.length; i++) {
+            if (_outHits[i].id === enemyId) { _outHits[i].hp = hp; return; }
+        }
+        _outHits.push({ id: enemyId, hp: hp });
+    }
+
+    function drainEnemySyncs() {
+        if (_inEnemySyncs.length === 0) return null;
+        var result = _inEnemySyncs;
+        _inEnemySyncs = [];
+        return result;
+    }
+
     function updateRender() {
         var localTargetX = predTile.x * TILE_SIZE;
         var localTargetY = predTile.y * TILE_SIZE;
         interpolateToward(localRenderPx, localTargetX, localTargetY);
+
+        // Flush any pending hit-sync batches on the render timer
+        _flushEnemySync(false);
 
         var renderTime = Date.now() - INTERP_DELAY_MS;
 
@@ -532,6 +578,14 @@ var MP = (function () {
                 if (onDelta) onDelta(msg);
                 break;
 
+            case 'enemy_sync':
+                // Relay from server: another player killed/hit enemies. Queue for game to apply.
+                if (msg.zone && msg.zone !== currentZone) break;
+                if (msg.kills && msg.kills.length > 0 || msg.hits && msg.hits.length > 0) {
+                    _inEnemySyncs.push({ kills: msg.kills || [], hits: msg.hits || [] });
+                }
+                break;
+
             case 'pos_batch':
                 if (msg.zone && msg.zone !== currentZone) break;
                 serverTick = msg.tick;
@@ -574,6 +628,7 @@ var MP = (function () {
                 resetPredictionState();
                 collisionGrid = null;
                 collisionHash = null;
+                _outKills = []; _outHits = []; _inEnemySyncs = [];
                 console.log('[mp] transfer_begin:', msg.from, '->', msg.to);
                 if (onTransferBegin) onTransferBegin(msg);
                 break;
@@ -826,6 +881,9 @@ var MP = (function () {
         sendSpawnPos: sendSpawnPos,
         sendPosSync: sendPosSync,
         sendAtkSync: sendAtkSync,
+        sendEnemyKill: sendEnemyKill,
+        sendEnemyHit: sendEnemyHit,
+        drainEnemySyncs: drainEnemySyncs,
         sendAction: sendAction,
         requestTransfer: requestTransfer,
         requestCollision: requestCollision,
