@@ -35,7 +35,7 @@ function saveGame() {
                 y: entity.y,
                 direction: entity.direction || 'down',
                 regionId: game.currentRegionId || 'na',
-                mode: game.mode || 'REGION',
+                mode: (game.mode === 'LEVEL' ? 'REGION' : game.mode) || 'REGION',
                 controllerEntity: game.controllerEntity || 'van',
                 activeTurtle: game.activeTurtle || 'leo',
                 vanX: game.van ? game.van.x : 0,
@@ -379,6 +379,659 @@ var NES = (function () {
         '_____GGGGGG_____',
         '________________'
     ];
+
+    // ── Weapon sprites (NES-ripped, positioned as overlays on turtle body) ──
+    // Each weapon pattern + offset describes where the weapon appears relative to
+    // the turtle origin (px, py) at scale=1 (1 char = 1px before scaling).
+    // Directions: right (flip for left), down, up.
+
+    // Leo — Katanas (twin swords). NES blade: black outline, cream/tan face.
+    // Right: horizontal blade extending from right hand (rows 6-8, cols beyond body).
+    PATTERNS.weaponLeoRight = [
+        'KKKKKKKKK',
+        'TTTTTTTTT',
+        'KKKKKKKKK',
+    ];
+    // Down / up: one blade visible vertically at turtle's right shoulder.
+    PATTERNS.weaponLeoVert = [
+        '_KK',
+        '_TK',
+        '_TK',
+        '_TK',
+        '_TK',
+        '_TK',
+        '_TK',
+        '_TK',
+        '_KK',
+    ];
+    // Down-attack: katana blade thrusts below body (NES pixel-accurate).
+    // Sprite cols 4-6 (3 wide), rows 24-31 (8 rows below 16-row body). ox=4, oy=16.
+    PATTERNS.weaponLeoAtkDown = [
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+    ];
+    // Side-attack: katana horizontal slash — full-width blade streak (NES pixel-accurate).
+    // Sprite cols 16-23 (8 wide), rows 6-8. Blade (TTTTTTTT) centered at oy+1.
+    // flipX=true reuses same pattern for left-facing (pattern is horizontally symmetric).
+    PATTERNS.weaponLeoAtkSide = [
+        'KKKKKKKK',   // row 6: blade top edge
+        'TTTTTTTT',   // row 7: blade surface (metallic sheen)
+        'KKKKKKKK',   // row 8: blade bottom edge
+    ];
+    // Up-attack: katana blade thrusts above body (NES pixel-accurate).
+    // Sprite cols 11-13 (3 wide), rows 0-7 (8 rows above 16-row body). ox=11, oy=-8.
+    PATTERNS.weaponLeoAtkUp = [
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+        'KTK',
+    ];
+
+    // Raph — Sai (horizontal, pointing RIGHT).
+    // Handle at col 0 (K), prong guard fork at cols 2-5, silver blade cols 5-8, tip col 9.
+    // Flip horizontally for left-facing so the tip always points the direction faced.
+    PATTERNS.weaponRaphHoriz = [
+        '___KK_____',
+        '__KLLK____',
+        'KTTLLLLLLK',
+        '__KLLK____',
+        '___KK_____',
+    ];
+    // Side-attack: sai thrust horizontally — cross-guard prongs + full blade extending right (NES pixel-accurate).
+    // Sprite cols 16-23 (8 wide), rows 4-10. Blade (TTTTTTK) centered at oy+3.
+    // flipX=true reuses same pattern for left-facing thrust.
+    PATTERNS.weaponRaphAtkSide = [
+        '__KK____',   // row 4: prong tips (above blade)
+        '_KTK____',   // row 5: prong inner
+        'KTKKKK__',   // row 6: prong base
+        'TTTTTTK_',   // row 7: sai blade
+        'KTKKKK__',   // row 8: prong base (mirror)
+        '_KTK____',   // row 9: prong inner (mirror)
+        '__KK____',   // row 10: prong tips (mirror)
+    ];
+    // Up-attack: sai thrust upward — blade tip at top, cross-guard just above body (NES pixel-accurate).
+    // Sprite cols 8-15 (8 wide), rows 1-6 (6 rows above body top at sprite row 7). oy=-6.
+    PATTERNS.weaponRaphAtkUp = [
+        '____K___',   // row 1: blade tip
+        '___KTK__',   // row 2: blade
+        '___KTK__',   // row 3: blade
+        '_KKKTKKK',   // row 4: cross-guard base
+        '_KTKTKTK',   // row 5: cross-guard prongs
+        '__KTTTK_',   // row 6: guard/handle top (oy=-1, connects to body)
+    ];
+    // Down-attack: sai thrust downward — cross-guard + blade tip extending below body (NES pixel-accurate).
+    // Sprite cols 3-9 (7 wide), rows 24-30 (7 rows below the 16-row body).
+    PATTERNS.weaponRaphAtkDown = [
+        '__KTK__',   // row 24: prong tips emerge
+        '_KTTTK_',   // row 25: prong span
+        'KTKTKTK',   // row 26: full cross-guard width
+        'KKKTKKK',   // row 27: guard base / blade top
+        '__KTK__',   // row 28: blade
+        '__KTK__',   // row 29: blade
+        '___K___',   // row 30: blade tip
+    ];
+    // Down / up: sai held upright above hand.
+    PATTERNS.weaponRaphVert = [
+        '_LLKTKLL_',
+        '_LKTTTKL_',
+        '_KTKTKTK_',
+        '_KKKTKKK_',
+        '_LLKTKLL_',
+        '__LLKLL__',
+        '___LKL___',
+        '___LKL___',
+        '___LKL___',
+    ];
+
+    // Mikey — Nunchucks. NES rip (8x8 diagonal swing): L silver chain, M/T sticks.
+    // Right / attack: diagonal swing extending from hand.
+    PATTERNS.weaponMikeySwing = [
+        'LMTKLLLL',
+        'LLKLLLLL',
+        'LLKMLLLL',
+        'LLMTMLLL',
+        'LLKMTMLL',
+        'LLLKMTML',
+        'LLLLKMTM',
+        'LLLLLKMM',
+    ];
+    // Down / up: nunchucks hanging from hand, chain visible.
+    PATTERNS.weaponMikeyVert = [
+        'MTM',
+        'MTM',
+        'KLK',
+        'LLL',
+        'KLK',
+        'MTM',
+        'MTM',
+        'MKM',
+    ];
+    // Down attack frame 1: nunchuck swings diagonally down-left (NES pixel-accurate).
+    // Chain (K) connects at top-center; stick (M/T) swings toward bottom-left.
+    PATTERNS.weaponMikeyAtkDown1 = [
+        '_____KTM________',
+        '______K_________',
+        '_____MK_________',
+        '____MTM_________',
+        '___MTMK_________',
+        '__MTMK__________',
+        '_MTMK___________',
+        '_MMK____________',
+    ];
+    // Down attack frame 2: nunchuck swings diagonally down-right.
+    PATTERNS.weaponMikeyAtkDown2 = [
+        '_____MTK________',
+        '______K_________',
+        '______KM________',
+        '______MTM_______',
+        '______KMTM______',
+        '_______KMTM_____',
+        '________KMTM____',
+        '_________KMM____',
+    ];
+    // Up attack frame 1: nunchuck sweeps upper-left → lower-right above turtle (NES pixel-accurate).
+    PATTERNS.weaponMikeyAtkUp1 = [
+        '_______MMK______',
+        '_______MTMK_____',
+        '________MTMK____',
+        '_________MTMK___',
+        '__________MTM___',
+        '___________MK___',
+        '____________K___',
+        '___________KTM__',
+    ];
+    // Right/left attack frame 1: nunchuck swings DOWN (NES pixel-accurate, rows 5-11 of sprite).
+    // Handle (M) at row 0; stick tip (MM) at row 6 lower-right.
+    PATTERNS.weaponMikeyAtkRight1 = [
+        'M_______',
+        'TKKMK___',
+        'M_MTMK__',
+        '___MTMK_',
+        '____MTMK',
+        '_____MTM',
+        '______MM',
+    ];
+    // Right/left attack frame 2: nunchuck pulls back UP (rows 1-7 of sprite).
+    // Stick tip (MM) at row 0 upper-right; handle (M) at row 6.
+    PATTERNS.weaponMikeyAtkRight2 = [
+        '______MM',
+        '_____MTM',
+        '____MTMK',
+        '___MTMK_',
+        'M_MTMK__',
+        'TKKMK___',
+        'M_______',
+    ];
+    // Up attack frame 2: nunchuck swings upper-right → lower-left (extends slightly past right edge).
+    PATTERNS.weaponMikeyAtkUp2 = [
+        '_______________KMM',
+        '______________KMTM',
+        '_____________KMTM_',
+        '____________KMTM__',
+        '____________MTM___',
+        '____________KM____',
+        '____________K_____',
+        '___________MTK____',
+    ];
+
+    // Donnie — Bo Staff (horizontal). NES pixel-accurate: 3 rows, 24px wide.
+    // Top/bottom rows: solid orange-brown wood (M).
+    // Center row: tan wood (T) with black knuckle rings (K) every 4px starting at pos 1.
+    PATTERNS.weaponDonnieHoriz = [
+        'MMMMMMMMMMMMMMMMMMMMMMMM',
+        'TKTTTKTTTKTTTKTTTKTTTKTT',
+        'MMMMMMMMMMMMMMMMMMMMMMMM',
+    ];
+    // Down / up: staff held vertically, extends above and below turtle.
+    PATTERNS.weaponDonnieVert = [
+        'MTM',
+        'MTM',
+        'MKM',
+        'MTM',
+        'MTM',
+        'MTM',
+        'MKM',
+        'MTM',
+        'MTM',
+        'MTM',
+        'MKM',
+        'MTM',
+        'MTM',
+        'MTM',
+        'MKM',
+        'MTM',
+        'MTM',
+        'MTM',
+        'MKM',
+        'MTM',
+    ];
+
+    // ── Enemy Sprites (Lagrange Point NES rips) ──
+    // Cyborg: K=black outline, B=dark blue, 1=mid blue, 2=light blue
+    PATTERNS.enemyCyborgWalk1 = [
+        '.........K......K',
+        '.....KKK.KKKKKKKK',
+        '.KKK.K22KK222222K',
+        'K22K.K22K22222222',
+        'K22K.K2KKK2KKKK2K',
+        'KK2K.KK11K2KKKK2K',
+        '11KK.KK11K22KK22K',
+        '11KK.K2KKK222222K',
+        'KK2K.KK1KK222222K',
+        'K1KK..K2KK222222K',
+        'K2K..K2KKK222222K',
+        'KK2K.K22K.K2222K.',
+        'K22K.KKKKKKKKKKKK',
+        'KKKK.K22K22K11K22',
+        'K22K.K21K22K11K22',
+        'K12K..KK222KKKK22',
+        '2KK.....K22KKKK22',
+        '2K.....K2KKK..KKK',
+        '2K.....K222K..K22',
+        'BK.....K222KKKK22',
+        'BKK...KK222KKKK22',
+        'KKK...KK222KKKK22',
+        'K......KBBBK..KBB',
+    ];
+    PATTERNS.enemyCyborgWalk2 = [
+        '.KKK.....K......K',
+        'K22K.KKK.KKKKKKKK',
+        'K22K.K22KK222222K',
+        'KK2K.K22K22222222',
+        '11KK.K2KKK2KKKK2K',
+        '11KK.KK11K2KK2K2K',
+        'KK2K.KK11K22KK22K',
+        'K1KK.K2KKK222222K',
+        'K2K..KK1KK222222K',
+        'KK2K..K2KK222222K',
+        'K22K.K2KKK222222K',
+        'KKKK.K22K.K2222K.',
+        'K22K.KKKKKKKKKKKK',
+        'K12K.K22K11K11K22',
+        '2KK..K21K21K11K22',
+        'K.....KK2KKKKKK22',
+        '2K.....K222KKKK22',
+        '2K.....K222K..KKK',
+        '2K.....KBBBK..K22',
+        '2KK...KKBBBKKKK22',
+        '2KK...KKKKKKKKK22',
+        'BK......KKKKKKK22',
+        '..............KBB',
+    ];
+
+    // Demon: K=black outline, 0=dark gray, L=light gray, x=coral chest glow
+    PATTERNS.enemyDemonWalk1 = [
+        '................',
+        '...KLK....KLK...',
+        '...KLK....KLK...',
+        '.KKKLK....KLKKK.',
+        'KLLKLKKKKKKLKLLK',
+        'KLLKKLLKKLLKKLLK',
+        'KKKKLLLLLLLLKKKK',
+        'KLLKLLLLLLLLKLLK',
+        'LKLLKLKLLKLKLLKL',
+        'LKLLKKKKKKKKLLKL',
+        'LKLLKxxKKxxKLLKL',
+        'LLKLKKxxxxKKLKLL',
+        'LLKLKKKxxKKKLKLL',
+        'KKKLKLLKKLLKLKKK',
+        'LLKLLLLLLLLLLKLL',
+        'LLKKKLLKKLLKKLKK',
+        'KKKKLKKKKKKKLLLL',
+        '..KKLLaKKaLKLKLa',
+        '..KLKaKLLKaKKLaK',
+        '.KLLaKKaaKKaLKKK',
+        '.KKaaKKKKKKKKLK.',
+        '.KLKaKKKKKKaaLKK',
+        'KLLaKKKK..KKKKK.',
+        'KLLaaKK.........',
+        'KLaaaK..........',
+    ];
+    PATTERNS.enemyDemonWalk2 = [
+        '...KLK....KLK...',
+        '...KLK....KLK...',
+        '.KKKLK....KLKKK.',
+        'KLLKLKKKKKKLKLLK',
+        'KLLKKLLKKLLKKLLK',
+        'KKKKLLLLLLLLKKKK',
+        'KLLKLLLLLLLLKLLK',
+        'LKLLKLKLLKLKLLKL',
+        'LKLLKKKKKKKKLLKL',
+        'LKLLKxxKKxxKLLKL',
+        'LLKLKKxxxxKKLKLL',
+        'LLKLKKKxxKKKLKLL',
+        'KKKLKLLKKLLKLKKK',
+        'LKKLLLLLLLLLLLKL',
+        'KLKKKLLKKLLKKKLK',
+        'LLLKLKKKKKKLKLLL',
+        'KLaKLLaKKaLLKaLK',
+        '.KKLKaKLLKaKLKK.',
+        '.KLLaKKaaKKaLLK.',
+        '.KLLaKKKKKKaLLK.',
+        'KKKaKKKKKKKKaKKK',
+        'KLLKaKK..KKaKLLK',
+        'KLLaaK....KaaLLK',
+        'KLaaK......KaaLK',
+        '................',
+    ];
+
+    // ── Enemy Car Sprites (Mad Max NES rip) ──
+    // Colors: K=black, W=white highlights, s=steel blue body
+    PATTERNS.enemyCarLeft = [
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................KKKKKKK.........',
+        '.............KKKsssssssK........',
+        '......KKKKKKKWKssssssssKKKKKKKK.',
+        '..KKKKsssssKWWKssssssssKKKWWWWK.',
+        '.KsKKKKsssKWWWKssssssssKKWWWWKWK',
+        'KsKKWWWKsKWWWWKssssssssKKWKKKKWK',
+        'KsKKWWWWKKWWWWKKssssssKKKKWWWWKK',
+        'KsKWWWWWKKWWWWsKKKKKKKssKWWWWKWK',
+        'KssKKKKKsKWWWsKKKKKKKKKssKKWWKWK',
+        'KsssssssssKWsKKKKKKKKKKKsssKKWKK',
+        'KsssssKKKKKKKKKKKKKKKKKKsssssKKK',
+        'KssKKKssssssKKKKKKKWKWKssssssssK',
+        'KKKsssssssssssssssKWKWKssssssssK',
+        'KssssKKKKKssssssssKWKWKsKKKKsssK',
+        '.KssKKKKKKKssssssKWKWKsKKKKKKsK.',
+        '..KKKKKWKKKKKKKKKKWKWKKKKWKKKK..',
+        '.....KKKKK........K.K..KKKKK....',
+        '......KKK...............KKK.....',
+    ];
+    PATTERNS.enemyCarRight = [
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '.........KKKKKKK................',
+        '........KsssssssKKK.............',
+        '.KKKKKKKKssssssssKWKKKKKKK......',
+        '.KWWWWKKKssssssssKWWKsssssKKKK..',
+        'KWKWWWWKKssssssssKWWWKsssKKKKsK.',
+        'KWKKKKWKKssssssssKWWWWKsKWWWKKsK',
+        'KKWWWWKKKKssssssKKWWWWKKWWWWKKsK',
+        'KWKWWWWKssKKKKKKKsWWWWKKWWWWWKsK',
+        'KWKWWKKssKKKKKKKKKsWWWKsKKKKKssK',
+        'KKWKKsssKKKKKKKKKKKsWKsssssssssK',
+        'KKKsssssKKKKKKKKKKKKKKKKKKsssssK',
+        'KssssssssKWKWKKKKKKKssssssKKKssK',
+        'KssssssssKWKWKsssssssssssssssKKK',
+        'KsssKKKKsKWKWKssssssssKKKKKssssK',
+        '.KsKKKKKKsKWKWKssssssKKKKKKKssK.',
+        '..KKKKWKKKKWKWKKKKKKKKKKWKKKKK..',
+        '....KKKKK..K.K........KKKKK.....',
+        '.....KKK...............KKK......',
+    ];
+    PATTERNS.enemyCarDown = [
+        '...KKKKKKKKKK...',
+        '..KsssKWWKsssK..',
+        '..KssKWWWWKssK..',
+        '.KssssKWWKssssK.',
+        'KKssssKWWKssssKK',
+        'KKssKKKKKKKKssKK',
+        'KsKKssssssssKKsK',
+        'KKKssssssssssKKK',
+        'KKKssssssssssKKK',
+        '.KKssssssssssKK.',
+        '.KKssssssssssKK.',
+        'KWsKKKKKKKKKKsWK',
+        '.KsKKKKKKKKKKsK.',
+        'KWssKKssssKKssWK',
+        '.KsKWWKssKWWKsK.',
+        'KsKWWWWKKWWWWKsK',
+        'KsKWWWWKKWWWWKsK',
+        'KsKWKKWKKWKKWKsK',
+        'KKKKWWKKKKWWKKKK',
+        'KKKWWWWKKWWWWKKK',
+        'KKKKKKKKKKKKKKKK',
+        '.KssssssssssssK.',
+        '.KssssssssssssK.',
+        '..KKKKKKKKKKKK..',
+    ];
+    PATTERNS.enemyCarUp = [
+        '....KK....KK....',
+        '...KWWK..KWWK...',
+        '..KWWWWKKWWWWK..',
+        '.KKWWWWKKWWWWKK.',
+        'KssKKKKKKKKKKssK',
+        'KsKssssssssssKsK',
+        'KKKssssssssssKKK',
+        'KKKssssssssssKKK',
+        'KWKKssssssssKKWK',
+        '.KKWKKKKKKKKWKK.',
+        'KWKWWWWWWWWWWKWK',
+        '.KKWWWWWWWWWWKK.',
+        '.KKKWWWKKWWWKKK.',
+        '.KssKKKWWKKKssK.',
+        'KKssssKWWKssssKK',
+        'KKsssKWWWWKsssKK',
+        'KKsssKKKKKKsssKK',
+        'KKKssKWKKWKssKKK',
+        'KsKsssKWWKsssKsK',
+        'KKKssssKKssssKKK',
+        '.KKKKssssssKKsK.',
+        '.KKWWKKKKKKWWKK.',
+        '.KKWWWKssKWWWKK.',
+        '..KKKKKKKKKKKK..',
+    ];
+    // Destroyed car variants
+    PATTERNS.enemyCarDestrLeft = [
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................KKKKKKK.........',
+        '.............KKKsssKsssK........',
+        '......KKKKKKKWKssssKKssKKKKKKKK.',
+        '..KKKKsssssKWWKsssssKKsKKKWWWWK.',
+        '.KsKKKKsssKWKWKssKKKKssKKWWKWKWK',
+        'KsKKWWWKsKWKKKKsKKsssKsKKWKKKKWK',
+        'KsKKWWWWKKKKKWKKssssssKKKKWKWWKK',
+        'KsKWWWWWKKWKWWsKKKKKKKssKWWKKKWK',
+        'KKsKKKKKsKWWWsKKKKWKKKKssKKWWKWK',
+        '.KKssKKKKsKWsKKKWWKWKKKKsssKKWKK',
+        '.KKsssKKKKKKKKKKKWWKKKKKsKKssKK.',
+        '.KsKKKsKKsssKKKKKKKWKWKsssKKsKK.',
+        'KKKsssssssssssssssWKKWKssssKsss.',
+        'KssssKKKKKsKKKKsssWKKWKsKKKKssK.',
+        '.KssKKKKKKKKKKKKsKWKWKsKKKKKKsK.',
+        '..KKKKKWKKKK...KKKWKWKKKKWKKKK..',
+        '.....KKKKK........K.K..KKKKK....',
+        '......KKK...............KKK.....',
+    ];
+    PATTERNS.enemyCarDestrRight = [
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '................................',
+        '.........KKKKKKK................',
+        '........KsssKsssKKK.............',
+        '.KKKKKKKKssKKssssKWKKKKKKK......',
+        '.KWWWWKKKsKKsssssKWWKsssssKKKK..',
+        'KWKWKWWKKssKKKKssKWKWKsssKKKKsK.',
+        'KWKKKKWKKsKsssKKsKKKKWKsKWWWKKsK',
+        'KKWWKWKKKKssssssKKWKKKKKWWWWKKsK',
+        'KWKKKWWKssKKKKKKKsWWKWKKWWWWWKsK',
+        'KWKWWKKssKKKKWKKKKsWWWKsKKKKKsKK',
+        'KKWKKsssKKKKWKWWKKKsWKsKKKKssKK.',
+        '.KKssKKsKKKKKWWKKKKKKKKKKKsssKK.',
+        '.KKsKKsssKWKWKKKKKKKsssKKsKKKsK.',
+        '.sssKssssKWKKWsssssssssssssssKKK',
+        '.KssKKKKsKWKKWsssKKKKsKKKKKssssK',
+        '.KsKKKKKKsKWKWKsKKKKKKKKKKKKssK.',
+        '..KKKKWKKKKWKWKKK...KKKKWKKKKK..',
+        '....KKKKK..K.K........KKKKK.....',
+        '.....KKK...............KKK......',
+    ];
+    PATTERNS.enemyCarDestrDown = [
+        '...KKK....KKK...',
+        '..KssKKKKKKKsK..',
+        '..KKKKWWWWKssK..',
+        '.KsKKsKWWKssKKK.',
+        'KKsKssKWWKsKKsKK',
+        'KKssKKKKKKKKssKK',
+        'KsKKssssssssKKsK',
+        'KKKsssssKKKssKKK',
+        'KKKKKsKKKKsssKKK',
+        '.KKsKKKsssKKKKK.',
+        '.KKssssssssKsKK.',
+        'KWsKKKKWKKKKKsWK',
+        '.KsKKKWKWWKKKsK.',
+        'KWssKKssssKKssWK',
+        '.KsKWWKssKWWKsK.',
+        'KsKWKWWKKWWWKKsK',
+        'KsKKKWWKKWWKWKsK',
+        'KsKWKKWKKWKKWKsK',
+        'KKKKWWKKKKKWKKKK',
+        'KKKWWWWKKWWKWKKK',
+        'KKKKKKKKKKKKKKKK',
+        '.KKsssssKKssssK.',
+        '.KsKKssKKKKKssK.',
+        '..KKKKKK...KKK..',
+    ];
+    PATTERNS.enemyCarDestrUp = [
+        '....KK....KK....',
+        '...KWWK..KWKK...',
+        '..KWKWKKKWKKWK..',
+        '.KKWWKWKKKWWKKK.',
+        'KssKKKKKKKKKKsKK',
+        'KsKsssKKsssKKKsK',
+        'KKKssKKKKssKsKKK',
+        'KKKsKsssKKKssKKK',
+        'KWKKssssssKsKKWK',
+        '.KKWKKKKKKKKWKK.',
+        'KWKWWKWKKKWKWKWK',
+        '.KKWWWKKKKKWWKK.',
+        '.KKKWKWKKWKWKKK.',
+        '.KssKKKWWKKKKsK.',
+        'KKKKssKWWKssKsKK',
+        'KKKKKKWWWWKsKKKK',
+        'KKsKsKKKKKKsKsKK',
+        'KKKKKKWKKWKssKKK',
+        'KsKsKsKWWKsssKsK',
+        'KKKssssKKsKKsKKK',
+        '.KKKKsssKKKKKsK.',
+        '.KKKKKKKKKKKKK..',
+        '.KKKKKK...KKKKK.',
+        '..KKK.......KK..',
+    ];
+
+    // Weapon layout: { pattern, ox, oy, flip (for left direction) }
+    // ox/oy are pixel offsets from turtle (px, py) at scale=1.
+    var WEAPON_CONFIG = {
+        leo: {
+            // right arm tip at col 13; blade starts at col 14 (0-gap connection)
+            right: { pattern: 'weaponLeoRight', ox: 14, oy: 6 },
+            // left: symmetric mirror (ox = 16 - 14 - 9 = -7 → right edge at col 2 = mirrored arm)
+            left:  { pattern: 'weaponLeoRight', ox: -7, oy: 6 },
+            // down/up: blade beside right arm (col 14+ is empty in down sprite), handle at arm row 7
+            down:  { pattern: 'weaponLeoVert',  ox: 14, oy: -1 },
+            up:    { pattern: 'weaponLeoVert',  ox: 14, oy: -1 },
+            // down-attack: katana blade thrusts below body (single frame)
+            // ox=4: blade KTK at sprite cols 4-6 (left of body-bottom outline)
+            atkDown1: { pattern: 'weaponLeoAtkDown', ox: 4, oy: 16 },
+            atkDown2: { pattern: 'weaponLeoAtkDown', ox: 4, oy: 16 },
+            // up-attack: katana blade thrusts above body (single frame)
+            // ox=11: blade KTK at sprite cols 11-13 (right arm position when facing up)
+            atkUp1: { pattern: 'weaponLeoAtkUp', ox: 11, oy: -8 },
+            atkUp2: { pattern: 'weaponLeoAtkUp', ox: 11, oy: -8 },
+            // side-attack: katana horizontal slash (single frame)
+            // ox=16: blade starts just past right edge; oy=6 centers blade row (row 1) at turtle row 7
+            // flipX=true for left (pattern is symmetric so visual is identical, just placed to left)
+            atkRight1: { pattern: 'weaponLeoAtkSide', ox: 16, oy: 6 },
+            atkRight2: { pattern: 'weaponLeoAtkSide', ox: 16, oy: 6 },
+            atkLeft1:  { pattern: 'weaponLeoAtkSide', ox: -8, oy: 6, flipX: true },
+            atkLeft2:  { pattern: 'weaponLeoAtkSide', ox: -8, oy: 6, flipX: true },
+        },
+        raph: {
+            // handle (col 0) at arm tip col 13; tip points right through col 22
+            right: { pattern: 'weaponRaphHoriz', ox: 13, oy: 4 },
+            // flipX: tip now at left; handle (originally col 0) → right edge at arm (col 2): ox = 2-10 = -8
+            left:  { pattern: 'weaponRaphHoriz', ox: -8, oy: 4, flipX: true },
+            // down/up: sai held vertically, prongs raised above arm
+            down:  { pattern: 'weaponRaphVert',  ox: 9,  oy: -1 },
+            up:    { pattern: 'weaponRaphVert',  ox: 9,  oy: -1 },
+            // down-attack: sai thrust below body; single frame (both 1 and 2 use same pattern)
+            // ox=3 aligns to sprite col 3 (cross-guard center at turtle col 6)
+            atkDown1: { pattern: 'weaponRaphAtkDown', ox: 3, oy: 16 },
+            atkDown2: { pattern: 'weaponRaphAtkDown', ox: 3, oy: 16 },
+            // up-attack: sai thrust above body; single frame
+            // ox=8 aligns to sprite col 8 (sai center at turtle col 12 = right arm)
+            atkUp1: { pattern: 'weaponRaphAtkUp', ox: 8, oy: -6 },
+            atkUp2: { pattern: 'weaponRaphAtkUp', ox: 8, oy: -6 },
+            // side-attack: sai thrust horizontally; single frame
+            // ox=16: weapon starts just past right edge; oy=4 puts blade (row 3) at turtle row 7 (arm level)
+            // flipX=true mirrors for left-facing thrust
+            atkRight1: { pattern: 'weaponRaphAtkSide', ox: 16, oy: 4 },
+            atkRight2: { pattern: 'weaponRaphAtkSide', ox: 16, oy: 4 },
+            atkLeft1:  { pattern: 'weaponRaphAtkSide', ox: -8, oy: 4, flipX: true },
+            atkLeft2:  { pattern: 'weaponRaphAtkSide', ox: -8, oy: 4, flipX: true },
+        },
+        mikey: {
+            // right arm starts at col 12; nunchuck swing origin at arm
+            right: { pattern: 'weaponMikeySwing', ox: 12, oy: 6 },
+            // left: flipX mirrors diagonal; right edge of flipped canvas at arm (col 2): ox = 2 - 8 = -6
+            left:  { pattern: 'weaponMikeySwing', ox: -6, oy: 6, flipX: true },
+            // down/up: nunchucks hang from right arm (col 13), starting at arm row 6
+            down:  { pattern: 'weaponMikeyVert',  ox: 13, oy: 6 },
+            up:    { pattern: 'weaponMikeyVert',  ox: 13, oy: 6 },
+            // down-attack frames: nunchuck swings below turtle body (NES pixel-accurate)
+            atkDown1: { pattern: 'weaponMikeyAtkDown1', ox: 0, oy: 16 },
+            atkDown2: { pattern: 'weaponMikeyAtkDown2', ox: 0, oy: 16 },
+            // up-attack frames: nunchuck swings above turtle body (NES pixel-accurate)
+            atkUp1: { pattern: 'weaponMikeyAtkUp1', ox: 0, oy: -8 },
+            atkUp2: { pattern: 'weaponMikeyAtkUp2', ox: 0, oy: -8 },
+            // side-attack frames: nunchuck swings right (frame 1=down-right, frame 2=up-right)
+            // flipX=true reuses same patterns for left-facing (mirrored to down-left / up-left)
+            atkRight1: { pattern: 'weaponMikeyAtkRight1', ox: 16, oy: 5 },
+            atkRight2: { pattern: 'weaponMikeyAtkRight2', ox: 16, oy: 1 },
+            atkLeft1:  { pattern: 'weaponMikeyAtkRight1', ox: -8, oy: 5, flipX: true },
+            atkLeft2:  { pattern: 'weaponMikeyAtkRight2', ox: -8, oy: 1, flipX: true },
+        },
+        donnie: {
+            // staff spans full width; oy=6 aligns with sprite rows 6-8 (arm level)
+            right: { pattern: 'weaponDonnieHoriz', ox: -4, oy: 6 },
+            // staff is symmetric left-to-right; same position facing either way
+            left:  { pattern: 'weaponDonnieHoriz', ox: -4, oy: 6 },
+            // down/up: staff beside right arm (col 14+), extends well above and below
+            down:  { pattern: 'weaponDonnieVert',  ox: 14, oy: -4 },
+            up:    { pattern: 'weaponDonnieVert',  ox: 14, oy: -4 },
+            // right-attack: shift staff right so tip extends 24px past body right edge
+            atkRight1: { pattern: 'weaponDonnieHoriz', ox: 4,  oy: 6 },
+            atkRight2: { pattern: 'weaponDonnieHoriz', ox: 4,  oy: 6 },
+            // left-attack: shift staff left so tip extends 16px past body left edge (staff symmetric, no flipX)
+            atkLeft1:  { pattern: 'weaponDonnieHoriz', ox: -8, oy: 6 },
+            atkLeft2:  { pattern: 'weaponDonnieHoriz', ox: -8, oy: 6 },
+            // down-attack: vertical staff starting mid-body, tip extends 6 rows below body bottom
+            atkDown1:  { pattern: 'weaponDonnieVert',  ox: 6,  oy: 8 },
+            atkDown2:  { pattern: 'weaponDonnieVert',  ox: 6,  oy: 8 },
+            // up-attack: staff overlaps top 6 rows of body so it looks like it's coming out of him.
+            // Drawn BEHIND the turtle sprite (weapon first, then turtle on top) at all render sites.
+            atkUp1:    { pattern: 'weaponDonnieVert',  ox: 6,  oy: -8 },
+            atkUp2:    { pattern: 'weaponDonnieVert',  ox: 6,  oy: -8 },
+        },
+    };
 
     // Turtle mask color keys for each character
     var TURTLE_COLORS = { leo: 'B', raph: 'R', donnie: 'N', mikey: 'O' };
@@ -2603,15 +3256,81 @@ var NES = (function () {
         return idx;
     }
 
+    // ── Weapon overlay renderer ──
+    var _weaponSpriteCache = {};
+
+    function _buildWeaponCanvas(patKey, scale) {
+        var cacheKey = patKey + '|' + Math.round(scale * 100);
+        if (_weaponSpriteCache[cacheKey]) return _weaponSpriteCache[cacheKey];
+        var pat = PATTERNS[patKey];
+        if (!pat) return null;
+        var rows = pat.length, cols = pat[0].length;
+        var w = Math.round(cols * scale), h = Math.round(rows * scale);
+        var off = document.createElement('canvas');
+        off.width = w; off.height = h;
+        var oc = off.getContext('2d');
+        var pxS = scale;
+        for (var r = 0; r < rows; r++) {
+            for (var c = 0; c < cols; c++) {
+                var ch = pat[r][c];
+                if (ch === '_' || ch === ' ') continue;
+                var color = PALCACHE[ch];
+                if (!color) continue;
+                oc.fillStyle = color;
+                oc.fillRect(Math.floor(c * pxS), Math.floor(r * pxS),
+                            Math.ceil(pxS), Math.ceil(pxS));
+            }
+        }
+        _weaponSpriteCache[cacheKey] = off;
+        return off;
+    }
+
+    // atkPhase: 'WINDUP'|'ACTIVE'|'RECOVERY'|'IDLE'  atkFrame: 0 or 1 (animation frame during active)
+    function drawWeaponOverlay(ctx, px, py, direction, turtleId, scale, atkPhase, atkFrame) {
+        // Only draw during WINDUP and ACTIVE — RECOVERY and IDLE show no weapon.
+        // This prevents the idle weapon config ("sheathed" position) from flashing
+        // at the end of an attack and ensures turtles without attack patterns (Donnie)
+        // show nothing until their attack sprites are defined.
+        if (atkPhase !== 'WINDUP' && atkPhase !== 'ACTIVE') return;
+
+        var cfg = WEAPON_CONFIG[turtleId];
+        if (!cfg) return;
+        var dir = direction || 'down';
+
+        // Resolve the attack-specific config key: atkRight1, atkDown2, atkLeft1, etc.
+        var dirCap = dir.charAt(0).toUpperCase() + dir.slice(1);
+        var atkCfgKey = 'atk' + dirCap + (atkFrame ? '2' : '1');
+        var wcfg = cfg[atkCfgKey];
+        if (!wcfg) return; // No attack pattern for this turtle/direction = nothing drawn
+
+        var canvas = _buildWeaponCanvas(wcfg.pattern, scale);
+        if (!canvas) return;
+
+        var drawX = px + wcfg.ox * scale;
+        var drawY = py + wcfg.oy * scale;
+
+        ctx.save();
+        if (wcfg.flipX) {
+            ctx.translate(drawX + canvas.width, drawY);
+            ctx.scale(-1, 1);
+            ctx.drawImage(canvas, 0, 0);
+        } else {
+            ctx.drawImage(canvas, drawX, drawY);
+        }
+        ctx.restore();
+    }
+
     return {
         PAL: PAL,
         PATTERNS: PATTERNS,
         TURTLE_COLORS: TURTLE_COLORS,
         TURTLE_FRAMES: TURTLE_FRAMES,
+        WEAPON_CONFIG: WEAPON_CONFIG,
         drawTile: drawTile,
         drawTileStretched: drawTileStretched,
         drawSprite: drawSprite,
         drawTurtleSprite: drawTurtleSprite,
+        drawWeaponOverlay: drawWeaponOverlay,
         getTurtleFrame: getTurtleFrame,
         tileHash: tileHash,
         waterFrame: waterFrame,
@@ -3675,7 +4394,8 @@ const game = {
         frame: 0,
         animTimer: 0,        // seconds accumulated
         animInterval: 0.083, // frame switch every ~83ms (was 5 frames at 60fps)
-        moving: false
+        moving: false,
+        hp: 300, maxHp: 300   // overworld van HP — matches OW_VAN_MAX_HP
     },
     camera: {
         x: 0,
@@ -3712,8 +4432,10 @@ const game = {
     van: {
         x: 0, y: 0,           // parked position (world pixels)
         direction: 'right',    // last direction van was facing
-        frame: 0
+        frame: 0,
+        shotCooldown: 0       // seconds until next shot is allowed
     },
+    vanProjectiles: [],        // active cannonball shots from the van
     turtle: {
         x: 0, y: 0,
         width: 32, height: 32,
@@ -3721,8 +4443,22 @@ const game = {
         direction: 'down',
         frame: 0,
         animTimer: 0,
-        animInterval: 0.12
+        animInterval: 0.12,
+        atkPhase: 'IDLE',
+        atkTimer: 0,
+        atkCooldown: 0,
+        hp: 100, maxHp: 100,   // overworld HP — matches OW_TURTLE_MAX_HP
+        lives: 3,              // matches OW_TURTLE_LIVES
+        invTimer: 0,
+        kbVx: 0, kbVy: 0, kbTimer: 0,
+        _atkHitEnemies: null   // Set populated when ACTIVE fires, cleared on IDLE
     },
+    regionEnemies: [],           // enemy cars + walkers on the overview map
+    owHitSparks: [],             // hit-spark particles for overworld combat
+    owScreenShake: 0,            // overworld screen shake magnitude
+    owPointPopups: [],           // floating score popups for overworld kills
+    owComboCount: 0,
+    owComboTimer: 0,
     level: null,
     levelState: null,
     levelReturnTile: null,
@@ -4998,6 +5734,25 @@ function drawParkedVan() {
         ctx.fillText('VAN [T]', screenX + drawW / 2, screenY - 5);
         ctx.textAlign = 'left';
     }
+
+    // Van HP bar above the sprite (only when not at full HP)
+    if (p.hp < p.maxHp) {
+        var vBarW = 36, vBarH = 4;
+        var vBarX = screenX + drawW / 2 - vBarW / 2;
+        var vBarY = screenY - 20;
+        var vFill = Math.max(0, p.hp / p.maxHp);
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(vBarX - 1, vBarY - 1, vBarW + 2, vBarH + 2);
+        ctx.fillStyle = '#880000';
+        ctx.fillRect(vBarX, vBarY, vBarW, vBarH);
+        ctx.fillStyle = '#00cc00';
+        ctx.fillRect(vBarX, vBarY, Math.round(vBarW * vFill), vBarH);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '5px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(p.hp + '/' + p.maxHp, screenX + drawW / 2, vBarY - 2);
+        ctx.textAlign = 'left';
+    }
 }
 
 function drawOnFootTurtle() {
@@ -5005,7 +5760,61 @@ function drawOnFootTurtle() {
     var screenX = t.x - game.camera.x;
     var screenY = t.y - game.camera.y;
     var drawScale = t.width / 16;
-    NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
+    var atkFrame = (t.atkPhase === 'ACTIVE' && t.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
+    // Invincibility blink — exact same formula as level
+    var blink = (t.invTimer > 0 && Math.floor(t.invTimer * 10) % 2 === 0);
+    var weaponBehind = (game.activeTurtle === 'donnie' && t.direction === 'up');
+
+    if (!blink) {
+        if (t.atkPhase === 'ACTIVE') {
+            // Slightly transparent + white overlay during active hit frames (same as level)
+            ctx.globalAlpha = 0.7;
+            if (weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, atkFrame);
+            NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
+            if (!weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, atkFrame);
+            ctx.globalAlpha = 0.4;
+            ctx.fillStyle = NES.PAL.W;
+            ctx.fillRect(screenX, screenY, t.width, t.height);
+            ctx.globalAlpha = 1;
+        } else {
+            if (weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, 0);
+            NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
+            if (!weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, 0);
+        }
+    }
+
+    // WINDUP — yellow charge glow (same as level)
+    if (t.atkPhase === 'WINDUP') {
+        var chargeAlpha = 0.2 + t.atkTimer / ATK_WINDUP * 0.3;
+        ctx.fillStyle = 'rgba(255, 255, 100, ' + chargeAlpha + ')';
+        ctx.beginPath();
+        ctx.arc(screenX + t.width / 2, screenY + t.height / 2, t.width * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    // ACTIVE — yellow slash rect if hit, faint arc trail if whiff (same as level, sized to turtle)
+    if (t.atkPhase === 'ACTIVE') {
+        var tw = t.width, th = t.height;   // use turtle dimensions as the base unit (like lts in levels)
+        var slashOx = t.direction === 'right' ? tw : (t.direction === 'left' ? -tw * 0.7 : 0);
+        var slashOy = t.direction === 'down'  ? th : (t.direction === 'up'   ? -th * 0.7 : 0);
+        var slashW  = (t.direction === 'left' || t.direction === 'right') ? tw * 0.7 : tw;
+        var slashH  = (t.direction === 'up'   || t.direction === 'down')  ? th * 0.7 : th * 0.6;
+        var hasHit  = t._atkHitEnemies && t._atkHitEnemies.size > 0;
+        if (hasHit) {
+            var slashAlpha = 0.5 + (1 - t.atkTimer / ATK_ACTIVE) * 0.4;
+            ctx.fillStyle = 'rgba(255, 255, 0, ' + slashAlpha + ')';
+            ctx.fillRect(screenX + slashOx, screenY + slashOy + th * 0.1, slashW, slashH);
+        } else {
+            ctx.strokeStyle = 'rgba(200, 200, 255, ' + (0.2 + t.atkTimer / ATK_ACTIVE * 0.3) + ')';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            var arcCx = screenX + tw / 2 + slashOx * 0.5;
+            var arcCy = screenY + th / 2 + slashOy * 0.5;
+            var arcR  = tw * 0.8;
+            var startAngle = t.direction === 'right' ? -0.8 : t.direction === 'left' ? 2.3 : t.direction === 'up' ? 3.6 : 0.8;
+            ctx.arc(arcCx, arcCy, arcR, startAngle, startAngle + 1.6);
+            ctx.stroke();
+        }
+    }
 }
 
 var _drFacingToDir = { n: 'up', s: 'down', e: 'right', w: 'left' };
@@ -5014,7 +5823,7 @@ var _remoteAnimState = {};
 function _smoothRemotePos(_rp) {
     var id = _rp.id;
     if (!_remoteAnimState[id]) {
-        _remoteAnimState[id] = { rx: 0, ry: 0, frame: 0, animTimer: 0, lastPx: 0, lastPy: 0 };
+        _remoteAnimState[id] = { rx: 0, ry: 0, frame: 0, animTimer: 0, lastPx: 0, lastPy: 0, atkPhase: 'IDLE', atkTimer: 0, atkFrame: 0 };
     }
     var st = _remoteAnimState[id];
     var targetX = _rp.px != null ? _rp.px : _rp.x * TILE_SIZE;
@@ -5031,7 +5840,35 @@ function _smoothRemotePos(_rp) {
         if (st.animTimer >= 0.15) { st.animTimer -= 0.15; st.frame = (st.frame + 1) % 2; }
     } else { st.frame = 0; st.animTimer = 0; }
     st.lastPx = targetX; st.lastPy = targetY;
-    return { wx: st.rx, wy: st.ry, frame: st.frame, moving: moving };
+
+    // Attack phase: promote incoming phase, then tick down locally so animation
+    // plays smoothly even between network packets.
+    var incomingAtk = _rp.atk || 'IDLE';
+    // Promote: only advance if incoming is ahead (WINDUP -> ACTIVE -> RECOVERY -> IDLE)
+    var _atkOrder = { IDLE: 0, WINDUP: 1, ACTIVE: 2, RECOVERY: 3 };
+    if (st.atkPhase === 'IDLE' && incomingAtk !== 'IDLE') {
+        // Start the local attack animation from wherever the incoming packet is
+        st.atkPhase = incomingAtk;
+        st.atkTimer = incomingAtk === 'WINDUP' ? ATK_WINDUP : incomingAtk === 'ACTIVE' ? ATK_ACTIVE : ATK_RECOVERY;
+        st.atkFrame = 0;
+    } else if (incomingAtk !== 'IDLE' && (_atkOrder[incomingAtk] || 0) > (_atkOrder[st.atkPhase] || 0)) {
+        // Snap forward if server says we're further ahead
+        st.atkPhase = incomingAtk;
+        st.atkTimer = incomingAtk === 'ACTIVE' ? ATK_ACTIVE : ATK_RECOVERY;
+        st.atkFrame = 0;
+    }
+    if (st.atkPhase !== 'IDLE') {
+        st.atkTimer -= 0.016;
+        if (st.atkTimer <= 0) {
+            if (st.atkPhase === 'WINDUP')      { st.atkPhase = 'ACTIVE';   st.atkTimer = ATK_ACTIVE;   st.atkFrame = 0; }
+            else if (st.atkPhase === 'ACTIVE') { st.atkPhase = 'RECOVERY'; st.atkTimer = ATK_RECOVERY; st.atkFrame = 0; }
+            else                               { st.atkPhase = 'IDLE';     st.atkTimer = 0; }
+        }
+        // atkFrame flips at the midpoint of ACTIVE phase
+        st.atkFrame = (st.atkPhase === 'ACTIVE' && st.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
+    }
+
+    return { wx: st.rx, wy: st.ry, frame: st.frame, moving: moving, atkPhase: st.atkPhase, atkFrame: st.atkFrame };
 }
 
 function _drawRemotePlayer(_rp) {
@@ -5066,7 +5903,10 @@ function _drawRemotePlayer(_rp) {
             ctx.restore();
         }
         var _tDrawW = game.turtle.width || 32; var _tDrawH = game.turtle.height || 32;
+        var _rpWeaponBehind = (_rTid === 'donnie' && _rDir === 'up');
+        if (_rpWeaponBehind) NES.drawWeaponOverlay(ctx, _rpx, _rpy, _rDir, _rTid, _tDrawW / 16, sm.atkPhase, sm.atkFrame);
         NES.drawTurtleSprite(ctx, _rpx, _rpy, _rDir, sm.frame, _rTid, _tDrawW / 16);
+        if (!_rpWeaponBehind) NES.drawWeaponOverlay(ctx, _rpx, _rpy, _rDir, _rTid, _tDrawW / 16, sm.atkPhase, sm.atkFrame);
         ctx.font = '8px monospace'; ctx.textAlign = 'center';
         var _tlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(_rpx + _tDrawW / 2 - 30, _rpy - 14, 60, 12);
@@ -5412,6 +6252,35 @@ function drawUI() {
     } else {
         ctx.fillText('ARROWS:Move  ENTER:Visit  T:Exit Van  M:World', 10, CANVAS_HEIGHT - 8);
     }
+
+    // Turtle HUD — show in REGION mode while on foot
+    if (game.mode === 'REGION' && game.controllerEntity === 'foot') {
+        var t = game.turtle;
+        var hudX = 8, hudY = CANVAS_HEIGHT - 52;
+        // Background panel
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(hudX - 2, hudY - 12, 100, 36);
+        // Turtle name label
+        ctx.fillStyle = '#fcfc00';
+        ctx.font = '6px "Press Start 2P", monospace';
+        ctx.textAlign = 'left';
+        var tName = (game.activeTurtle || 'turtle').toUpperCase();
+        ctx.fillText(tName, hudX, hudY - 2);
+        // HP bar (60×5)
+        ctx.fillStyle = '#880000';
+        ctx.fillRect(hudX, hudY + 2, 60, 5);
+        ctx.fillStyle = t.invTimer > 0 ? '#ffffff' : '#00cc00';
+        ctx.fillRect(hudX, hudY + 2, Math.round(60 * Math.max(0, t.hp / t.maxHp)), 5);
+        ctx.fillStyle = '#aaaaaa';
+        ctx.font = '6px "Press Start 2P", monospace';
+        ctx.fillText(t.hp + '/' + t.maxHp, hudX + 63, hudY + 7);
+        // Lives hearts
+        var livesTxt = '';
+        for (var _lv = 0; _lv < (t.lives || 0); _lv++) livesTxt += '\u2665';
+        ctx.fillStyle = '#ff4444';
+        ctx.fillText(livesTxt, hudX, hudY + 18);
+        ctx.textAlign = 'left';
+    }
 }
 
 // ============================================
@@ -5517,17 +6386,38 @@ function updateBlimpInteraction() {
     var ports = game.blimpMenu.ports;
     if (ports.length === 0) { game.activeBlimpId = null; return; }
 
-    var px = game.player.x + game.player.width / 2;
-    var py = game.player.y + game.player.height / 2;
-    var blimpEnterR = 2 * TILE_SIZE;
-    var blimpExitR = 3 * TILE_SIZE;
+    // Use turtle position when on foot, van/player when driving
+    var entity = (game.controllerEntity === 'foot') ? game.turtle : game.player;
+    var px = entity.x + entity.width / 2;
+    var py = entity.y + entity.height / 2;
+
+    // Active radius matches the visual landing circle (14px drawn on a TILE_SIZE tile).
+    // Exit radius adds a small buffer to prevent rapid toggle at the edge.
+    var blimpEnterR = 14;
+    var blimpExitR  = 20;
+
+    // Don't activate if player is within 5 tiles of any enterable building —
+    // prevents blimp menu clashing with building entry prompts.
+    var buildingExcludeR = 5 * TILE_SIZE;
+    if (typeof BUILDINGS !== 'undefined') {
+        for (var bi = 0; bi < BUILDINGS.length; bi++) {
+            var ew = BUILDINGS[bi].enterWorld;
+            if (!ew) continue;
+            var ecx = ew.x + ew.w / 2;
+            var ecy = ew.y + ew.h / 2;
+            if (Math.hypot(px - ecx, py - ecy) < buildingExcludeR) {
+                game.activeBlimpId = null;
+                return;
+            }
+        }
+    }
 
     // Hysteresis: keep active blimp until player leaves exit radius
     if (game.activeBlimpId) {
         for (var i = 0; i < ports.length; i++) {
             if (ports[i].id === game.activeBlimpId) {
                 var ax = ports[i].x * TILE_SIZE + TILE_SIZE / 2;
-                var ay = ports[i].y * TILE_SIZE + TILE_SIZE / 2;
+                var ay = ports[i].y * TILE_SIZE + (TILE_SIZE - 16); // match circle center y
                 if (Math.hypot(px - ax, py - ay) < blimpExitR) return;
                 break;
             }
@@ -5540,7 +6430,7 @@ function updateBlimpInteraction() {
     var nearDist = Infinity;
     for (var j = 0; j < ports.length; j++) {
         var bx = ports[j].x * TILE_SIZE + TILE_SIZE / 2;
-        var by = ports[j].y * TILE_SIZE + TILE_SIZE / 2;
+        var by = ports[j].y * TILE_SIZE + (TILE_SIZE - 16); // match drawn circle center
         var d = Math.hypot(px - bx, py - by);
         if (d < blimpEnterR && d < nearDist) {
             nearest = ports[j];
@@ -5825,16 +6715,6 @@ function requestPrimaryAction() {
         return;
     }
 
-    // Level mode: initiate attack (respects cooldown + phase gate)
-    if (game.mode === 'LEVEL' && game.level && game.level.player) {
-        var lp = game.level.player;
-        if (lp.atkPhase === 'IDLE' && lp.atkCooldown <= 0) {
-            lp.atkPhase = 'WINDUP';
-            lp.atkTimer = ATK_WINDUP;
-        }
-        return;
-    }
-
     // Blimp menu confirm
     if (game.blimpMenu.active) {
         var ports = game.blimpMenu.ports;
@@ -5876,6 +6756,52 @@ function requestPrimaryAction() {
     }
 
     requestEnterActiveBuilding();
+}
+
+function requestAttack() {
+    if (game.mode === 'LEVEL' && game.level && game.level.player) {
+        var lp = game.level.player;
+        if (lp.atkPhase === 'IDLE' && lp.atkCooldown <= 0) {
+            lp.atkPhase = 'WINDUP';
+            lp.atkTimer = ATK_WINDUP;
+        }
+        return;
+    }
+    // On-foot overview mode: turtle can also attack
+    if (game.mode === 'REGION' && game.controllerEntity === 'foot') {
+        var t = game.turtle;
+        if (t.atkPhase === 'IDLE' && t.atkCooldown <= 0) {
+            t.atkPhase = 'WINDUP';
+            t.atkTimer = ATK_WINDUP;
+            if (typeof MP !== 'undefined' && MP.isConnected()) {
+                var _reqAtkF = t.direction === 'left' ? 'w' : t.direction === 'right' ? 'e' : t.direction === 'up' ? 'n' : 's';
+                MP.sendAtkSync(t.x, t.y, _reqAtkF, 'foot', game.activeTurtle, 'WINDUP');
+            }
+        }
+        return;
+    }
+    // Driving the van: fire a cannonball in the van's facing direction
+    if (game.mode === 'REGION' && game.controllerEntity === 'van') {
+        if (game.van.shotCooldown > 0) return;
+        var vp = game.player;
+        var vdx = vp.direction === 'right' ? 1 : vp.direction === 'left' ? -1 : 0;
+        var vdy = vp.direction === 'down'  ? 1 : vp.direction === 'up'   ? -1 : 0;
+        // Spawn from the leading edge of the van
+        var projX = vp.x + vp.width  / 2 + vdx * (vp.width  / 2 + 4);
+        var projY = vp.y + vp.height / 2 + vdy * (vp.height / 2 + 4);
+        if (!game.vanProjectiles) game.vanProjectiles = [];
+        game.vanProjectiles.push({
+            x: projX, y: projY,
+            vx: vdx * 700,
+            vy: vdy * 700,
+            life: 1.6,
+            maxLife: 1.6,
+            animTimer: 0,
+            frame: 0
+        });
+        game.van.shotCooldown = 0.35;  // ~3 shots/second
+        game.owScreenShake = 2;
+    }
 }
 
 function requestBackAction() {
@@ -6328,15 +7254,30 @@ function update(dt) {
     // On-foot mode: move turtle instead of van
     if (game.mode === 'REGION' && game.controllerEntity === 'foot') {
         var t = game.turtle;
-        if (isMoving) {
+
+        // Decrement invincibility timer
+        if (t.invTimer > 0) t.invTimer -= dt;
+
+        // Apply knockback physics (overrides normal movement while active)
+        if (t.kbTimer > 0) {
+            t.kbTimer -= dt;
+            var kbnx = t.x + t.kbVx * dt;
+            var kbny = t.y + t.kbVy * dt;
+            if (!checkTurtleCollision(kbnx, t.y)) t.x = kbnx; else t.kbVx = 0;
+            if (!checkTurtleCollision(t.x, kbny)) t.y = kbny; else t.kbVy = 0;
+        } else if (isMoving) {
             var ndx = dx / len, ndy = dy / len;
             if (ndx < 0) t.direction = 'left';
             else if (ndx > 0) t.direction = 'right';
             else if (ndy < 0) t.direction = 'up';
             else if (ndy > 0) t.direction = 'down';
 
-            var tnx = t.x + ndx * t.pxPerSecond * dt;
-            var tny = t.y + ndy * t.pxPerSecond * dt;
+            // Slow movement during attack phases — same as building levels
+            var _moveSpd = t.pxPerSecond;
+            if (t.atkPhase === 'WINDUP' || t.atkPhase === 'ACTIVE') _moveSpd *= 0.5;
+            else if (t.atkPhase === 'RECOVERY') _moveSpd *= 0.3;
+            var tnx = t.x + ndx * _moveSpd * dt;
+            var tny = t.y + ndy * _moveSpd * dt;
             if (!checkTurtleCollision(tnx, t.y)) t.x = tnx;
             if (!checkTurtleCollision(t.x, tny)) t.y = tny;
 
@@ -6348,7 +7289,7 @@ function update(dt) {
             var _idleFootF = t.direction === 'left' ? 'w' : t.direction === 'right' ? 'e' : t.direction === 'up' ? 'n' : 's';
             MP.sendPosSync(t.x, t.y, _idleFootF, 'foot', game.activeTurtle, game.van.x, game.van.y, game.van.direction);
         }
-        t.moving = isMoving;
+        t.moving = isMoving && t.kbTimer <= 0;
         if (isMoving) {
             t.animTimer += dt;
             if (t.animTimer >= t.animInterval) {
@@ -6361,6 +7302,56 @@ function update(dt) {
         updateInteraction();
         updateBlimpInteraction();
         updatePOIProximity();
+
+        // Tick attack state machine for on-foot turtle
+        if (t.atkCooldown > 0) t.atkCooldown -= dt;
+        if (t.atkPhase !== 'IDLE') {
+            t.atkTimer -= dt;
+            if (t.atkTimer <= 0) {
+                var _prevAtkPhase = t.atkPhase;
+                if (t.atkPhase === 'WINDUP') {
+                    t.atkPhase = 'ACTIVE';
+                    t.atkTimer = ATK_ACTIVE;
+                } else if (t.atkPhase === 'ACTIVE') {
+                    t.atkPhase = 'RECOVERY';
+                    t.atkTimer = ATK_RECOVERY;
+                } else if (t.atkPhase === 'RECOVERY') {
+                    t.atkPhase = 'IDLE';
+                    t.atkCooldown = ATK_COOLDOWN;
+                }
+                if (t.atkPhase !== _prevAtkPhase && typeof MP !== 'undefined' && MP.isConnected()) {
+                    var _atkF = t.direction === 'left' ? 'w' : t.direction === 'right' ? 'e' : t.direction === 'up' ? 'n' : 's';
+                    MP.sendAtkSync(t.x, t.y, _atkF, 'foot', game.activeTurtle, t.atkPhase);
+                }
+            }
+        }
+
+        // Turtle HP → life loss and respawn
+        if (t.hp <= 0) {
+            t.lives = (t.lives || 1) - 1;
+            t.hp = t.maxHp;
+            t.invTimer = OW_INV_TIME * 3;
+            t.kbTimer = 0;
+            t.atkPhase = 'IDLE';
+            t._atkHitEnemies = null;
+            // Teleport to nearest sewer entrance landmark (or starting position)
+            var bestDist = Infinity, bestLx = t.x, bestLy = t.y;
+            for (var _li = 0; _li < LANDMARKS.length; _li++) {
+                var _lm = LANDMARKS[_li];
+                if (_lm.id === 'lm_sewer' || _lm.id === 'lm_start') {
+                    var _lpx = _lm.x * TILE_SIZE, _lpy = _lm.y * TILE_SIZE;
+                    var _ld = Math.abs(_lpx - t.x) + Math.abs(_lpy - t.y);
+                    if (_ld < bestDist) { bestDist = _ld; bestLx = _lpx; bestLy = _lpy; }
+                }
+            }
+            t.x = bestLx; t.y = bestLy;
+            if (t.lives <= 0) {
+                t.lives = OW_TURTLE_LIVES; // reset lives — no hard game-over yet
+            }
+        }
+
+        updateVanProjectiles(dt);
+        updateRegionEnemies(dt);
         return;
     }
     
@@ -6418,6 +7409,7 @@ function update(dt) {
         if (game.postcard.timer <= 0) game.postcard = null;
     }
 
+    if (game.mode === 'REGION') { updateVanProjectiles(dt); updateRegionEnemies(dt); }
     updateCamera(dt);
     if (game.mode === 'WORLD') {
         updateWorldInteraction();
@@ -7297,6 +8289,908 @@ function drawBgBuildings(startX, startY, endX, endY) {
     } // end row loop
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// REGION ENEMY SYSTEM  (enemy cars + walkers on the overview map)
+//
+// DESIGN: sector-based, fully deterministic.
+//   • The map is divided into ENEMY_SECTOR_SIZE × ENEMY_SECTOR_SIZE tile sectors.
+//   • Each sector's enemies are seeded by hash(regionId, sectorX, sectorY, epoch),
+//     so every client at the same location at the same time sees identical enemies.
+//   • Only sectors within ENEMY_SECTOR_RADIUS of the player are active/simulated.
+//     This keeps the active enemy count small (~200) regardless of map size.
+//   • Movement uses a fixed wall-clock-aligned sim step so positions stay in sync.
+// ══════════════════════════════════════════════════════════════════════════════
+
+var REGION_ENEMY_CAR_SPEED    = 96;   // px/sec driving
+var REGION_ENEMY_WALK_SPEED   = 40;   // px/sec walking
+var REGION_ENEMY_CAR_W        = 64;   // display width  (32-px pattern × scale 2)
+var REGION_ENEMY_CAR_H        = 48;   // display height (24-px pattern × scale 2)
+var REGION_ENEMY_WALK_W       = 20;   // display size for walkers
+var REGION_ENEMY_WALK_H       = 20;
+var REGION_ENEMY_DEATH_TIME   = 1.2;  // seconds to show destroyed sprite
+
+var REGION_ENEMY_SIM_STEP     = 0.05; // simulation step (s) — same on all clients
+var REGION_ENEMY_EPOCH_MS     = 60 * 1000; // 1-min window; enemies reset each minute
+
+// Sector tunables
+var ENEMY_SECTOR_SIZE         = 20;   // tiles per sector side (20×20 = 400 tiles)
+var ENEMY_SECTOR_RADIUS       = 2;    // active sector radius around player (5×5 grid)
+var ENEMY_SECTOR_CARS         = 1;    // car enemies per sector
+var ENEMY_SECTOR_WALKERS      = 3;    // walker enemies per sector
+
+// ── Overworld combat constants ────────────────────────────────────────────────
+var OW_DETECT_CAR       = 400;   // px — van/turtle detection radius for cars
+var OW_DETECT_WALK      = 250;   // px — turtle detection radius for walkers
+var OW_ATTACK_CAR       = 96;    // px — car ram contact radius
+var OW_ATTACK_WALK      = 44;    // px — walker melee contact radius
+var OW_MELEE_DAMAGE     = 10;    // walker → turtle damage per hit
+var OW_RAM_DAMAGE       = 25;    // car → van damage per ram
+var OW_TURTLE_ATK_DMG   = 15;    // turtle melee → enemy damage
+var OW_TURTLE_ATK_RANGE = 44;    // px radius of turtle attack arc
+var OW_STUN_TIME        = 0.5;   // seconds enemy stays stunned after being hit
+var OW_INV_TIME         = 0.4;   // turtle invincibility seconds after being hit
+var OW_KB_SPEED         = 220;   // px/sec knockback velocity
+var OW_KB_TIME          = 0.25;  // seconds knockback lasts
+var OW_RETREAT_HP_FRAC  = 0.2;   // car retreats when hp < 20% of maxHp
+var OW_CHASE_SPEED_MULT = 1.4;   // speed multiplier when chasing
+var OW_TURTLE_MAX_HP    = 100;
+var OW_TURTLE_LIVES     = 3;
+var OW_VAN_MAX_HP       = 300;
+
+// Overworld kill score values (walkers give same as foot soldiers in levels)
+var OW_SCORE_WALKER = 100;
+var OW_SCORE_CAR    = 200;
+
+// ── _owAddKillScore ───────────────────────────────────────────────────────────
+// Awards points for an overworld kill, drives combo + floating popup — same
+// feel as addKillScore() in levels.
+function _owAddKillScore(enemyType, worldX, worldY) {
+    var pts = (enemyType === 'car') ? OW_SCORE_CAR : OW_SCORE_WALKER;
+
+    // Combo system (same constants as levels: SCORE_COMBO_BONUS, COMBO_WINDOW)
+    if (game.owComboTimer > 0) {
+        game.owComboCount++;
+        pts += SCORE_COMBO_BONUS * game.owComboCount;
+    } else {
+        game.owComboCount = 1;
+    }
+    game.owComboTimer = COMBO_WINDOW;
+
+    game.progress.score += pts;
+    if (game.progress.score > (game.progress.bestScore || 0)) {
+        game.progress.bestScore = game.progress.score;
+    }
+    saveGame();
+
+    game.owPointPopups.push({
+        text: '+' + pts + (game.owComboCount > 1 ? ' x' + game.owComboCount : ''),
+        x: worldX, y: worldY - 10,
+        life: 1.2,
+        color: game.owComboCount > 3 ? '#ff4444' : game.owComboCount > 1 ? '#ffaa00' : '#ffff00'
+    });
+}
+
+// ── Deterministic RNG helpers ─────────────────────────────────────────────────
+function _regionEnemyLcg(seed) {
+    var s = (seed ^ 0xdeadbeef) >>> 0;
+    return function() {
+        s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+        return s / 4294967296;
+    };
+}
+function _regionEnemyStrSeed(str) {
+    var h = 2166136261 >>> 0;
+    for (var i = 0; i < str.length; i++) {
+        h = Math.imul(h ^ str.charCodeAt(i), 16777619) >>> 0;
+    }
+    return h;
+}
+
+// Returns true if the center of a car placed at (x,y) sits on a road tile.
+function _carCenterOnRoad(x, y) {
+    var cx = Math.floor((x + REGION_ENEMY_CAR_W / 2) / TILE_SIZE);
+    var cy = Math.floor((y + REGION_ENEMY_CAR_H / 2) / TILE_SIZE);
+    if (!ROAD_GRID || cx < 0 || cx >= WORLD_WIDTH || cy < 0 || cy >= WORLD_HEIGHT) return false;
+    return !!ROAD_GRID[cy * WORLD_WIDTH + cx];
+}
+
+// ── _tickEnemyArray ───────────────────────────────────────────────────────────
+// One deterministic simulation step on a given array of enemies.
+// Uses e._rng (per-enemy seeded) for direction decisions, never Math.random.
+// Cars follow roads: before each move they verify the next tile is road; if not
+// they try other directions in a fixed order (deterministic across all clients).
+function _tickEnemyArray(arr, dt) {
+    var worldPxW = WORLD_WIDTH  * TILE_SIZE;
+    var worldPxH = WORLD_HEIGHT * TILE_SIZE;
+    var _carDirs  = ['right', 'left', 'down', 'up'];
+
+    for (var i = 0; i < arr.length; i++) {
+        var e = arr[i];
+        if (e.state === 'dead' || e.state === 'dying') continue;
+        if (e.aiState && e.aiState !== 'patrol') continue;  // AI-controlled enemies updated per-frame
+
+        if (e.type === 'car') {
+            var ndx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+            var ndy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+            var nx  = e.x + ndx * e.speed * dt;
+            var ny  = e.y + ndy * e.speed * dt;
+
+            // World-edge bounce
+            if (nx < 0 || nx + REGION_ENEMY_CAR_W > worldPxW) {
+                e.direction = (e.direction === 'left') ? 'right' : 'left';
+                nx = Math.max(0, Math.min(worldPxW - REGION_ENEMY_CAR_W, nx));
+                ndx = -ndx;
+            }
+            if (ny < 0 || ny + REGION_ENEMY_CAR_H > worldPxH) {
+                e.direction = (e.direction === 'up') ? 'down' : 'up';
+                ny = Math.max(0, Math.min(worldPxH - REGION_ENEMY_CAR_H, ny));
+                ndy = -ndy;
+            }
+
+            // Road check — if next step leaves the road, find a road direction
+            if (!_carCenterOnRoad(nx, ny)) {
+                var turned = false;
+                for (var d = 0; d < _carDirs.length; d++) {
+                    var td = _carDirs[d];
+                    if (td === e.direction) continue;
+                    var tdx = td === 'right' ? 1 : td === 'left' ? -1 : 0;
+                    var tdy = td === 'down'  ? 1 : td === 'up'   ? -1 : 0;
+                    var tnx = e.x + tdx * e.speed * dt;
+                    var tny = e.y + tdy * e.speed * dt;
+                    if (_carCenterOnRoad(tnx, tny)) {
+                        e.direction = td;
+                        nx = tnx; ny = tny;
+                        e.dirChangeTimer = 1 + e._rng() * 2;
+                        turned = true;
+                        break;
+                    }
+                }
+                if (!turned) { nx = e.x; ny = e.y; e.dirChangeTimer = 0.1; }
+            }
+
+            e.x = nx; e.y = ny;
+
+            // Periodic direction change (simulates turning at intersections)
+            e.dirChangeTimer -= dt;
+            if (e.dirChangeTimer <= 0) {
+                var rng = e._rng;
+                // Prefer perpendicular turn onto a road if possible
+                var perp = (e.direction === 'left' || e.direction === 'right')
+                    ? (rng() < 0.5 ? 'up' : 'down')
+                    : (rng() < 0.5 ? 'left' : 'right');
+                var want = rng() < 0.6 ? perp : _carDirs[Math.floor(rng() * 4)];
+                // Only turn if the wanted direction has road
+                var wtdx = want === 'right' ? 1 : want === 'left' ? -1 : 0;
+                var wtdy = want === 'down'  ? 1 : want === 'up'   ? -1 : 0;
+                if (_carCenterOnRoad(e.x + wtdx * e.speed * dt, e.y + wtdy * e.speed * dt)) {
+                    e.direction = want;
+                }
+                e.dirChangeTimer = 2 + rng() * 4;
+            }
+
+        } else { // walker — free roaming, no road constraint
+            var wndx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+            var wndy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+            var wnx  = e.x + wndx * e.speed * dt;
+            var wny  = e.y + wndy * e.speed * dt;
+            if (wnx < 0 || wnx + REGION_ENEMY_WALK_W > worldPxW) {
+                e.direction = (e.direction === 'left') ? 'right' : 'left';
+                wnx = Math.max(0, Math.min(worldPxW - REGION_ENEMY_WALK_W, wnx));
+            }
+            if (wny < 0 || wny + REGION_ENEMY_WALK_H > worldPxH) {
+                e.direction = (e.direction === 'up') ? 'down' : 'up';
+                wny = Math.max(0, Math.min(worldPxH - REGION_ENEMY_WALK_H, wny));
+            }
+            e.x = wnx; e.y = wny;
+            e.wanderTimer -= dt;
+            if (e.wanderTimer <= 0) {
+                var wrng = e._rng;
+                e.wanderTimer = 1.5 + wrng() * 3;
+                e.direction = ['left','right','up','down'][Math.floor(wrng() * 4)];
+            }
+        }
+    }
+}
+
+// ── _carChaseDirection ────────────────────────────────────────────────────────
+// Returns the road-valid direction that best closes distance from car (e) to
+// world-space target (tx, ty).  Falls back to any road-valid direction, then
+// current direction if nothing valid is found.
+function _carChaseDirection(e, tx, ty, reversed) {
+    var dirs = ['right', 'left', 'down', 'up'];
+    var dx   = tx - (e.x + REGION_ENEMY_CAR_W / 2);
+    var dy   = ty - (e.y + REGION_ENEMY_CAR_H / 2);
+    if (reversed) { dx = -dx; dy = -dy; }
+
+    // Rank directions by how much they close (or open, when retreating) distance
+    var ranked = dirs.slice().sort(function(a, b) {
+        var ax = a === 'right' ? 1 : a === 'left' ? -1 : 0;
+        var ay = a === 'down'  ? 1 : a === 'up'   ? -1 : 0;
+        var bx = b === 'right' ? 1 : b === 'left' ? -1 : 0;
+        var by = b === 'down'  ? 1 : b === 'up'   ? -1 : 0;
+        var dot_a = ax * dx + ay * dy;
+        var dot_b = bx * dx + by * dy;
+        return dot_b - dot_a;
+    });
+
+    var step = e.speed * REGION_ENEMY_SIM_STEP;
+    for (var i = 0; i < ranked.length; i++) {
+        var d = ranked[i];
+        var ndx = d === 'right' ? 1 : d === 'left' ? -1 : 0;
+        var ndy = d === 'down'  ? 1 : d === 'up'   ? -1 : 0;
+        if (_carCenterOnRoad(e.x + ndx * step, e.y + ndy * step)) return d;
+    }
+    return e.direction; // fallback: keep current
+}
+
+// ── _updateEnemyAI ────────────────────────────────────────────────────────────
+// Per-frame AI state machine for a single enemy.  Only called for non-patrol
+// enemies; patrol enemies are advanced by the fixed-step deterministic sim.
+// targetX/Y is the world-space center of the current controlled entity.
+function _updateEnemyAI(e, dt, targetX, targetY) {
+    if (e.state === 'dead' || e.state === 'dying') return;
+
+    var isCar = (e.type === 'car');
+
+    // Detect radius for this type
+    var detectR = isCar ? OW_DETECT_CAR : OW_DETECT_WALK;
+    var attackR = isCar ? OW_ATTACK_CAR : OW_ATTACK_WALK;
+
+    // Center of enemy
+    var ecx = e.x + (isCar ? REGION_ENEMY_CAR_W / 2 : REGION_ENEMY_WALK_W / 2);
+    var ecy = e.y + (isCar ? REGION_ENEMY_CAR_H / 2 : REGION_ENEMY_WALK_H / 2);
+    var ddx = targetX - ecx;
+    var ddy = targetY - ecy;
+    var dist = Math.sqrt(ddx * ddx + ddy * ddy);
+
+    // Decrement timers
+    if (e.atkCooldown > 0) e.atkCooldown -= dt;
+    if (e.ramCooldown  > 0) e.ramCooldown -= dt;
+
+    // Handle knockback regardless of aiState
+    if (e.kbTimer > 0) {
+        e.kbTimer -= dt;
+        var worldPxW = WORLD_WIDTH * TILE_SIZE;
+        var worldPxH = WORLD_HEIGHT * TILE_SIZE;
+        var kbNx = e.x + e.kbVx * dt;
+        var kbNy = e.y + e.kbVy * dt;
+        kbNx = Math.max(0, Math.min(worldPxW - (isCar ? REGION_ENEMY_CAR_W : REGION_ENEMY_WALK_W), kbNx));
+        kbNy = Math.max(0, Math.min(worldPxH - (isCar ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H), kbNy));
+        e.x = kbNx; e.y = kbNy;
+    }
+
+    switch (e.aiState) {
+        case 'patrol':
+            // Transition: detect target
+            if (dist < detectR) {
+                e.aiState = isCar ? 'chase' : 'investigate';
+                if (isCar) e.direction = _carChaseDirection(e, targetX, targetY, false);
+            }
+            break;
+
+        case 'chase':
+        case 'investigate': {
+            // Back to patrol if target out of range
+            if (dist > detectR * 1.5) {
+                e.aiState = 'patrol';
+                break;
+            }
+            // Transition to attack
+            if (dist < attackR) {
+                e.aiState = 'attack';
+                break;
+            }
+            // Move toward target
+            if (isCar) {
+                var chaseDir = _carChaseDirection(e, targetX, targetY, false);
+                e.direction = chaseDir;
+                var cSpeed = e.speed * OW_CHASE_SPEED_MULT;
+                var cDx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+                var cDy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+                var cnx = e.x + cDx * cSpeed * dt;
+                var cny = e.y + cDy * cSpeed * dt;
+                if (_carCenterOnRoad(cnx, cny)) {
+                    e.x = cnx; e.y = cny;
+                } else {
+                    // Try the current direction without speed boost
+                    var cnx2 = e.x + cDx * e.speed * dt;
+                    var cny2 = e.y + cDy * e.speed * dt;
+                    if (_carCenterOnRoad(cnx2, cny2)) { e.x = cnx2; e.y = cny2; }
+                }
+            } else {
+                // Walker: move directly toward turtle
+                if (dist > 1) {
+                    var wSpeed = e.speed * OW_CHASE_SPEED_MULT;
+                    var nx = e.x + (ddx / dist) * wSpeed * dt;
+                    var ny = e.y + (ddy / dist) * wSpeed * dt;
+                    var worldPxW2 = WORLD_WIDTH * TILE_SIZE;
+                    var worldPxH2 = WORLD_HEIGHT * TILE_SIZE;
+                    e.x = Math.max(0, Math.min(worldPxW2 - REGION_ENEMY_WALK_W, nx));
+                    e.y = Math.max(0, Math.min(worldPxH2 - REGION_ENEMY_WALK_H, ny));
+                    // Update facing direction
+                    if (Math.abs(ddx) > Math.abs(ddy)) {
+                        e.direction = ddx > 0 ? 'right' : 'left';
+                    } else {
+                        e.direction = ddy > 0 ? 'down' : 'up';
+                    }
+                }
+            }
+            break;
+        }
+
+        case 'attack': {
+            if (dist > attackR * 2) {
+                e.aiState = isCar ? 'chase' : 'investigate';
+                break;
+            }
+            if (isCar) {
+                // Car: keep driving toward target aggressively
+                if (e.hp < OW_RETREAT_HP_FRAC * e.maxHp) {
+                    e.aiState = 'retreat';
+                    break;
+                }
+                var aDir = _carChaseDirection(e, targetX, targetY, false);
+                e.direction = aDir;
+                var aDx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+                var aDy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+                var anx = e.x + aDx * e.speed * OW_CHASE_SPEED_MULT * dt;
+                var any = e.y + aDy * e.speed * OW_CHASE_SPEED_MULT * dt;
+                if (_carCenterOnRoad(anx, any)) { e.x = anx; e.y = any; }
+            } else {
+                // Walker melee: handled below (in walker→turtle hit pass inside
+                // updateRegionEnemies), here just keep facing target and step in range
+                if (dist > OW_ATTACK_WALK) {
+                    e.aiState = 'investigate';
+                    break;
+                }
+                if (Math.abs(ddx) > Math.abs(ddy)) {
+                    e.direction = ddx > 0 ? 'right' : 'left';
+                } else {
+                    e.direction = ddy > 0 ? 'down' : 'up';
+                }
+            }
+            break;
+        }
+
+        case 'stunned': {
+            // Zero movement; wait out stunTimer
+            e.stunTimer -= dt;
+            if (e.stunTimer <= 0) {
+                e.aiState = 'attack';
+            }
+            break;
+        }
+
+        case 'retreat': {
+            // Car only: drive away from target, despawn when far
+            if (!isCar) { e.aiState = 'patrol'; break; }
+            if (dist > 1200) { e.state = 'dead'; break; }
+            var rDir = _carChaseDirection(e, targetX, targetY, true);
+            e.direction = rDir;
+            var rDx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+            var rDy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+            var rnx = e.x + rDx * e.speed * dt;
+            var rny = e.y + rDy * e.speed * dt;
+            if (_carCenterOnRoad(rnx, rny)) { e.x = rnx; e.y = rny; }
+            break;
+        }
+    }
+}
+
+// ── _spawnSectorEnemies ───────────────────────────────────────────────────────
+// Creates enemies for one 20×20-tile sector and fast-forwards them to the
+// current wall-clock time, then appends them to game.regionEnemies.
+function _spawnSectorEnemies(sx, sy) {
+    if (!ROAD_GRID || typeof WORLD_WIDTH !== 'number') return;
+    var regionId = game.currentRegionId || 'na';
+    var epochMs  = game._enemyEpochMs;
+    var epochSec = epochMs / 1000.0;
+    var seed     = _regionEnemyStrSeed(regionId + '|' + sx + ',' + sy + '@' + epochMs);
+    var rng      = _regionEnemyLcg(seed);
+    var dirs4    = ['left', 'right', 'up', 'down'];
+
+    var tileX0 = sx * ENEMY_SECTOR_SIZE;
+    var tileY0 = sy * ENEMY_SECTOR_SIZE;
+    var tileX1 = Math.min(WORLD_WIDTH  - 1, tileX0 + ENEMY_SECTOR_SIZE - 1);
+    var tileY1 = Math.min(WORLD_HEIGHT - 1, tileY0 + ENEMY_SECTOR_SIZE - 1);
+
+    var roadTiles = [], walkTiles = [];
+    for (var ty = tileY0; ty <= tileY1; ty++) {
+        for (var tx = tileX0; tx <= tileX1; tx++) {
+            var k = ty * WORLD_WIDTH + tx;
+            if (ROAD_GRID[k]) {
+                roadTiles.push(k);
+            } else if (TERRAIN_GRID && TERRAIN_GRID[ty]) {
+                var tt = TERRAIN_GRID[ty][tx];
+                if (tt === 2 || tt === 3) walkTiles.push(k);
+            }
+        }
+    }
+
+    var newEnemies = [];
+    var numCars    = Math.min(ENEMY_SECTOR_CARS,    roadTiles.length);
+    var numWalkers = Math.min(ENEMY_SECTOR_WALKERS, walkTiles.length);
+    var sKey       = sx + ',' + sy;
+
+    for (var c = 0; c < numCars; c++) {
+        var cidx  = roadTiles[Math.floor(rng() * roadTiles.length)];
+        var eid   = 'ec_' + sKey + '_' + c;
+        newEnemies.push({
+            id: eid, type: 'car',
+            x: (cidx % WORLD_WIDTH) * TILE_SIZE,
+            y: Math.floor(cidx / WORLD_WIDTH) * TILE_SIZE,
+            direction: dirs4[Math.floor(rng() * 4)],
+            speed: REGION_ENEMY_CAR_SPEED + rng() * 32,
+            hp: 45, maxHp: 45, state: 'patrol',
+            deathTimer: 0, animTimer: rng() * 0.3, frame: 0,
+            dirChangeTimer: 1 + rng() * 3,
+            _sectorKey: sKey,
+            _rng: _regionEnemyLcg(_regionEnemyStrSeed(eid + '#' + regionId + epochMs)),
+            aiState: 'patrol',
+            atkCooldown: 0, stunTimer: 0,
+            kbVx: 0, kbVy: 0, kbTimer: 0,
+            ramCooldown: 0, deathFlash: 0,
+        });
+    }
+    for (var ww = 0; ww < numWalkers; ww++) {
+        var widx  = walkTiles[Math.floor(rng() * walkTiles.length)];
+        var weid  = 'ew_' + sKey + '_' + ww;
+        newEnemies.push({
+            id: weid, type: 'walker',
+            spriteType: rng() < 0.5 ? 'cyborg' : 'demon',
+            x: (widx % WORLD_WIDTH) * TILE_SIZE + TILE_SIZE / 2 - REGION_ENEMY_WALK_W / 2,
+            y: Math.floor(widx / WORLD_WIDTH) * TILE_SIZE + TILE_SIZE / 2 - REGION_ENEMY_WALK_H / 2,
+            direction: dirs4[Math.floor(rng() * 4)],
+            speed: REGION_ENEMY_WALK_SPEED + rng() * 20,
+            hp: 30, maxHp: 30, state: 'patrol',
+            deathTimer: 0, animTimer: rng() * 0.3, frame: 0,
+            wanderTimer: 1 + rng() * 2,
+            _sectorKey: sKey,
+            _rng: _regionEnemyLcg(_regionEnemyStrSeed(weid + '#' + regionId + epochMs)),
+            aiState: 'patrol',
+            atkCooldown: 0, stunTimer: 0,
+            kbVx: 0, kbVy: 0, kbTimer: 0, deathFlash: 0,
+        });
+    }
+
+    // Fast-forward from epoch to the global sim clock so new enemies are
+    // already at the same position as the ones already running.
+    var targetSec = game._enemySimClock != null ? game._enemySimClock : Date.now() / 1000.0;
+    var t = epochSec;
+    while (t + REGION_ENEMY_SIM_STEP <= targetSec) {
+        t += REGION_ENEMY_SIM_STEP;
+        _tickEnemyArray(newEnemies, REGION_ENEMY_SIM_STEP);
+    }
+
+    for (var ni = 0; ni < newEnemies.length; ni++) game.regionEnemies.push(newEnemies[ni]);
+}
+
+// ── _refreshEnemySectors ──────────────────────────────────────────────────────
+// Called each frame: loads sectors near the player, removes sectors that went
+// out of range.  No-ops when player hasn't moved to a new sector.
+function _refreshEnemySectors() {
+    if (!ROAD_GRID || typeof WORLD_WIDTH !== 'number') return;
+    var px = game.controllerEntity === 'foot' ? game.turtle.x : game.player.x;
+    var py = game.controllerEntity === 'foot' ? game.turtle.y : game.player.y;
+    var playerSX = Math.floor(Math.floor((px + 32) / TILE_SIZE) / ENEMY_SECTOR_SIZE);
+    var playerSY = Math.floor(Math.floor((py + 32) / TILE_SIZE) / ENEMY_SECTOR_SIZE);
+
+    if (game._lastEnemySX === playerSX && game._lastEnemySY === playerSY) return;
+    game._lastEnemySX = playerSX;
+    game._lastEnemySY = playerSY;
+
+    var R = ENEMY_SECTOR_RADIUS;
+    var active = {};
+    for (var sy = playerSY - R; sy <= playerSY + R; sy++) {
+        for (var sx = playerSX - R; sx <= playerSX + R; sx++) {
+            if (sx < 0 || sy < 0) continue;
+            active[sx + ',' + sy] = true;
+        }
+    }
+
+    // Drop enemies from sectors that left range (keep dying enemies until animation finishes)
+    for (var i = game.regionEnemies.length - 1; i >= 0; i--) {
+        var _re_e = game.regionEnemies[i];
+        if (_re_e.state === 'dying') continue; // let death animation finish
+        var sk = _re_e._sectorKey;
+        if (sk && !active[sk]) game.regionEnemies.splice(i, 1);
+    }
+
+    // Spawn any newly-needed sectors
+    for (var key in active) {
+        if (!game._spawnedSectors[key]) {
+            game._spawnedSectors[key] = true;
+            var parts = key.split(',');
+            _spawnSectorEnemies(parseInt(parts[0]), parseInt(parts[1]));
+        }
+    }
+    // Clean up spawned-sector registry for sectors now out of range
+    for (var k in game._spawnedSectors) {
+        if (!active[k]) delete game._spawnedSectors[k];
+    }
+}
+
+// ── spawnRegionEnemies ────────────────────────────────────────────────────────
+// Entry point: called when entering a region.  Initialises the sector system
+// and spawns the first batch of sectors near the player.
+function spawnRegionEnemies() {
+    game.regionEnemies   = [];
+    game._spawnedSectors = {};
+    game._lastEnemySX    = null;
+    game._lastEnemySY    = null;
+    if (game.mode !== 'REGION') return;
+    if (!ROAD_GRID || typeof WORLD_WIDTH !== 'number' || typeof WORLD_HEIGHT !== 'number') return;
+
+    // Align epoch to a 1-minute window so all clients share the same clock start
+    game._enemyEpochMs   = Math.floor(Date.now() / REGION_ENEMY_EPOCH_MS) * REGION_ENEMY_EPOCH_MS;
+    // Align the sim clock to a step boundary in the current epoch
+    var nowSec = Date.now() / 1000.0;
+    var epochSec = game._enemyEpochMs / 1000.0;
+    game._enemySimClock  = epochSec + Math.floor((nowSec - epochSec) / REGION_ENEMY_SIM_STEP) * REGION_ENEMY_SIM_STEP;
+
+    // Spawn sectors near the player immediately (forces _lastEnemySX reset)
+    _refreshEnemySectors();
+    console.log('[regionEnemies] sector system init, enemies:', game.regionEnemies.length);
+}
+
+// ── _tickRegionEnemies ──  alias so existing call-sites keep working ──────────
+function _tickRegionEnemies(dt) { _tickEnemyArray(game.regionEnemies, dt); }
+
+// ── updateVanProjectiles ──────────────────────────────────────────────────────
+// Moves active van cannonballs, checks collision vs enemy cars, expires old ones.
+// Also handles van roadkill vs walkers (called from both van and foot update blocks
+// so the parked-van check runs once per frame regardless of who's driving).
+function updateVanProjectiles(dt) {
+    if (!game.vanProjectiles) game.vanProjectiles = [];
+
+    // Tick shot-fire cooldown
+    if (game.van && game.van.shotCooldown > 0) game.van.shotCooldown -= dt;
+
+    var worldPxW = WORLD_WIDTH  * TILE_SIZE;
+    var worldPxH = WORLD_HEIGHT * TILE_SIZE;
+
+    // ── Move projectiles + collision vs cars ──────────────────────────────────
+    for (var pi = game.vanProjectiles.length - 1; pi >= 0; pi--) {
+        var proj = game.vanProjectiles[pi];
+        proj.x += proj.vx * dt;
+        proj.y += proj.vy * dt;
+        proj.life -= dt;
+        proj.animTimer += dt;
+        if (proj.animTimer > 0.08) { proj.animTimer -= 0.08; proj.frame = (proj.frame + 1) % 4; }
+
+        // Remove if expired or out of world bounds
+        if (proj.life <= 0 || proj.x < 0 || proj.x > worldPxW || proj.y < 0 || proj.y > worldPxH) {
+            game.vanProjectiles.splice(pi, 1);
+            continue;
+        }
+
+        // Check collision with enemy cars
+        var hitSomething = false;
+        if (game.regionEnemies) {
+            for (var ei = 0; ei < game.regionEnemies.length; ei++) {
+                var ce = game.regionEnemies[ei];
+                if (ce.type !== 'car') continue;
+                if (ce.state === 'dead' || ce.state === 'dying') continue;
+                var cecx = ce.x + REGION_ENEMY_CAR_W / 2;
+                var cecy = ce.y + REGION_ENEMY_CAR_H / 2;
+                var pdx  = proj.x - cecx, pdy = proj.y - cecy;
+                if (Math.abs(pdx) < REGION_ENEMY_CAR_W / 2 + 8 &&
+                    Math.abs(pdy) < REGION_ENEMY_CAR_H / 2 + 8) {
+                    // Hit — deal full damage to car
+                    ce.hp -= OW_TURTLE_ATK_DMG * 3;  // cannonball hits hard
+                    if (ce.hp <= 0) {
+                        ce.hp = 0;
+                        ce.state = 'dying';
+                        ce.deathTimer = REGION_ENEMY_DEATH_TIME;
+                        ce.stunTimer = 0;
+                        ce.deathFlash = 0.25;
+                        _owAddKillScore(ce.type, cecx, cecy);
+                    } else {
+                        ce.aiState = 'stunned';
+                        ce.stunTimer = OW_STUN_TIME;
+                    }
+                    // Sparks + shake
+                    game.owScreenShake = 4;
+                    game.owHitSparks.push({ x: proj.x, y: proj.y, life: 0.2, maxLife: 0.2 });
+                    // Extra sparks for satisfying impact
+                    for (var _si = 0; _si < 3; _si++) {
+                        game.owHitSparks.push({
+                            x: proj.x + (Math.random() - 0.5) * 20,
+                            y: proj.y + (Math.random() - 0.5) * 20,
+                            life: 0.15, maxLife: 0.15
+                        });
+                    }
+                    hitSomething = true;
+                    break;
+                }
+            }
+        }
+        if (hitSomething) {
+            game.vanProjectiles.splice(pi, 1);
+        }
+    }
+
+    // ── Van roadkill: running over walkers while driving ─────────────────────
+    if (game.controllerEntity === 'van' && game.player && game.player.moving) {
+        var vp = game.player;
+        var vx1 = vp.x + 8, vy1 = vp.y + 8;
+        var vx2 = vp.x + vp.width - 8, vy2 = vp.y + vp.height - 8;
+        if (game.regionEnemies) {
+            for (var wi = 0; wi < game.regionEnemies.length; wi++) {
+                var we = game.regionEnemies[wi];
+                if (we.type !== 'walker') continue;
+                if (we.state === 'dead' || we.state === 'dying') continue;
+                var wx2 = we.x + REGION_ENEMY_WALK_W, wy2 = we.y + REGION_ENEMY_WALK_H;
+                if (vx1 < wx2 && vx2 > we.x && vy1 < wy2 && vy2 > we.y) {
+                    // Roadkill!
+                    we.hp = 0;
+                    we.state = 'dying';
+                    we.deathTimer = REGION_ENEMY_DEATH_TIME;
+                    we.stunTimer = 0;
+                    we.deathFlash = 0.25;
+                    var wecx = we.x + REGION_ENEMY_WALK_W / 2;
+                    var wecy = we.y + REGION_ENEMY_WALK_H / 2;
+                    _owAddKillScore(we.type, wecx, wecy);
+                    game.owScreenShake = 2;
+                    game.owHitSparks.push({ x: wecx, y: wecy, life: 0.18, maxLife: 0.18 });
+                }
+            }
+        }
+    }
+}
+
+// ── updateRegionEnemies ───────────────────────────────────────────────────────
+// Called every game frame. Advances the fixed sim clock, loads/unloads sectors,
+// runs per-frame AI / combat passes, and handles cosmetics (animation, dying).
+function updateRegionEnemies(dt) {
+    if (game.mode !== 'REGION' || !game.regionEnemies) return;
+    if (game._enemySimClock == null) return;
+
+    // 1. Refresh sectors / spawn
+    _refreshEnemySectors();
+
+    // 2. Fixed-step patrol sim (skips non-patrol enemies)
+    var nowSec = Date.now() / 1000.0;
+    var steps  = 0;
+    while (game._enemySimClock + REGION_ENEMY_SIM_STEP <= nowSec && steps < 8) {
+        game._enemySimClock += REGION_ENEMY_SIM_STEP;
+        _tickRegionEnemies(REGION_ENEMY_SIM_STEP);
+        steps++;
+    }
+
+    // Determine controlled entity and its world-space center
+    var isOnFoot = (game.controllerEntity === 'foot');
+    var tgt      = isOnFoot ? game.turtle : game.player;
+    var tgtCx    = tgt.x + (tgt.width  || 32) / 2;
+    var tgtCy    = tgt.y + (tgt.height || 32) / 2;
+
+    // 3. Per-frame AI update pass (all non-dead/dying enemies)
+    for (var ai = 0; ai < game.regionEnemies.length; ai++) {
+        var ae = game.regionEnemies[ai];
+        if (ae.state === 'dead' || ae.state === 'dying') continue;
+        _updateEnemyAI(ae, dt, tgtCx, tgtCy);
+    }
+
+    // 4. Hit detection pass
+    // ── A: Turtle → enemy (only during ACTIVE attack phase) ──────────────────
+    // Uses the same axis-aligned box formula as building levels:
+    //   attack center = player center + atkRange offset in facing direction
+    //   hit if |ax - ecx| < hitRange && |ay - ecy| < hitRange
+    if (isOnFoot) {
+        var t = game.turtle;
+        if (t.atkPhase === 'ACTIVE') {
+            if (!t._atkHitEnemies) t._atkHitEnemies = new Set();
+            var atkRange  = TILE_SIZE * 1.2;   // offset forward (same ratio as lts*1.2 in levels)
+            var hitRange  = TILE_SIZE;          // box half-size
+            var atkOffX   = t.direction === 'right' ?  atkRange : t.direction === 'left' ? -atkRange : 0;
+            var atkOffY   = t.direction === 'down'  ?  atkRange : t.direction === 'up'   ? -atkRange : 0;
+            var atkCx = t.x + t.width  / 2 + atkOffX;
+            var atkCy = t.y + t.height / 2 + atkOffY;
+            for (var hi = 0; hi < game.regionEnemies.length; hi++) {
+                var he = game.regionEnemies[hi];
+                if (he.state === 'dead' || he.state === 'dying') continue;
+                if (t._atkHitEnemies.has(he.id)) continue;
+                var hecx = he.x + (he.type === 'car' ? REGION_ENEMY_CAR_W  : REGION_ENEMY_WALK_W) / 2;
+                var hecy = he.y + (he.type === 'car' ? REGION_ENEMY_CAR_H  : REGION_ENEMY_WALK_H) / 2;
+                var hdx  = hecx - atkCx, hdy = hecy - atkCy;
+                if (Math.abs(hdx) < hitRange && Math.abs(hdy) < hitRange) {
+                    he.hp -= OW_TURTLE_ATK_DMG;
+                    t._atkHitEnemies.add(he.id);
+                    // Screen shake + spark (same as level)
+                    game.owScreenShake = 3;
+                    game.owHitSparks.push({ x: (atkCx + hecx) / 2, y: (atkCy + hecy) / 2, life: 0.12, maxLife: 0.12 });
+                    // Knockback away from turtle center (use full distance for direction)
+                    var tCx = t.x + t.width / 2, tCy = t.y + t.height / 2;
+                    var kbdx = hecx - tCx, kbdy = hecy - tCy;
+                    var kbDist = Math.sqrt(kbdx * kbdx + kbdy * kbdy) || 1;
+                    he.kbVx = (kbdx / kbDist) * OW_KB_SPEED;
+                    he.kbVy = (kbdy / kbDist) * OW_KB_SPEED;
+                    he.kbTimer = OW_KB_TIME;
+                    if (he.hp <= 0) {
+                        he.hp = 0;
+                        he.state = 'dying';
+                        he.deathTimer = REGION_ENEMY_DEATH_TIME;
+                        he.stunTimer = 0;   // clear stun so dying sprite always renders
+                        he.deathFlash = 0.25; // brief white flash on death
+                        _owAddKillScore(he.type, hecx, hecy);
+                    } else {
+                        he.aiState = 'stunned';
+                        he.stunTimer = OW_STUN_TIME;
+                    }
+                }
+            }
+        } else if (t.atkPhase === 'IDLE') {
+            t._atkHitEnemies = null;
+        }
+
+        // ── B: Walker → turtle ─────────────────────────────────────────────
+        if (t.invTimer <= 0) {
+            for (var wi = 0; wi < game.regionEnemies.length; wi++) {
+                var we = game.regionEnemies[wi];
+                if (we.type !== 'walker') continue;
+                if (we.aiState !== 'attack') continue;
+                if (we.state === 'dead' || we.state === 'dying') continue;
+                if (we.atkCooldown > 0) continue;
+                var wecx = we.x + REGION_ENEMY_WALK_W / 2;
+                var wecy = we.y + REGION_ENEMY_WALK_H / 2;
+                var wtcx = t.x + t.width / 2, wtcy = t.y + t.height / 2;
+                var wdx  = wtcx - wecx, wdy = wtcy - wecy;
+                var wdist = Math.sqrt(wdx * wdx + wdy * wdy);
+                if (wdist <= OW_ATTACK_WALK) {
+                    t.hp -= OW_MELEE_DAMAGE;
+                    we.atkCooldown = 1.2;
+                    // Spawn hit spark at contact point
+                    game.owHitSparks.push({ x: (wecx + wtcx) / 2, y: (wecy + wtcy) / 2, life: 0.12, maxLife: 0.12 });
+                    // Knockback turtle away from walker
+                    var wkd = wdist || 1;
+                    t.kbVx = (wdx / wkd) * OW_KB_SPEED;
+                    t.kbVy = (wdy / wkd) * OW_KB_SPEED;
+                    t.kbTimer = OW_KB_TIME;
+                    t.invTimer = OW_INV_TIME;
+                    if (t.hp <= 0) t.hp = 0;
+                }
+            }
+        }
+    }
+
+    // ── C: Car → van ───────────────────────────────────────────────────────
+    if (!isOnFoot) {
+        var van = game.player;
+        var vanCx = van.x + van.width  / 2;
+        var vanCy = van.y + van.height / 2;
+        for (var ci = 0; ci < game.regionEnemies.length; ci++) {
+            var ce = game.regionEnemies[ci];
+            if (ce.type !== 'car') continue;
+            if (ce.aiState !== 'attack') continue;
+            if (ce.state === 'dead' || ce.state === 'dying') continue;
+            if (ce.ramCooldown > 0) continue;
+            var cecx = ce.x + REGION_ENEMY_CAR_W / 2;
+            var cecy = ce.y + REGION_ENEMY_CAR_H / 2;
+            var cdx  = vanCx - cecx, cdy = vanCy - cecy;
+            if (Math.sqrt(cdx * cdx + cdy * cdy) <= OW_ATTACK_CAR) {
+                van.hp -= OW_RAM_DAMAGE;
+                ce.ramCooldown = 1.0;
+                if (van.hp < 0) van.hp = 0;
+            }
+        }
+    }
+
+    // 5. Cosmetics: animation frames, dying countdown, dead removal
+    for (var i = game.regionEnemies.length - 1; i >= 0; i--) {
+        var e = game.regionEnemies[i];
+        if (e.state === 'dead') { game.regionEnemies.splice(i, 1); continue; }
+        if (e.state === 'dying') {
+            e.deathTimer -= dt;
+            if (e.deathFlash > 0) e.deathFlash -= dt;
+            if (e.deathTimer <= 0) e.state = 'dead';
+            continue;
+        }
+        e.animTimer += dt;
+        if (e.animTimer >= 0.18) { e.animTimer -= 0.18; e.frame = (e.frame + 1) % 2; }
+    }
+
+    // Tick hit sparks, screen shake, combo, and point popups
+    for (var _si = game.owHitSparks.length - 1; _si >= 0; _si--) {
+        game.owHitSparks[_si].life -= dt;
+        if (game.owHitSparks[_si].life <= 0) game.owHitSparks.splice(_si, 1);
+    }
+    if (game.owScreenShake > 0) game.owScreenShake -= dt * 20;
+    if (game.owComboTimer > 0) {
+        game.owComboTimer -= dt;
+        if (game.owComboTimer <= 0) game.owComboCount = 0;
+    }
+    for (var _pi = game.owPointPopups.length - 1; _pi >= 0; _pi--) {
+        game.owPointPopups[_pi].life -= dt;
+        game.owPointPopups[_pi].y -= 30 * dt;
+        if (game.owPointPopups[_pi].life <= 0) game.owPointPopups.splice(_pi, 1);
+    }
+}
+
+function drawRegionEnemy(e) {
+    var sx = e.x - game.camera.x;
+    var sy = e.y - game.camera.y;
+
+    var isDying = (e.state === 'dying');
+
+    // Stun blink — only for living enemies; dying enemies always render
+    if (!isDying && e.stunTimer > 0 && Math.floor(e.stunTimer * 10) % 2 === 0) return;
+
+    // Dying fade: walkers fade out, cars stay visible (show wreck sprite)
+    var drawAlpha = 1.0;
+    if (isDying && e.type === 'walker') {
+        drawAlpha = Math.max(0, e.deathTimer / REGION_ENEMY_DEATH_TIME);
+    }
+
+    if (e.type === 'car') {
+        var patKey;
+        // Note: 'enemyCarDown' sprite has headlights at the top (car facing north),
+        // so it correctly maps to direction 'up'.  'enemyCarUp' maps to 'down'.
+        if (e.direction === 'right')     patKey = isDying ? 'enemyCarDestrRight' : 'enemyCarRight';
+        else if (e.direction === 'left') patKey = isDying ? 'enemyCarDestrLeft'  : 'enemyCarLeft';
+        else if (e.direction === 'up')   patKey = isDying ? 'enemyCarDestrDown'  : 'enemyCarDown';
+        else                             patKey = isDying ? 'enemyCarDestrUp'    : 'enemyCarUp';
+
+        var pat = NES.PATTERNS[patKey];
+        if (!pat) return;
+        var carScale = 3;
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        if (drawAlpha < 1) ctx.globalAlpha = drawAlpha;
+        NES.drawSprite(ctx, sx, sy, patKey, carScale);
+        // Death flash — bright white overlay on first 0.25s of dying
+        if (isDying && e.deathFlash > 0) {
+            var flashA = e.deathFlash / 0.25;
+            ctx.globalAlpha = flashA * 0.8;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(sx, sy, REGION_ENEMY_CAR_W, REGION_ENEMY_CAR_H);
+        }
+        ctx.restore();
+
+    } else { // walker
+        var wPatBase = (e.spriteType === 'cyborg') ? 'enemyCyborg' : 'enemyDemon';
+        var wFrame = e.frame + 1;
+        var wPatKey = wPatBase + 'Walk' + wFrame;
+        var wPat = NES.PATTERNS[wPatKey];
+        if (!wPat) return;
+        var wScale = REGION_ENEMY_WALK_W / wPat[0].length;
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        if (drawAlpha < 1) ctx.globalAlpha = drawAlpha;
+        if (e.direction === 'left') {
+            ctx.translate(sx + REGION_ENEMY_WALK_W, sy);
+            ctx.scale(-1, 1);
+            NES.drawSprite(ctx, 0, 0, wPatKey, wScale);
+        } else {
+            NES.drawSprite(ctx, sx, sy, wPatKey, wScale);
+        }
+        // Death flash — bright white overlay on first 0.25s of dying
+        if (isDying && e.deathFlash > 0) {
+            var wFlashA = e.deathFlash / 0.25;
+            ctx.globalAlpha = wFlashA * 0.8;
+            ctx.fillStyle = '#ffffff';
+            if (e.direction === 'left') {
+                ctx.fillRect(0, 0, REGION_ENEMY_WALK_W, REGION_ENEMY_WALK_H);
+            } else {
+                ctx.fillRect(sx, sy, REGION_ENEMY_WALK_W, REGION_ENEMY_WALK_H);
+            }
+        }
+        ctx.restore();
+    }
+
+    // HP bar above enemy — only when damaged
+    if (!isDying && e.state !== 'dead' && e.hp < e.maxHp) {
+        var barW = 24, barH = 3;
+        var eCx  = sx + (e.type === 'car' ? REGION_ENEMY_CAR_W / 2 : REGION_ENEMY_WALK_W / 2);
+        var barX = eCx - barW / 2;
+        var barY = sy - 6;
+        var fill = Math.max(0, e.hp / e.maxHp);
+        ctx.fillStyle = '#880000';
+        ctx.fillRect(barX, barY, barW, barH);
+        ctx.fillStyle = '#00cc00';
+        ctx.fillRect(barX, barY, Math.round(barW * fill), barH);
+    }
+}
+
 // ── Streetscape props draw ───────────────────────────────────────
 function drawTownProps(startX, startY, endX, endY) {
     var rowStart = Math.max(0, startY);
@@ -8002,6 +9896,15 @@ function draw() {
         return;
     }
 
+    // Overworld screen shake: temporarily offset the camera so every element shifts together
+    var _owShakeOx = 0, _owShakeOy = 0;
+    if (game.mode === 'REGION' && game.owScreenShake > 0) {
+        _owShakeOx = (Math.random() - 0.5) * game.owScreenShake * 2;
+        _owShakeOy = (Math.random() - 0.5) * game.owScreenShake * 2;
+        game.camera.x += _owShakeOx;
+        game.camera.y += _owShakeOy;
+    }
+
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = game.mode === 'WORLD' ? NES.PAL.B : NES.PAL.G;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -8109,6 +10012,19 @@ function draw() {
         }
         var _playerDrawn = false;
 
+        // Build region enemy row buckets for y-sorted drawing
+        var _regionEnemyByRow = {};
+        if (game.regionEnemies) {
+            for (var _rei = 0; _rei < game.regionEnemies.length; _rei++) {
+                var _re = game.regionEnemies[_rei];
+                if (_re.state === 'dead') continue;
+                var _reh = (_re.type === 'car') ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H;
+                var _reRow = Math.floor((_re.y + _reh) / TILE_SIZE);
+                if (!_regionEnemyByRow[_reRow]) _regionEnemyByRow[_reRow] = [];
+                _regionEnemyByRow[_reRow].push(_re);
+            }
+        }
+
         var _remoteByRow = {};
         if (typeof MP !== 'undefined') {
             var _mpAll = MP.getRemotePlayers();
@@ -8140,6 +10056,10 @@ function draw() {
 
             var _rowRemote = _remoteByRow[ry];
             if (_rowRemote) { for (var _rri = 0; _rri < _rowRemote.length; _rri++) _drawRemotePlayer(_rowRemote[_rri]); }
+
+            // Draw region enemies for this row
+            var _reRow = _regionEnemyByRow[ry];
+            if (_reRow) { for (var _redi = 0; _redi < _reRow.length; _redi++) drawRegionEnemy(_reRow[_redi]); }
 
             // Draw BG buildings for this row (procedural renderer)
             var bgBucket = ROW_BG[ry];
@@ -8183,12 +10103,89 @@ function draw() {
 
         drawTownProps(startX, startY, endX, endY);
 
+        // Overworld hit sparks (drawn on top of all world geometry)
+        if (game.owHitSparks && game.owHitSparks.length > 0) {
+            var _sparkImg = game.sprites && game.sprites.hitSpark;
+            for (var _spi = 0; _spi < game.owHitSparks.length; _spi++) {
+                var _sp = game.owHitSparks[_spi];
+                var _spsx = _sp.x - game.camera.x;
+                var _spsy = _sp.y - game.camera.y;
+                var _spAlpha = _sp.life / _sp.maxLife;
+                var _spSize  = 6 + (1 - _spAlpha) * 10;
+                ctx.save();
+                ctx.globalAlpha = _spAlpha;
+                if (_sparkImg) {
+                    ctx.drawImage(_sparkImg, _spsx - _spSize, _spsy - _spSize, _spSize * 2, _spSize * 2);
+                } else {
+                    ctx.fillStyle = 'rgba(255, 255, 200, 1)';
+                    ctx.fillRect(_spsx - _spSize / 2, _spsy - _spSize / 2, _spSize, _spSize);
+                    ctx.fillStyle = 'rgba(255, 180, 30, 0.8)';
+                    ctx.fillRect(_spsx - _spSize / 4, _spsy - _spSize / 4, _spSize / 2, _spSize / 2);
+                }
+                ctx.restore();
+            }
+        }
+
+        // Van cannonball projectiles (drawn on top of everything)
+        if (game.vanProjectiles && game.vanProjectiles.length > 0) {
+            for (var _vpi = 0; _vpi < game.vanProjectiles.length; _vpi++) {
+                var _vp = game.vanProjectiles[_vpi];
+                var _vpsx = _vp.x - game.camera.x;
+                var _vpsy = _vp.y - game.camera.y;
+                var _vpAge  = 1 - _vp.life / _vp.maxLife; // 0=fresh, 1=old
+                var _vpR    = 7 + Math.sin(_vp.animTimer * 30) * 1.5; // pulsing radius
+                ctx.save();
+                // Outer glow ring
+                ctx.beginPath();
+                ctx.arc(_vpsx, _vpsy, _vpR + 3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(80, 255, 40, 0.25)';
+                ctx.fill();
+                // Main ball — bright NES green-yellow
+                ctx.beginPath();
+                ctx.arc(_vpsx, _vpsy, _vpR, 0, Math.PI * 2);
+                ctx.fillStyle = '#40ff00';
+                ctx.fill();
+                // Inner highlight (white core)
+                ctx.beginPath();
+                ctx.arc(_vpsx - _vpR * 0.25, _vpsy - _vpR * 0.25, _vpR * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                // Trailing sparks based on direction
+                var _vTrailX = _vpsx - (_vp.vx / 700) * 14;
+                var _vTrailY = _vpsy - (_vp.vy / 700) * 14;
+                ctx.beginPath();
+                ctx.arc(_vTrailX, _vTrailY, _vpR * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 200, 0, 0.6)';
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
         for (var _rrKey in _remoteByRow) {
             if (parseInt(_rrKey) > rEnd) { var _rrB = _remoteByRow[_rrKey]; for (var _rrl = 0; _rrl < _rrB.length; _rrl++) _drawRemotePlayer(_rrB[_rrl]); }
         }
         var _activeRemoteIds = {};
         if (typeof MP !== 'undefined') { var _all = MP.getRemotePlayers(); for (var _ci = 0; _ci < _all.length; _ci++) _activeRemoteIds[_all[_ci].id] = true; }
         for (var _sid in _remoteAnimState) { if (!_activeRemoteIds[_sid]) delete _remoteAnimState[_sid]; }
+
+        // Overworld point popups (world-space, drawn on top like level popups)
+        if (game.owPointPopups && game.owPointPopups.length > 0) {
+            ctx.font = 'bold 8px monospace';
+            ctx.textAlign = 'center';
+            for (var _popi = 0; _popi < game.owPointPopups.length; _popi++) {
+                var _pop = game.owPointPopups[_popi];
+                var _popSx = _pop.x - game.camera.x;
+                var _popSy = _pop.y - game.camera.y;
+                var _popAlpha = Math.min(1.0, _pop.life);
+                var _pc = _pop.color;
+                var _pr = parseInt(_pc.slice(1, 3), 16);
+                var _pg = parseInt(_pc.slice(3, 5), 16);
+                var _pb = parseInt(_pc.slice(5, 7), 16);
+                ctx.fillStyle = 'rgba(' + _pr + ',' + _pg + ',' + _pb + ',' + _popAlpha + ')';
+                ctx.fillText(_pop.text, _popSx, _popSy);
+            }
+            ctx.textAlign = 'left';
+        }
     }
     drawAllChatBubbles();
     if (typeof MP !== 'undefined') {
@@ -8226,7 +10223,13 @@ function draw() {
     
     // Debug zones overlay (before UI so UI stays on top)
     drawDebugZones();
-    
+
+    // Restore camera from overworld screen shake before drawing UI
+    if (_owShakeOx || _owShakeOy) {
+        game.camera.x -= _owShakeOx;
+        game.camera.y -= _owShakeOy;
+    }
+
     // Draw UI (on top, no camera offset)
     drawUI();
 
@@ -8316,14 +10319,25 @@ function draw() {
         ctx.textAlign = 'right';
         ctx.fillText('SCORE: ' + game.progress.score.toLocaleString(), CANVAS_WIDTH - 14, 20);
         ctx.textAlign = 'left';
-        // Items counter
+        // Overworld combo counter (same style as level)
+        if (game.owComboCount > 1 && game.owComboTimer > 0) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(CANVAS_WIDTH - 140, 27, 132, 16);
+            ctx.fillStyle = game.owComboCount > 3 ? '#ff4444' : '#ffaa00';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText('COMBO x' + game.owComboCount, CANVAS_WIDTH - 14, 39);
+            ctx.textAlign = 'left';
+        }
+        // Items counter (shifts down when combo is showing)
         var itemCount = Object.keys(game.progress.collectedItems).length;
+        var _itemsY = (game.owComboCount > 1 && game.owComboTimer > 0) ? 46 : 28;
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(CANVAS_WIDTH - 140, 28, 132, 14);
+        ctx.fillRect(CANVAS_WIDTH - 140, _itemsY, 132, 14);
         ctx.fillStyle = itemCount >= 10 ? '#ff44ff' : '#ffffff';
         ctx.font = 'bold 8px monospace';
         ctx.textAlign = 'right';
-        ctx.fillText('ITEMS: ' + itemCount + '/10', CANVAS_WIDTH - 14, 39);
+        ctx.fillText('ITEMS: ' + itemCount + '/10', CANVAS_WIDTH - 14, _itemsY + 11);
         ctx.textAlign = 'left';
 
         // Turtle team selector (top-left, below header)
@@ -8580,7 +10594,7 @@ document.addEventListener('keydown', (e) => {
             game.blimpMenu.selectedIndex = (game.blimpMenu.selectedIndex - 1 + ports.length) % ports.length;
         } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
             game.blimpMenu.selectedIndex = (game.blimpMenu.selectedIndex + 1) % ports.length;
-        } else if (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyE') {
+        } else if (e.code === 'Enter' || e.code === 'KeyE') {
             requestPrimaryAction();
         } else if (e.code === 'Escape' || e.code === 'Backspace' || e.code === 'KeyM') {
             requestBackAction();
@@ -8603,7 +10617,13 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    if (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyE') {
+    if (e.code === 'Space') {
+        e.preventDefault();
+        requestAttack();
+        return;
+    }
+
+    if (e.code === 'Enter' || e.code === 'KeyE') {
         e.preventDefault();
         requestPrimaryAction();
         return;
@@ -9032,6 +11052,7 @@ async function completeEnterRegion(regionId) {
     game.activeBuildingId = null;
     game.activeNodeId = null;
     updateMobileActionVisibility();
+    spawnRegionEnemies();
     console.log('Region loaded:', regionId, 'spawn at', spawnPos.x, spawnPos.y);
 }
 
@@ -10712,6 +12733,10 @@ function drawLevel() {
 
         var enemySpriteKey = e.ranged ? 'enemyRanged' : e.shield ? 'enemyShield' : e.runner ? 'enemyRunner' : 'enemyFoot';
         var enemySprite = game.sprites[enemySpriteKey];
+        var enemyAnimFrame = (Math.floor(e.animTimer / 0.2) % 2) + 1;
+        var enemyPatBase = (e.runner || e.ranged) ? 'enemyCyborg' : 'enemyDemon';
+        var enemyPatKey = enemyPatBase + 'Walk' + enemyAnimFrame;
+        var enemyNesPat = NES.PATTERNS[enemyPatKey];
         if (enemySprite) {
             ctx.save();
             if (e.facingDir < 0) {
@@ -10720,6 +12745,22 @@ function drawLevel() {
                 ctx.drawImage(enemySprite, 0, 0, e.w, e.h);
             } else {
                 ctx.drawImage(enemySprite, esx, esy, e.w, e.h);
+            }
+            ctx.restore();
+        } else if (enemyNesPat) {
+            var nesPatW = enemyNesPat[0].length;
+            var nesPatH = enemyNesPat.length;
+            var nesScale = e.w / nesPatW;
+            var nesOx = 0;
+            var nesOy = Math.floor((e.h - nesPatH * nesScale) / 2);
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            if (e.facingDir < 0) {
+                ctx.translate(esx + e.w, esy + nesOy);
+                ctx.scale(-1, 1);
+                NES.drawSprite(ctx, nesOx, 0, enemyPatKey, nesScale);
+            } else {
+                NES.drawSprite(ctx, esx + nesOx, esy + nesOy, enemyPatKey, nesScale);
             }
             ctx.restore();
         } else {
@@ -10807,16 +12848,24 @@ function drawLevel() {
     if (!blink) {
         var turtleScale = p.w / 16;
         var turtleId = p.turtleId || 'leo';
+        // atkFrame 0 = first half of active phase, 1 = second half
+        var atkFrame = (p.atkPhase === 'ACTIVE' && p.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
+        // Donnie up-attack: draw weapon behind turtle so staff appears to emerge from body
+        var weaponBehind = (turtleId === 'donnie' && p.direction === 'up');
         if (p.atkPhase === 'ACTIVE') {
             // Flash white during attack
             ctx.globalAlpha = 0.7;
+            if (weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
             NES.drawTurtleSprite(ctx, psx, psy, p.direction, p.animFrame, turtleId, turtleScale);
+            if (!weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
             ctx.globalAlpha = 0.4;
             ctx.fillStyle = NES.PAL.W;
             ctx.fillRect(psx, psy, p.w, p.h);
             ctx.globalAlpha = 1;
         } else {
+            if (weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, 0);
             NES.drawTurtleSprite(ctx, psx, psy, p.direction, p.animFrame, turtleId, turtleScale);
+            if (!weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, 0);
         }
     }
 
@@ -11348,11 +13397,13 @@ async function init() {
         game.player.x = spawnPos.x;
         game.player.y = spawnPos.y;
     }
-    if (_spValid && _sp.mode) {
+    if (_spValid && _sp.mode && _sp.mode !== 'LEVEL') {
         game.mode = _sp.mode;
         game.currentRegionId = _restoreRegion;
         if (_sp.mode === 'WORLD') {
             applyWorldMapData();
+        } else if (_sp.mode === 'REGION') {
+            spawnRegionEnemies();
         }
     } else {
         applyWorldMapData();

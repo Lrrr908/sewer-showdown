@@ -152,7 +152,7 @@ class Zone {
     }
   }
 
-  posSync(accountId, px, py, facing, mode, turtleId, vpx, vpy, vf) {
+  posSync(accountId, px, py, facing, mode, turtleId, vpx, vpy, vf, atk) {
     const entityId = this.byAccount.get(accountId);
     if (!entityId) return false;
     const entity = this.entities.get(entityId);
@@ -172,6 +172,7 @@ class Zone {
       entity.vpy = null;
       entity.vf = null;
     }
+    entity.atk = (atk === 'WINDUP' || atk === 'ACTIVE' || atk === 'RECOVERY') ? atk : 'IDLE';
 
     const newTileX = Math.floor(px / TILE_PX);
     const newTileY = Math.floor(py / TILE_PX);
@@ -326,7 +327,7 @@ class Zone {
       entity._lastBcastPy = entity.py;
       entity._lastBcastFacing = entity.facing;
       entity._lastBcastTime = Date.now();
-      const compact = [entity.id, entity.px, entity.py, entity.facing, entity.mode || 'van', entity.turtleId || 'leo', entity.vpx, entity.vpy, entity.vf, entity.displayName || ''];
+      const compact = [entity.id, entity.px, entity.py, entity.facing, entity.mode || 'van', entity.turtleId || 'leo', entity.vpx, entity.vpy, entity.vf, entity.displayName || '', entity.atk || 'IDLE'];
       const cell = posToCell(entity.x, entity.y, 1);
       const neighbors = neighborCells(cell.cx, cell.cy);
       for (const nk of neighbors) {
@@ -424,6 +425,7 @@ function wireSnapshot(entity) {
     mode: entity.mode || 'van',
     tid: entity.turtleId || 'leo',
     dn: entity.displayName || '',
+    atk: entity.atk || 'IDLE',
   };
   if (entity.vpx != null) {
     snap.vpx = entity.vpx;
