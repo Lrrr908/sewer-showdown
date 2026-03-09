@@ -12,12 +12,40 @@ const {
 const sim = require('./sim_tick');
 const { wireSnapshot } = require('../zones/zone');
 const ugcValidate = require('../ugc/ugc_validate');
+const levelRoom = require('../level_room');
 
 const AUTH_TIMEOUT_MS = 5000;
 const TRANSFER_IGNORE_NOTIFY_MS = 1000;
 const POS_SYNC_MIN_MS = 40;
 const CHAT_MAX_LEN = 60;
 const CHAT_COOLDOWN_MS = 1000;
+
+// ── Overworld hourly kill store ───────────────────────────────────────────────
+// regionId -> { hour: number, ids: Set<string> }
+// Auto-resets each hour. Persists for the server's lifetime (in-memory only).
+const owKillStore = new Map();
+
+function _currentHour() { return Math.floor(Date.now() / 3600000); }
+
+function owRecordKills(regionId, ids) {
+    const h = _currentHour();
+    let entry = owKillStore.get(regionId);
+    if (!entry || entry.hour !== h) {
+        entry = { hour: h, ids: new Set() };
+        owKillStore.set(regionId, entry);
+    }
+    for (const id of ids) {
+        if (typeof id === 'string') entry.ids.add(id);
+        else if (id && typeof id === 'object' && id.id) entry.ids.add(id.id);
+    }
+}
+
+function owGetDeadEnemies(regionId) {
+    const h = _currentHour();
+    const entry = owKillStore.get(regionId);
+    if (!entry || entry.hour !== h) return [];
+    return [...entry.ids];
+}
 
 // accountId -> ws. Enforces single active connection per account.
 const connByAccount = new Map();
@@ -38,6 +66,8 @@ function initWsServer(wss) {
     // phase: 'begin_sent' | 'commit_sent' | 'snapshot_sent'
     let pendingTransfer = null;
     let lastChatMs = 0;
+    // Current level room instance (for cleanup on disconnect)
+    let currentLevelInstanceId = null;
 
     const pingInterval = setInterval(() => {
       if (!alive) {
@@ -118,12 +148,12 @@ function initWsServer(wss) {
 
         if (zone) {
           const snap = wireSnapshot(entity);
-          for (const [pid, pws] of zone.conns) {
-            if (pid !== entityId && pws.readyState === 1) {
-              const recipEntity = zone.getEntity(pid);
-              const ack = recipEntity ? recipEntity.lastSeq : 0;
-              try { pws.send(makeDelta(sim.tickCount, zoneId, [snap], [], ack)); } catch {}
-            }
+          // AOI-filtered: only announce to players within neighbor cells of the joiner.
+          const joinedNearby = zone.getPlayersNearEntity(entityId);
+          for (const { pid, ws: pws } of joinedNearby) {
+            const recipEntity = zone.getEntity(pid);
+            const ack = recipEntity ? recipEntity.lastSeq : 0;
+            try { pws.send(makeDelta(sim.tickCount, zoneId, [snap], [], ack)); } catch {}
           }
         }
 
@@ -206,9 +236,16 @@ function initWsServer(wss) {
           break;
 
         case 'enemy_sync': {
-          // Relay enemy kill/hit events to all other players in the zone.
-          // Server is stateless here — just broadcast the payload as-is.
-          if (!Array.isArray(msg.kills) && !Array.isArray(msg.hits)) break;
+          // Relay enemy kill/hit/shot events only to players within AOI range of
+          // the sender. Combat events are local — no need to tell players across
+          // the other side of the map.
+          const hasKills = Array.isArray(msg.kills) && msg.kills.length > 0;
+          const hasHits  = Array.isArray(msg.hits)  && msg.hits.length  > 0;
+          const hasShots = Array.isArray(msg.shots) && msg.shots.length > 0;
+          const hasAtks  = Array.isArray(msg.atks)  && msg.atks.length  > 0;
+          if (!hasKills && !hasHits && !hasShots && !hasAtks) break;
+          // Persist kills for the hour so late-joiners don't respawn these enemies
+          if (hasKills) owRecordKills(zoneId, msg.kills.slice(0, 50));
           const zone = sim.getZoneForAccount(accountId);
           if (zone) {
             const payload = JSON.stringify({
@@ -216,11 +253,37 @@ function initWsServer(wss) {
               zone: zoneId,
               kills: Array.isArray(msg.kills) ? msg.kills.slice(0, 50) : [],
               hits:  Array.isArray(msg.hits)  ? msg.hits.slice(0, 50)  : [],
+              shots: Array.isArray(msg.shots) ? msg.shots.slice(0, 20) : [],
+              atks:  Array.isArray(msg.atks)  ? msg.atks.slice(0, 10)  : [],
             });
-            for (const [pid, pws] of zone.conns) {
-              if (pid !== entityId && pws.readyState === 1) {
-                try { pws.send(payload); } catch {}
-              }
+            // AOI-filtered: relay only to players in neighboring cells of the sender.
+            const enemySyncNearby = zone.getPlayersNearEntity(entityId);
+            for (const { ws: pws } of enemySyncNearby) {
+              try { pws.send(payload); } catch {}
+            }
+          }
+          break;
+        }
+
+        case 'ow_join': {
+          // Client entered a region: send back enemies killed this hour
+          if (typeof msg.regionId !== 'string') break;
+          const deadEnemies = owGetDeadEnemies(msg.regionId);
+          try {
+            ws.send(JSON.stringify({ t: 'ow_dead_enemies', regionId: msg.regionId, deadEnemies }));
+          } catch (_) {}
+          break;
+        }
+
+        case 'ow_enemy_sync': {
+          // Relay enemy positions to nearby players via AOI
+          if (!Array.isArray(msg.enemies) || msg.enemies.length === 0) break;
+          const zone2 = sim.getZoneForAccount(accountId);
+          if (zone2) {
+            const owSyncPayload = JSON.stringify({ t: 'ow_enemy_sync', enemies: msg.enemies.slice(0, 100) });
+            const owNearby = zone2.getPlayersNearEntity(entityId);
+            for (const { ws: pws } of owNearby) {
+              try { pws.send(owSyncPayload); } catch {}
             }
           }
           break;
@@ -244,6 +307,123 @@ function initWsServer(wss) {
               }
             }
           }
+          break;
+        }
+
+        case 'join_level': {
+          if (typeof msg.instanceId !== 'string') break;
+          // Leave any previous room first
+          if (currentLevelInstanceId && currentLevelInstanceId !== msg.instanceId) {
+            const prevHostId = levelRoom.leaveRoom(currentLevelInstanceId, entityId);
+            levelRoom.broadcast(currentLevelInstanceId, {
+              t: 'level_player_leave',
+              instanceId: currentLevelInstanceId,
+              entityId,
+              newHostId: prevHostId || null
+            }, entityId);
+          }
+          currentLevelInstanceId = msg.instanceId;
+          const zone = sim.getZoneForAccount(accountId);
+          const entity = zone ? zone.entities.get(entityId) : null;
+          const dn = (entity && entity.displayName) || accountId.substring(0, 8);
+          const joinResult = levelRoom.joinRoom(msg.instanceId, entityId, ws, dn);
+          // Reply to the joiner: include host flag, item state, existing members,
+          // and the list of enemies already killed today so they load dead.
+          try {
+            ws.send(JSON.stringify({
+              t: 'level_joined',
+              instanceId: msg.instanceId,
+              isHost: joinResult.isHost,
+              items: joinResult.items,
+              members: joinResult.existingMembers,   // [{entityId, displayName}]
+              deadEnemies: joinResult.deadEnemies    // [enemyId, ...]
+            }));
+          } catch (_) {}
+          // Announce arrival to existing room members
+          levelRoom.broadcast(msg.instanceId, {
+            t: 'level_player_join',
+            instanceId: msg.instanceId,
+            entityId,
+            displayName: dn
+          }, entityId);
+          // Ask existing members to immediately re-broadcast their position so the
+          // new joiner gets everyone's location on the very next frame.
+          levelRoom.broadcast(msg.instanceId, {
+            t: 'level_pos_request',
+            instanceId: msg.instanceId,
+            forEntityId: entityId    // the new joiner who needs positions
+          }, entityId);
+          break;
+        }
+
+        case 'leave_level': {
+          if (typeof msg.instanceId !== 'string') break;
+          if (currentLevelInstanceId === msg.instanceId) currentLevelInstanceId = null;
+          const newHostId = levelRoom.leaveRoom(msg.instanceId, entityId);
+          // Notify remaining members of departure (and new host if changed)
+          levelRoom.broadcast(msg.instanceId, {
+            t: 'level_player_leave',
+            instanceId: msg.instanceId,
+            entityId,
+            newHostId: newHostId || null
+          }, entityId);
+          break;
+        }
+
+        case 'level_pos': {
+          if (typeof msg.instanceId !== 'string') break;
+          // Relay position to all room members except sender
+          levelRoom.broadcast(msg.instanceId, {
+            t: 'level_pos',
+            instanceId: msg.instanceId,
+            entityId,
+            px: msg.px,
+            py: msg.py,
+            facing: msg.facing,
+            atkPhase: msg.atkPhase,
+            tid: msg.tid
+          }, entityId);
+          break;
+        }
+
+        case 'level_enemy_sync': {
+          if (typeof msg.instanceId !== 'string') break;
+          // Relay host enemy positions to all non-host room members
+          levelRoom.broadcast(msg.instanceId, {
+            t: 'level_enemy_sync',
+            instanceId: msg.instanceId,
+            enemies: Array.isArray(msg.enemies) ? msg.enemies : []
+          }, entityId);
+          break;
+        }
+
+        case 'level_sync': {
+          if (typeof msg.instanceId !== 'string') break;
+
+          const kills = Array.isArray(msg.kills) ? msg.kills.slice(0, 50) : [];
+
+          // Record kills server-side so late-joiners get a dead enemy list
+          if (kills.length > 0) {
+            levelRoom.killEnemies(msg.instanceId, kills);
+          }
+
+          const syncPayload = {
+            t: 'level_sync',
+            instanceId: msg.instanceId,
+            kills
+          };
+
+          // Item pickup: only the room host can claim items
+          if (msg.item && typeof msg.item.id === 'string' &&
+              levelRoom.getHostId(msg.instanceId) === entityId) {
+            const taken = levelRoom.takeItem(msg.instanceId, msg.item.id, entityId);
+            if (taken) {
+              syncPayload.item = { id: msg.item.id, takenBy: entityId, takenAtDay: taken.takenAtDay };
+            }
+          }
+
+          // Broadcast to all members except sender (sender already applied locally)
+          levelRoom.broadcast(msg.instanceId, syncPayload, entityId);
           break;
         }
 
@@ -326,12 +506,12 @@ function initWsServer(wss) {
       pendingTransfer.phase = 'snapshot_sent';
 
       const transferSnap = wireSnapshot(result.entity);
-      for (const [pid, pws] of result.newZone.conns) {
-        if (pid !== entityId && pws.readyState === 1) {
-          const recipEntity = result.newZone.getEntity(pid);
-          const ack = recipEntity ? recipEntity.lastSeq : 0;
-          try { pws.send(makeDelta(sim.tickCount, toZoneId, [transferSnap], [], ack)); } catch {}
-        }
+      // AOI-filtered: only announce arrival to players near the transfer destination.
+      const transferNearby = result.newZone.getPlayersNearEntity(entityId);
+      for (const { pid, ws: pws } of transferNearby) {
+        const recipEntity = result.newZone.getEntity(pid);
+        const ack = recipEntity ? recipEntity.lastSeq : 0;
+        try { pws.send(makeDelta(sim.tickCount, toZoneId, [transferSnap], [], ack)); } catch {}
       }
 
       transferring = false;
@@ -400,16 +580,28 @@ function initWsServer(wss) {
         }
 
         const zone = sim.getZoneForAccount(accountId);
+        // Capture AOI neighbors BEFORE removePlayer strips the entity from the grid.
+        const nearbyBeforeLeave = (zone && entityId) ? zone.getPlayersNearEntity(entityId) : [];
         sim.removePlayer(accountId);
 
         if (zone && entityId) {
-          for (const [pid, pws] of zone.conns) {
-            if (pws.readyState === 1) {
-              const recipEntity = zone.getEntity(pid);
-              const ack = recipEntity ? recipEntity.lastSeq : 0;
-              try { pws.send(makeDelta(sim.tickCount, zone.id, [], [entityId], ack)); } catch {}
-            }
+          for (const { pid, ws: pws } of nearbyBeforeLeave) {
+            const recipEntity = zone.getEntity(pid);
+            const ack = recipEntity ? recipEntity.lastSeq : 0;
+            try { pws.send(makeDelta(sim.tickCount, zone.id, [], [entityId], ack)); } catch {}
           }
+        }
+
+        // Clean up any level room memberships on disconnect
+        if (entityId && currentLevelInstanceId) {
+          const newHostId = levelRoom.leaveRoom(currentLevelInstanceId, entityId);
+          levelRoom.broadcast(currentLevelInstanceId, {
+            t: 'level_player_leave',
+            instanceId: currentLevelInstanceId,
+            entityId,
+            newHostId: newHostId || null
+          }, entityId);
+          currentLevelInstanceId = null;
         }
 
         console.log(`[ws] ${entityId} (${accountId}) left`);
@@ -447,5 +639,39 @@ function errorMsgFor(code, msg) {
       return 'Invalid hello message';
   }
 }
+
+// ── Zone-wide player directory broadcast ─────────────────────────────────────
+// Every 5 seconds, send every authenticated client a lightweight list of ALL
+// other players in their zone (id, px, py, displayName). This is not AOI-
+// filtered so players always know where to find each other, even across the map.
+setInterval(() => {
+  // Group all authenticated connections by zoneId
+  const zoneMap = new Map(); // zoneId -> [{id, px, py, dn}]
+  for (const [acctId, ws] of connByAccount) {
+    const entity = sim.getEntityForAccount(acctId);
+    if (!entity) continue;
+    const zid = entity.zoneId || sim.DEFAULT_ZONE;
+    if (!zoneMap.has(zid)) zoneMap.set(zid, []);
+    zoneMap.get(zid).push({
+      id: entity.id,
+      px: entity.px,
+      py: entity.py,
+      dn: entity.displayName || ''
+    });
+  }
+  // Send each client the list of everyone else in their zone
+  for (const [acctId, ws] of connByAccount) {
+    if (ws.readyState !== 1) continue;
+    const entity = sim.getEntityForAccount(acctId);
+    if (!entity) continue;
+    const zid = entity.zoneId || sim.DEFAULT_ZONE;
+    const all = zoneMap.get(zid) || [];
+    const others = all.filter(p => p.id !== entity.id);
+    if (others.length === 0) continue;
+    try {
+      ws.send(JSON.stringify({ t: 'zone_players', players: others }));
+    } catch (_) {}
+  }
+}, 5000);
 
 module.exports = { initWsServer, connByAccount };

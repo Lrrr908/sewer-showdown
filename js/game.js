@@ -5761,64 +5761,67 @@ function drawOnFootTurtle() {
     var screenY = t.y - game.camera.y;
     var drawScale = t.width / 16;
     var atkFrame = (t.atkPhase === 'ACTIVE' && t.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
-    // Invincibility blink — exact same formula as level
+    // Invincibility blink
     var blink = (t.invTimer > 0 && Math.floor(t.invTimer * 10) % 2 === 0);
     var weaponBehind = (game.activeTurtle === 'donnie' && t.direction === 'up');
 
     if (!blink) {
-        if (t.atkPhase === 'ACTIVE') {
-            // Slightly transparent + white overlay during active hit frames (same as level)
-            ctx.globalAlpha = 0.7;
-            if (weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, atkFrame);
-            NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
-            if (!weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, atkFrame);
-            ctx.globalAlpha = 0.4;
-            ctx.fillStyle = NES.PAL.W;
-            ctx.fillRect(screenX, screenY, t.width, t.height);
-            ctx.globalAlpha = 1;
-        } else {
-            if (weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, 0);
-            NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
-            if (!weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, 0);
-        }
-    }
+        if (weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, atkFrame);
+        NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
+        if (!weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, atkFrame);
 
-    // WINDUP — yellow charge glow (same as level)
-    if (t.atkPhase === 'WINDUP') {
-        var chargeAlpha = 0.2 + t.atkTimer / ATK_WINDUP * 0.3;
-        ctx.fillStyle = 'rgba(255, 255, 100, ' + chargeAlpha + ')';
-        ctx.beginPath();
-        ctx.arc(screenX + t.width / 2, screenY + t.height / 2, t.width * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    // ACTIVE — yellow slash rect if hit, faint arc trail if whiff (same as level, sized to turtle)
-    if (t.atkPhase === 'ACTIVE') {
-        var tw = t.width, th = t.height;   // use turtle dimensions as the base unit (like lts in levels)
-        var slashOx = t.direction === 'right' ? tw : (t.direction === 'left' ? -tw * 0.7 : 0);
-        var slashOy = t.direction === 'down'  ? th : (t.direction === 'up'   ? -th * 0.7 : 0);
-        var slashW  = (t.direction === 'left' || t.direction === 'right') ? tw * 0.7 : tw;
-        var slashH  = (t.direction === 'up'   || t.direction === 'down')  ? th * 0.7 : th * 0.6;
-        var hasHit  = t._atkHitEnemies && t._atkHitEnemies.size > 0;
-        if (hasHit) {
-            var slashAlpha = 0.5 + (1 - t.atkTimer / ATK_ACTIVE) * 0.4;
-            ctx.fillStyle = 'rgba(255, 255, 0, ' + slashAlpha + ')';
-            ctx.fillRect(screenX + slashOx, screenY + slashOy + th * 0.1, slashW, slashH);
-        } else {
-            ctx.strokeStyle = 'rgba(200, 200, 255, ' + (0.2 + t.atkTimer / ATK_ACTIVE * 0.3) + ')';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            var arcCx = screenX + tw / 2 + slashOx * 0.5;
-            var arcCy = screenY + th / 2 + slashOy * 0.5;
-            var arcR  = tw * 0.8;
-            var startAngle = t.direction === 'right' ? -0.8 : t.direction === 'left' ? 2.3 : t.direction === 'up' ? 3.6 : 0.8;
-            ctx.arc(arcCx, arcCy, arcR, startAngle, startAngle + 1.6);
-            ctx.stroke();
+        // Red hit flash — fades over the first 0.2 s of the invincibility window
+        if (t.invTimer > 0) {
+            var _hitFlashAlpha = Math.max(0, (t.invTimer - (OW_INV_TIME - 0.2)) / 0.2) * 0.6;
+            if (_hitFlashAlpha > 0) {
+                ctx.globalAlpha = _hitFlashAlpha;
+                ctx.fillStyle = '#ff2020';
+                ctx.fillRect(screenX, screenY, t.width, t.height);
+                ctx.globalAlpha = 1;
+            }
         }
     }
 }
 
 var _drFacingToDir = { n: 'up', s: 'down', e: 'right', w: 'left' };
 var _remoteAnimState = {};
+
+// Called once per frame. Drains incoming turtle-attack events sent by remote
+// players and immediately starts the WINDUP animation for that player's state
+// entry.  Uses the same pattern as remote van shots: one event triggers the
+// full locally-run animation, so nothing is missed due to pos_sync throttling.
+function _processRemoteAtks() {
+    if (typeof MP === 'undefined' || !MP.isConnected()) return;
+    var _inAtks = MP.drainAtkSyncs();
+    if (!_inAtks) return;
+    for (var _ai = 0; _ai < _inAtks.length; _ai++) {
+        var _atk = _inAtks[_ai];
+        if (!_atk || !_atk.id) continue;
+        if (!_remoteAnimState[_atk.id]) {
+            _remoteAnimState[_atk.id] = { rx: 0, ry: 0, frame: 0, animTimer: 0, lastPx: 0, lastPy: 0,
+                                           atkPhase: 'IDLE', atkTimer: 0, atkFrame: 0 };
+        }
+        var _aSt = _remoteAnimState[_atk.id];
+        // Stamp direction onto the matching remote player so the weapon sprite
+        // faces the right way (the atk event includes dir and tid).
+        var _rpMatch = null;
+        if (typeof MP.getRemotePlayers === 'function') {
+            var _rAll = MP.getRemotePlayers();
+            for (var _ri = 0; _ri < _rAll.length; _ri++) {
+                if (_rAll[_ri].id === _atk.id) { _rpMatch = _rAll[_ri]; break; }
+            }
+        }
+        if (_rpMatch) {
+            // Align facing so the weapon overlay draws in the attack direction
+            var _dirToFacing = { right: 'e', left: 'w', up: 'n', down: 's' };
+            _rpMatch.facing = _dirToFacing[_atk.dir] || _rpMatch.facing;
+        }
+        // Trigger animation (overwrite any stale phase so the new attack is always visible)
+        _aSt.atkPhase = 'WINDUP';
+        _aSt.atkTimer = ATK_WINDUP;
+        _aSt.atkFrame = 0;
+    }
+}
 
 function _smoothRemotePos(_rp) {
     var id = _rp.id;
@@ -6137,41 +6140,66 @@ function drawTitle() {
 }
 
 const WAYPOINT_IDS = new Set(['lm_start', 'lm_info', 'lm_sewer', 'lm_boss']);
-const WAYPOINT_EDGE_PAD = 16;
-const WAYPOINT_SIZE = 8;
+// Padding per edge — keeps arrows out of the top (28px) and bottom (22px) HUD bars
+const WP_PAD_TOP    = 48;   // clears 28px header + buffer
+const WP_PAD_BOTTOM = 40;   // clears 22px footer + buffer
+const WP_PAD_SIDE   = 30;
 
 function drawWaypointPip(wx, wy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, color, label) {
+    // Skip if target is already on screen
     var margin = TILE_SIZE;
     if (wx + TILE_SIZE > vpLeft - margin && wx - TILE_SIZE < vpRight + margin &&
         wy + TILE_SIZE > vpTop - margin && wy - TILE_SIZE < vpBottom + margin) return;
 
     var ang = Math.atan2(wy - pcy, wx - pcx);
-    var minX = WAYPOINT_EDGE_PAD;
-    var maxX = CANVAS_WIDTH - WAYPOINT_EDGE_PAD;
-    var minY = WAYPOINT_EDGE_PAD;
-    var maxY = CANVAS_HEIGHT - WAYPOINT_EDGE_PAD;
+
+    // HUD-aware safe zone
+    var minX = WP_PAD_SIDE;
+    var maxX = CANVAS_WIDTH  - WP_PAD_SIDE;
+    var minY = WP_PAD_TOP;
+    var maxY = CANVAS_HEIGHT - WP_PAD_BOTTOM;
     var cx = CANVAS_WIDTH / 2;
     var cy = CANVAS_HEIGHT / 2;
-    var edgeX = Math.max(minX, Math.min(maxX, cx + Math.cos(ang) * (cx - WAYPOINT_EDGE_PAD)));
-    var edgeY = Math.max(minY, Math.min(maxY, cy + Math.sin(ang) * (cy - WAYPOINT_EDGE_PAD)));
 
+    // Correct ray-to-rectangle intersection (handles asymmetric top/bottom padding)
+    var dx = Math.cos(ang), dy = Math.sin(ang);
+    var tR = dx > 0 ? (maxX - cx) / dx : Infinity;
+    var tL = dx < 0 ? (minX - cx) / dx : Infinity;
+    var tB = dy > 0 ? (maxY - cy) / dy : Infinity;
+    var tT = dy < 0 ? (minY - cy) / dy : Infinity;
+    var t  = Math.min(tR, tL, tB, tT);
+    var edgeX = Math.max(minX, Math.min(maxX, cx + dx * t));
+    var edgeY = Math.max(minY, Math.min(maxY, cy + dy * t));
+
+    // Bounce toward the target to draw the eye
+    var bounce = Math.sin(Date.now() / 220) * 4;
+    var bx = edgeX + dx * bounce;
+    var by = edgeY + dy * bounce;
+
+    // Arrow size (small, consistent)
+    var sz = 8;
+
+    // ── Draw arrow ───────────────────────────────────────────────
     ctx.save();
-    ctx.translate(edgeX, edgeY);
+    ctx.translate(bx, by);
     ctx.rotate(ang);
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.moveTo(WAYPOINT_SIZE, 0);
-    ctx.lineTo(-WAYPOINT_SIZE, -WAYPOINT_SIZE * 0.6);
-    ctx.lineTo(-WAYPOINT_SIZE, WAYPOINT_SIZE * 0.6);
+    ctx.moveTo(sz, 0);
+    ctx.lineTo(-sz, -sz * 0.65);
+    ctx.lineTo(-sz,  sz * 0.65);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
 
+    // ── Label (plain text, no background) ───────────────────────
     if (label) {
+        var badgeCx = bx - dx * (sz + 14);
+        var badgeCy = by - dy * (sz + 14);
         ctx.fillStyle = color;
-        ctx.font = '10px "Press Start 2P", monospace';
+        ctx.font = 'bold 9px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(label, edgeX, edgeY - WAYPOINT_SIZE - 4);
+        ctx.fillText(label, badgeCx, badgeCy + 4);
         ctx.textAlign = 'left';
     }
 }
@@ -6195,13 +6223,24 @@ function drawWaypointPips() {
     }
 
     if (typeof MP !== 'undefined' && MP.isConnected()) {
+        // Active (in-AOI) players
         var _rpAll = MP.getRemotePlayers();
+        var _rpIds = {};
         for (var _rpi = 0; _rpi < _rpAll.length; _rpi++) {
             var _rpP = _rpAll[_rpi];
+            _rpIds[_rpP.id] = true;
             var _rpWx = _rpP.px != null ? _rpP.px : _rpP.x * TILE_SIZE;
             var _rpWy = _rpP.py != null ? _rpP.py : _rpP.y * TILE_SIZE;
             var _rpLabel = (_rpP.displayName || _rpP.id || '?').substring(0, 8);
             drawWaypointPip(_rpWx + TILE_SIZE / 2, _rpWy + TILE_SIZE / 2, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#ff3333', _rpLabel);
+        }
+        // Ghost players (exited AOI — show arrow at last known position)
+        var _ghosts = MP.getLastSeenPlayers();
+        for (var _gi = 0; _gi < _ghosts.length; _gi++) {
+            var _g = _ghosts[_gi];
+            if (_rpIds[_g.id]) continue; // already shown above (re-entered AOI)
+            var _gLabel = (_g.displayName || '?').substring(0, 8);
+            drawWaypointPip(_g.px + TILE_SIZE / 2, _g.py + TILE_SIZE / 2, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#ff6666', _gLabel);
         }
     }
 }
@@ -6775,6 +6814,9 @@ function requestAttack() {
             t.atkTimer = ATK_WINDUP;
             if (typeof MP !== 'undefined' && MP.isConnected()) {
                 var _reqAtkF = t.direction === 'left' ? 'w' : t.direction === 'right' ? 'e' : t.direction === 'up' ? 'n' : 's';
+                // sendTurtleAtk fires one immediate event that remote clients use to
+                // trigger the full animation locally (mirrors the van-shot pattern).
+                MP.sendTurtleAtk(t.x, t.y, t.direction, game.activeTurtle);
                 MP.sendAtkSync(t.x, t.y, _reqAtkF, 'foot', game.activeTurtle, 'WINDUP');
             }
         }
@@ -6801,6 +6843,9 @@ function requestAttack() {
         });
         game.van.shotCooldown = 0.35;  // ~3 shots/second
         game.owScreenShake = 2;
+        if (typeof MP !== 'undefined' && MP.isConnected()) {
+            MP.sendVanShot(projX, projY, vdx * 700, vdy * 700, 1.6);
+        }
     }
 }
 
@@ -7409,7 +7454,7 @@ function update(dt) {
         if (game.postcard.timer <= 0) game.postcard = null;
     }
 
-    if (game.mode === 'REGION') { updateVanProjectiles(dt); updateRegionEnemies(dt); }
+    if (game.mode === 'REGION') { _processRemoteAtks(); updateVanProjectiles(dt); updateRegionEnemies(dt); }
     updateCamera(dt);
     if (game.mode === 'WORLD') {
         updateWorldInteraction();
@@ -8310,7 +8355,7 @@ var REGION_ENEMY_WALK_H       = 20;
 var REGION_ENEMY_DEATH_TIME   = 1.2;  // seconds to show destroyed sprite
 
 var REGION_ENEMY_SIM_STEP     = 0.05; // simulation step (s) — same on all clients
-var REGION_ENEMY_EPOCH_MS     = 60 * 1000; // 1-min window; enemies reset each minute
+var REGION_ENEMY_EPOCH_MS     = 60 * 60 * 1000; // 1-hour window; enemies reset each hour
 
 // Sector tunables
 var ENEMY_SECTOR_SIZE         = 20;   // tiles per sector side (20×20 = 400 tiles)
@@ -8762,7 +8807,11 @@ function _spawnSectorEnemies(sx, sy) {
         _tickEnemyArray(newEnemies, REGION_ENEMY_SIM_STEP);
     }
 
-    for (var ni = 0; ni < newEnemies.length; ni++) game.regionEnemies.push(newEnemies[ni]);
+    var killedIds = game._killedEnemyIds;
+    for (var ni = 0; ni < newEnemies.length; ni++) {
+        if (killedIds && killedIds.has(newEnemies[ni].id)) continue;  // don't re-spawn killed enemies
+        game.regionEnemies.push(newEnemies[ni]);
+    }
 }
 
 // ── _refreshEnemySectors ──────────────────────────────────────────────────────
@@ -8816,6 +8865,7 @@ function _refreshEnemySectors() {
 function spawnRegionEnemies() {
     game.regionEnemies   = [];
     game._spawnedSectors = {};
+    game._killedEnemyIds = new Set();  // persists for this region session; prevents re-spawn of killed enemies
     game._lastEnemySX    = null;
     game._lastEnemySY    = null;
     if (game.mode !== 'REGION') return;
@@ -8831,6 +8881,11 @@ function spawnRegionEnemies() {
     // Spawn sectors near the player immediately (forces _lastEnemySX reset)
     _refreshEnemySectors();
     console.log('[regionEnemies] sector system init, enemies:', game.regionEnemies.length);
+
+    // Ask server for enemies already killed this hour so they don't respawn locally
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendOwJoin(game.currentRegionId || 'na');
+    }
 }
 
 // ── _tickRegionEnemies ──  alias so existing call-sites keep working ──────────
@@ -8845,6 +8900,32 @@ function updateVanProjectiles(dt) {
 
     // Tick shot-fire cooldown
     if (game.van && game.van.shotCooldown > 0) game.van.shotCooldown -= dt;
+
+    // Spawn remote van shots broadcast by other players.
+    // NOTE: drainEnemySyncs is called here ONLY for shots; updateRegionEnemies
+    // calls drainEnemySyncs for kills/hits. To avoid one consuming the other's
+    // events, we use a separate drain API: drainShotSyncs.
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        var _shotSyncs = MP.drainShotSyncs();
+        if (_shotSyncs) {
+            for (var _ssi = 0; _ssi < _shotSyncs.length; _ssi++) {
+                var _sh = _shotSyncs[_ssi];
+                // Age the projectile by network latency so it appears at the right position
+                var _elapsed = Math.min((_sh.t ? (Date.now() - _sh.t) / 1000 : 0), 0.3);
+                var _life = (_sh.life || 1.6) - _elapsed;
+                if (_life <= 0) continue;
+                game.vanProjectiles.push({
+                    x: _sh.x + _sh.vx * _elapsed,
+                    y: _sh.y + _sh.vy * _elapsed,
+                    vx: _sh.vx, vy: _sh.vy,
+                    life: _life, maxLife: _sh.life || 1.6,
+                    animTimer: _elapsed % 0.32,
+                    frame: 0,
+                    remote: true  // visual only — damage is handled by enemy_sync kills
+                });
+            }
+        }
+    }
 
     var worldPxW = WORLD_WIDTH  * TILE_SIZE;
     var worldPxH = WORLD_HEIGHT * TILE_SIZE;
@@ -8863,6 +8944,9 @@ function updateVanProjectiles(dt) {
             game.vanProjectiles.splice(pi, 1);
             continue;
         }
+
+        // Remote projectiles are display-only — skip local damage (handled by enemy_sync)
+        if (proj.remote) continue;
 
         // Check collision with enemy cars
         var hitSomething = false;
@@ -8884,8 +8968,9 @@ function updateVanProjectiles(dt) {
                         ce.deathTimer = REGION_ENEMY_DEATH_TIME;
                         ce.stunTimer = 0;
                         ce.deathFlash = 0.25;
+                        if (game._killedEnemyIds) game._killedEnemyIds.add(ce.id);
                         _owAddKillScore(ce.type, cecx, cecy);
-                        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(ce.id);
+                        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(ce.id, cecx, cecy);
                     } else {
                         ce.aiState = 'stunned';
                         ce.stunTimer = OW_STUN_TIME;
@@ -8930,12 +9015,13 @@ function updateVanProjectiles(dt) {
                     we.deathTimer = REGION_ENEMY_DEATH_TIME;
                     we.stunTimer = 0;
                     we.deathFlash = 0.25;
+                    if (game._killedEnemyIds) game._killedEnemyIds.add(we.id);
                     var wecx = we.x + REGION_ENEMY_WALK_W / 2;
                     var wecy = we.y + REGION_ENEMY_WALK_H / 2;
                     _owAddKillScore(we.type, wecx, wecy);
                     game.owScreenShake = 2;
                     game.owHitSparks.push({ x: wecx, y: wecy, life: 0.18, maxLife: 0.18 });
-                    if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(we.id);
+                    if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(we.id, wecx, wecy);
                 }
             }
         }
@@ -8947,10 +9033,102 @@ function updateVanProjectiles(dt) {
 // runs per-frame AI / combat passes, and handles cosmetics (animation, dying).
 function updateRegionEnemies(dt) {
     if (game.mode !== 'REGION' || !game.regionEnemies) return;
+
+    // Always drain remote kill/hit events, even before the sim clock is ready
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        // ── Apply server's hourly dead-enemy list (received after ow_join) ──────
+        var _owDead = MP.drainOwDeadEnemies();
+        if (_owDead) {
+            for (var _odIdx = 0; _odIdx < _owDead.length; _odIdx++) {
+                var _odId = _owDead[_odIdx];
+                if (game._killedEnemyIds) game._killedEnemyIds.add(_odId);
+                for (var _odEi = game.regionEnemies.length - 1; _odEi >= 0; _odEi--) {
+                    if (game.regionEnemies[_odEi].id === _odId) {
+                        game.regionEnemies.splice(_odEi, 1); break;
+                    }
+                }
+            }
+        }
+
+        // ── Apply enemy positions broadcast by nearby players ────────────────
+        var _owPosSyncs = MP.drainOwEnemySyncs();
+        if (_owPosSyncs) {
+            for (var _ops = 0; _ops < _owPosSyncs.length; _ops++) {
+                var _op = _owPosSyncs[_ops];
+                for (var _opei = 0; _opei < game.regionEnemies.length; _opei++) {
+                    var _ope = game.regionEnemies[_opei];
+                    if (_ope.id === _op.id && _ope.state !== 'dying' && _ope.state !== 'dead') {
+                        _ope.x = _op.x; _ope.y = _op.y;
+                        if (_op.s) _ope.aiState = _op.s;
+                        break;
+                    }
+                }
+            }
+        }
+
+        var _preSyncs = MP.drainEnemySyncs();
+        if (_preSyncs && _preSyncs.length > 0) {
+            for (var _psi = 0; _psi < _preSyncs.length; _psi++) {
+                var _ps = _preSyncs[_psi];
+                for (var _pki = 0; _pki < _ps.kills.length; _pki++) {
+                    var _pkd = _ps.kills[_pki];
+                    var _pkid = (typeof _pkd === 'object') ? _pkd.id : _pkd;
+                    var _pkx  = (typeof _pkd === 'object') ? _pkd.x : 0;
+                    var _pky  = (typeof _pkd === 'object') ? _pkd.y : 0;
+                    for (var _pkei = 0; _pkei < game.regionEnemies.length; _pkei++) {
+                        var _pke = game.regionEnemies[_pkei];
+                        if (_pke.id === _pkid && _pke.state !== 'dying' && _pke.state !== 'dead') {
+                            _pke.hp = 0; _pke.state = 'dying';
+                            _pke.deathTimer = REGION_ENEMY_DEATH_TIME;
+                            _pke.stunTimer = 0; _pke.deathFlash = 0.25; _pke.aiState = 'patrol';
+                            if (game._killedEnemyIds) game._killedEnemyIds.add(_pkid);
+                            _pkx = _pke.x + (_pke.type === 'car' ? REGION_ENEMY_CAR_W : REGION_ENEMY_WALK_W) / 2;
+                            _pky = _pke.y + (_pke.type === 'car' ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H) / 2;
+                            break;
+                        }
+                    }
+                    // Always record the kill so this enemy is never re-spawned locally
+                    if (game._killedEnemyIds) game._killedEnemyIds.add(_pkid);
+                    if (_pkx || _pky) {
+                        game.owScreenShake = Math.max(game.owScreenShake || 0, 3);
+                        game.owHitSparks.push({ x: _pkx, y: _pky, life: 0.25, maxLife: 0.25 });
+                    }
+                }
+                for (var _phi = 0; _phi < _ps.hits.length; _phi++) {
+                    var _phd = _ps.hits[_phi];
+                    for (var _phei = 0; _phei < game.regionEnemies.length; _phei++) {
+                        var _phe = game.regionEnemies[_phei];
+                        if (_phe.id === _phd.id && _phe.state !== 'dying' && _phe.state !== 'dead') {
+                            _phe.hp = _phd.hp; _phe.aiState = 'stunned'; _phe.stunTimer = OW_STUN_TIME;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (game._enemySimClock == null) return;
 
     // 1. Refresh sectors / spawn
     _refreshEnemySectors();
+
+    // ── Broadcast alive enemy positions to nearby players (~2 Hz) ───────────
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        if (!game._owEnemySyncTimer) game._owEnemySyncTimer = 0;
+        game._owEnemySyncTimer -= dt;
+        if (game._owEnemySyncTimer <= 0) {
+            game._owEnemySyncTimer = 0.5;
+            var _owSnap = [];
+            for (var _owsi = 0; _owsi < game.regionEnemies.length; _owsi++) {
+                var _owse = game.regionEnemies[_owsi];
+                if (_owse.state !== 'dying' && _owse.state !== 'dead') {
+                    _owSnap.push({ id: _owse.id, x: _owse.x, y: _owse.y, s: _owse.aiState });
+                }
+            }
+            if (_owSnap.length > 0) MP.sendOwEnemySync(_owSnap);
+        }
+    }
 
     // 2. Fixed-step patrol sim (skips non-patrol enemies)
     var nowSec = Date.now() / 1000.0;
@@ -8967,53 +9145,40 @@ function updateRegionEnemies(dt) {
     var tgtCx    = tgt.x + (tgt.width  || 32) / 2;
     var tgtCy    = tgt.y + (tgt.height || 32) / 2;
 
-    // 3a. Apply incoming enemy sync events from remote players
-    if (typeof MP !== 'undefined' && MP.isConnected()) {
-        var _inSyncs = MP.drainEnemySyncs();
-        if (_inSyncs) {
-            for (var _isi = 0; _isi < _inSyncs.length; _isi++) {
-                var _sync = _inSyncs[_isi];
-                // Apply kills
-                for (var _iki = 0; _iki < _sync.kills.length; _iki++) {
-                    var _kid = _sync.kills[_iki];
-                    for (var _kei = 0; _kei < game.regionEnemies.length; _kei++) {
-                        var _ke = game.regionEnemies[_kei];
-                        if (_ke.id === _kid && _ke.state !== 'dying' && _ke.state !== 'dead') {
-                            _ke.hp = 0;
-                            _ke.state = 'dying';
-                            _ke.deathTimer = REGION_ENEMY_DEATH_TIME;
-                            _ke.stunTimer = 0;
-                            _ke.deathFlash = 0.25;
-                            _ke.aiState = 'patrol';  // stop chasing after death
-                            var _kecx = _ke.x + (_ke.type === 'car' ? REGION_ENEMY_CAR_W : REGION_ENEMY_WALK_W) / 2;
-                            var _kecy = _ke.y + (_ke.type === 'car' ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H) / 2;
-                            game.owHitSparks.push({ x: _kecx, y: _kecy, life: 0.18, maxLife: 0.18 });
-                            break;
-                        }
-                    }
-                }
-                // Apply HP hits
-                for (var _ihi = 0; _ihi < _sync.hits.length; _ihi++) {
-                    var _hitData = _sync.hits[_ihi];
-                    for (var _hei = 0; _hei < game.regionEnemies.length; _hei++) {
-                        var _he = game.regionEnemies[_hei];
-                        if (_he.id === _hitData.id && _he.state !== 'dying' && _he.state !== 'dead') {
-                            _he.hp = _hitData.hp;
-                            _he.aiState = 'stunned';
-                            _he.stunTimer = OW_STUN_TIME;
-                            break;
-                        }
-                    }
-                }
+    // Build a shared threat list: local player + all remote players.
+    // Each enemy will target whoever is NEAREST so both clients see the
+    // same enemy behavior (they share synced positions).
+    var _owTargets = [{ cx: tgtCx, cy: tgtCy }];
+    if (typeof MP !== 'undefined') {
+        var _owRemotes = MP.getRemotePlayers();
+        for (var _rti = 0; _rti < _owRemotes.length; _rti++) {
+            var _rp = _owRemotes[_rti];
+            // foot players: px/py is the turtle; van players: vpx/vpy is the van
+            var _rpx = (_rp.mode === 'foot') ? _rp.px : (_rp.vpx != null ? _rp.vpx : _rp.px);
+            var _rpy = (_rp.mode === 'foot') ? _rp.py : (_rp.vpy != null ? _rp.vpy : _rp.py);
+            if (_rpx != null && _rpy != null) {
+                _owTargets.push({ cx: _rpx + 16, cy: _rpy + 16 });
             }
         }
     }
 
-    // 3. Per-frame AI update pass (all non-dead/dying enemies)
+    // 3. Per-frame AI update pass — each enemy picks its nearest threat
     for (var ai = 0; ai < game.regionEnemies.length; ai++) {
         var ae = game.regionEnemies[ai];
         if (ae.state === 'dead' || ae.state === 'dying') continue;
-        _updateEnemyAI(ae, dt, tgtCx, tgtCy);
+        var _nearCx = _owTargets[0].cx, _nearCy = _owTargets[0].cy;
+        if (_owTargets.length > 1) {
+            var _aeHW = ae.type === 'car' ? REGION_ENEMY_CAR_W : REGION_ENEMY_WALK_W;
+            var _aeHH = ae.type === 'car' ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H;
+            var _aeCx = ae.x + _aeHW / 2, _aeCy = ae.y + _aeHH / 2;
+            var _bestD2 = Infinity;
+            for (var _ti = 0; _ti < _owTargets.length; _ti++) {
+                var _tdx = _owTargets[_ti].cx - _aeCx, _tdy = _owTargets[_ti].cy - _aeCy;
+                var _td2 = _tdx * _tdx + _tdy * _tdy;
+                if (_td2 < _bestD2) { _bestD2 = _td2; _nearCx = _owTargets[_ti].cx; _nearCy = _owTargets[_ti].cy; }
+            }
+        }
+        _updateEnemyAI(ae, dt, _nearCx, _nearCy);
     }
 
     // 4. Hit detection pass
@@ -9057,8 +9222,9 @@ function updateRegionEnemies(dt) {
                         he.deathTimer = REGION_ENEMY_DEATH_TIME;
                         he.stunTimer = 0;   // clear stun so dying sprite always renders
                         he.deathFlash = 0.25; // brief white flash on death
+                        if (game._killedEnemyIds) game._killedEnemyIds.add(he.id);
                         _owAddKillScore(he.type, hecx, hecy);
-                        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(he.id);
+                        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(he.id, hecx, hecy);
                     } else {
                         he.aiState = 'stunned';
                         he.stunTimer = OW_STUN_TIME;
@@ -10701,7 +10867,7 @@ document.addEventListener('keydown', (e) => {
 
     // H = toggle high score board
 
-    if (e.code === 'KeyC' && game.mode !== 'LEVEL' && !_chatInputActive) {
+    if (e.code === 'KeyC' && !_chatInputActive) {
         e.preventDefault();
         openChatInput();
         return;
@@ -11316,6 +11482,8 @@ function getLevelForContext() {
 }
 
 function resolveRoute(route, contextId) {
+    // UTC day number — same for all clients worldwide in a given UTC day
+    var _dateKey = Math.floor(Date.now() / 86400000);
     if (route.kind === 'static') {
         // Dimension X: block entry unless all 10 items collected
         if (route.levelId === 'level_technodrome') {
@@ -11326,14 +11494,18 @@ function resolveRoute(route, contextId) {
                 return null;
             }
         }
-        return { type: 'static', levelId: route.levelId, contextId: contextId };
+        return { type: 'static', levelId: route.levelId, contextId: contextId,
+                 instanceId: 'static:' + route.levelId + ':' + _dateKey };
     }
     if (route.kind === 'generated') {
         var regionId = game.currentRegionId || 'na';
-        var seed = regionId + ':' + contextId;
+        // Include _dateKey so every player sees the same generated layout for a full UTC day
+        var seed = regionId + ':' + contextId + ':' + _dateKey;
         var building = BUILDING_BY_ID[contextId];
         var artistId = building ? building.artistId : null;
-        return { type: 'generated', theme: route.theme, seed: seed, contextId: contextId, artistId: artistId };
+        var instanceId = 'daily:' + contextId + ':' + _dateKey;
+        return { type: 'generated', theme: route.theme, seed: seed, contextId: contextId,
+                 artistId: artistId, instanceId: instanceId };
     }
     console.error('Unknown route kind:', route.kind);
     return null;
@@ -11628,7 +11800,7 @@ function getDifficultyForEntrance() {
 
 async function startEnterLevelFromContext(ctx) {
     if (ctx.type === 'static') {
-        await startEnterLevel(ctx.levelId);
+        await startEnterLevel(ctx.levelId, ctx.instanceId);
     } else if (ctx.type === 'generated') {
         var diff = getDifficultyForEntrance();
         // Gallery levels are easier
@@ -11646,11 +11818,12 @@ async function startEnterLevelFromContext(ctx) {
             }
         }
         levelData.contextId = ctx.contextId;
+        levelData.instanceId = ctx.instanceId;
         await startEnterLevelWithData(levelData);
     }
 }
 
-async function startEnterLevel(levelId) {
+async function startEnterLevel(levelId, instanceId) {
     console.log('Entering level: ' + levelId);
     game.levelReturnTile = {
         x: Math.floor(game.player.x / TILE_SIZE),
@@ -11674,6 +11847,7 @@ async function startEnterLevel(levelId) {
         }
     } catch (_) { /* no patch, fine */ }
 
+    if (instanceId) levelData.instanceId = instanceId;
     await startEnterLevelWithData(levelData);
 }
 
@@ -11817,13 +11991,23 @@ async function startEnterLevelWithData(levelData) {
         // Boss tracking
         isBossLevel: levelData.isBossLevel || false,
         bossDefeated: false,
-        victoryTimer: 0
+        victoryTimer: 0,
+        // Co-op room
+        _instanceId: levelData.instanceId || null,
+        _isHost: false
     };
 
     game.mode = 'LEVEL';
     game.levelState = 'PLAYING';
     game.state = 'OVERWORLD';
     game.poiHealReady = false;
+
+    // Join co-op level room (multiplayer)
+    if (game.level._instanceId && typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendJoinLevel(game.level._instanceId);
+    } else {
+        console.log('[level] no instanceId or MP not connected — coop disabled', game.level._instanceId, typeof MP !== 'undefined' ? MP.isConnected() : 'MP_UNDEF');
+    }
 
     // Track gallery visit for first-time bonus
     if (levelData.theme === 'gallery' && levelData.artistId) {
@@ -11983,6 +12167,11 @@ function collectSpecialItem() {
     addLevelScore(SCORE_SPECIAL_ITEM, L.specialItem.name.toUpperCase());
     L.screenShake = 5;
 
+    // Broadcast to level room so other players see item as taken
+    if (L._instanceId && typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendLevelSync(L._instanceId, [], L.specialItem.id);
+    }
+
     // Check if all 10 collected
     var count = Object.keys(game.progress.collectedItems).length;
     if (count >= 10) {
@@ -11997,6 +12186,10 @@ function collectSpecialItem() {
 // ============================================
 
 function exitLevel() {
+    // Leave co-op level room
+    if (game.level && game.level._instanceId && typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendLeaveLevel(game.level._instanceId);
+    }
     game.mode = 'REGION';
     game.levelState = null;
     if (game.levelReturnPos) {
@@ -12263,6 +12456,8 @@ function updateLevel(dt) {
     }
 
     // ── Enemy FSM loop ──────────────────────────────────────────
+    // Host (or solo) runs full AI; non-host only runs hit/collision
+    var _runEnemyAI = (typeof MP === 'undefined' || !MP.isConnected() || !L._instanceId || L._isHost !== false);
     var pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
 
     for (var i = 0; i < L.enemies.length; i++) {
@@ -12275,6 +12470,7 @@ function updateLevel(dt) {
         var ecx = e.x + e.w / 2, ecy = e.y + e.h / 2;
         var distToPlayer = Math.hypot(pcx - ecx, pcy - ecy);
 
+        if (_runEnemyAI) {
         // Knockback (with wall-pin cancel)
         if (e.kbTimer > 0) {
             e.kbTimer -= dt;
@@ -12464,6 +12660,7 @@ function updateLevel(dt) {
                 e.stateTimer = 0;
             }
         }
+        } // end _runEnemyAI
 
         // ── Player ACTIVE hit detection against this enemy ──────
         if (p.atkPhase === 'ACTIVE' && !p.atkHitIds.has(e.id)) {
@@ -12588,6 +12785,197 @@ function updateLevel(dt) {
         L.showResults = true;
         L.resultsTimer = 0;
         return;
+    }
+
+    // ── Multiplayer level sync ──────────────────────────────────
+    if (typeof MP !== 'undefined' && MP.isConnected() && L._instanceId) {
+        // Send our position to other players in the room
+        MP.sendLevelPos(L._instanceId, p.x, p.y, p.direction, p.atkPhase, p.turtleId || 'leo');
+
+        // Apply incoming position updates from remote players
+        var _lvlPosUpdates = MP.drainLevelPos();
+        if (_lvlPosUpdates) {
+            var _lvlR = MP.getLevelRemotes();
+            for (var _lpi = 0; _lpi < _lvlPosUpdates.length; _lpi++) {
+                var _lpu = _lvlPosUpdates[_lpi];
+                if (!_lvlR[_lpu.entityId]) {
+                    console.log('[level] new remote player appeared:', _lpu.entityId, 'at', _lpu.px, _lpu.py);
+                    _lvlR[_lpu.entityId] = { px: _lpu.px, py: _lpu.py, facing: _lpu.facing || 's',
+                        atkPhase: 'IDLE', atkTimer: 0, frame: 0, tid: _lpu.tid || 'leo', _posReceived: true };
+                } else {
+                    var _lr = _lvlR[_lpu.entityId];
+                    if (!_lr._posReceived) console.log('[level] remote player first pos:', _lpu.entityId, 'at', _lpu.px, _lpu.py);
+                    _lr.px = _lpu.px; _lr.py = _lpu.py; _lr.facing = _lpu.facing || 's';
+                    _lr._posReceived = true;
+                    // Trigger windup animation if attack phase changed to WINDUP
+                    if (_lpu.atkPhase === 'WINDUP' && _lr.atkPhase !== 'WINDUP') {
+                        _lr.atkPhase = 'WINDUP'; _lr.atkTimer = ATK_WINDUP;
+                    } else if (_lpu.atkPhase === 'IDLE' && _lr.atkPhase !== 'IDLE' && _lr.atkPhase !== 'ACTIVE' && _lr.atkPhase !== 'RECOVERY') {
+                        _lr.atkPhase = 'IDLE'; _lr.atkTimer = 0;
+                    }
+                    if (_lpu.tid) _lr.tid = _lpu.tid;
+                }
+            }
+        }
+
+        // Tick remote player attack timers locally
+        var _lvlR2 = MP.getLevelRemotes();
+        for (var _lrId in _lvlR2) {
+            var _lrState = _lvlR2[_lrId];
+            if (_lrState.atkPhase !== 'IDLE') {
+                _lrState.atkTimer -= dt;
+                if (_lrState.atkTimer <= 0) {
+                    if (_lrState.atkPhase === 'WINDUP') { _lrState.atkPhase = 'ACTIVE'; _lrState.atkTimer = ATK_ACTIVE; }
+                    else if (_lrState.atkPhase === 'ACTIVE') { _lrState.atkPhase = 'RECOVERY'; _lrState.atkTimer = ATK_RECOVERY; }
+                    else if (_lrState.atkPhase === 'RECOVERY') { _lrState.atkPhase = 'IDLE'; _lrState.atkTimer = 0; }
+                }
+            }
+            // Walk animation — only advance when position is actually changing
+            var _lrMoving = (_lrState._lastDrawPx !== _lrState.px || _lrState._lastDrawPy !== _lrState.py);
+            _lrState._lastDrawPx = _lrState.px;
+            _lrState._lastDrawPy = _lrState.py;
+            if (_lrMoving) {
+                _lrState._animTimer = (_lrState._animTimer || 0) + dt;
+                if (_lrState._animTimer > 0.15) { _lrState.frame = ((_lrState.frame || 0) + 1) % 4; _lrState._animTimer = 0; }
+            } else {
+                _lrState.frame = 0;
+                _lrState._animTimer = 0;
+            }
+        }
+
+        // Handle remote player join/leave
+        var _lvlJoins = MP.drainLevelJoins();
+        if (_lvlJoins) {
+            for (var _ji = 0; _ji < _lvlJoins.length; _ji++) {
+                var _jEntry = _lvlJoins[_ji];
+                var _lvlR3 = MP.getLevelRemotes();
+                if (!_lvlR3[_jEntry.entityId]) {
+                    _lvlR3[_jEntry.entityId] = { px: p.x, py: p.y, facing: 's', atkPhase: 'IDLE', atkTimer: 0, frame: 0, tid: 'leo', displayName: _jEntry.displayName };
+                }
+            }
+        }
+        var _lvlLeaves = MP.drainLevelLeaves();
+        if (_lvlLeaves) {
+            var _lvlR4 = MP.getLevelRemotes();
+            for (var _li = 0; _li < _lvlLeaves.length; _li++) {
+                delete _lvlR4[_lvlLeaves[_li]];
+            }
+        }
+
+        // On first join: apply host flag + item state + 24h dead enemy list
+        var _lvlJoinedItem = MP.drainLevelItemState();
+        if (_lvlJoinedItem !== null) {
+            L._isHost = MP.isLevelHost();
+            // Apply server item state: mark already-taken items
+            if (_lvlJoinedItem && L.specialItem && _lvlJoinedItem[L.specialItem.id]) {
+                var _srv = _lvlJoinedItem[L.specialItem.id];
+                if (!_srv.available) {
+                    L.specialItemCollected = true;
+                }
+            }
+        }
+        // Apply dead-enemy list from server (enemies killed today by anyone in this room)
+        var _lvlDeadList = MP.drainLevelDeadEnemies();
+        if (_lvlDeadList && L.enemies) {
+            for (var _dli = 0; _dli < _lvlDeadList.length; _dli++) {
+                var _deid = _lvlDeadList[_dli];
+                for (var _dei = 0; _dei < L.enemies.length; _dei++) {
+                    if (L.enemies[_dei].id === _deid) {
+                        L.enemies[_dei].hp = 0;
+                        L.enemies[_dei].alive = false;
+                        L.enemies[_dei]._syncedKill = true; // don't re-report
+                    }
+                }
+            }
+        }
+
+        // Apply enemy kills / item pickups broadcast by OTHER players via level_sync
+        var _lvlSyncs = MP.drainLevelSyncs();
+        if (_lvlSyncs) {
+            for (var _si2 = 0; _si2 < _lvlSyncs.length; _si2++) {
+                var _sync = _lvlSyncs[_si2];
+                if (_sync.kills && _sync.kills.length > 0 && L.enemies) {
+                    for (var _ski = 0; _ski < _sync.kills.length; _ski++) {
+                        var _kid = _sync.kills[_ski];
+                        for (var _ei = 0; _ei < L.enemies.length; _ei++) {
+                            var _te = L.enemies[_ei];
+                            if (_te.id === _kid && _te.state !== 'dying' && _te.state !== 'dead' && _te.alive) {
+                                _te.hp = 0;
+                                _te.alive = false;
+                                _te._syncedKill = true;
+                            }
+                        }
+                    }
+                }
+                if (_sync.item && L.specialItem && _sync.item.id === L.specialItem.id && !L.specialItemCollected) {
+                    L.specialItemCollected = true;
+                }
+            }
+        }
+
+        // Every player sends their own kills so the server records them for 24h persistence.
+        // Use a per-level kill buffer and send at ~10 Hz.
+        if (L.enemies) {
+            if (!L._killBuffer) L._killBuffer = [];
+            if (!L._killSyncTimer) L._killSyncTimer = 0;
+            for (var _kbi = 0; _kbi < L.enemies.length; _kbi++) {
+                var _kbe = L.enemies[_kbi];
+                if ((_kbe.state === 'dying' || !_kbe.alive) && !_kbe._syncedKill) {
+                    _kbe._syncedKill = true;
+                    L._killBuffer.push(_kbe.id);
+                }
+            }
+            L._killSyncTimer -= dt;
+            if (L._killBuffer.length > 0 && L._killSyncTimer <= 0) {
+                MP.sendLevelSync(L._instanceId, L._killBuffer, null);
+                L._killBuffer = [];
+                L._killSyncTimer = 0.1;
+            }
+        }
+
+        // ── Enemy position sync ─────────────────────────────────
+        // Host broadcasts all enemy positions ~6 Hz so every client sees the same positions.
+        // Non-host skips AI movement (via _runEnemyAI=false) and snaps to received positions.
+        if (L.enemies) {
+            if (L._isHost) {
+                if (!L._enemySyncTimer) L._enemySyncTimer = 0;
+                L._enemySyncTimer -= dt;
+                if (L._enemySyncTimer <= 0) {
+                    L._enemySyncTimer = 0.15;
+                    var _eSnap = [];
+                    for (var _esi = 0; _esi < L.enemies.length; _esi++) {
+                        var _ene = L.enemies[_esi];
+                        if (_ene.alive) {
+                            _eSnap.push({ id: _ene.id, x: _ene.x, y: _ene.y, hp: _ene.hp, s: _ene.state, fd: _ene.facingDir });
+                        }
+                    }
+                    if (_eSnap.length > 0) MP.sendLevelEnemySync(L._instanceId, _eSnap);
+                }
+            } else if (L._isHost === false) {
+                // Non-host: apply received enemy positions from host
+                var _esyncs = MP.drainLevelEnemySyncs();
+                if (_esyncs) {
+                    for (var _esi2 = 0; _esi2 < _esyncs.length; _esi2++) {
+                        var _esync = _esyncs[_esi2];
+                        for (var _eli = 0; _eli < L.enemies.length; _eli++) {
+                            var _le = L.enemies[_eli];
+                            if (_le.id === _esync.id) {
+                                _le.x = _esync.x;
+                                _le.y = _esync.y;
+                                if (_esync.hp !== undefined) _le.hp = _esync.hp;
+                                if (_esync.s) _le.state = _esync.s;
+                                if (_esync.fd !== undefined) _le.facingDir = _esync.fd;
+                                if (_le.hp <= 0 && _le.alive) {
+                                    _le.alive = false;
+                                    _le._syncedKill = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // ── Camera (center level when smaller than viewport) ───────
@@ -12899,52 +13287,60 @@ function drawLevel() {
         var atkFrame = (p.atkPhase === 'ACTIVE' && p.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
         // Donnie up-attack: draw weapon behind turtle so staff appears to emerge from body
         var weaponBehind = (turtleId === 'donnie' && p.direction === 'up');
-        if (p.atkPhase === 'ACTIVE') {
-            // Flash white during attack
-            ctx.globalAlpha = 0.7;
-            if (weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
-            NES.drawTurtleSprite(ctx, psx, psy, p.direction, p.animFrame, turtleId, turtleScale);
-            if (!weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
-            ctx.globalAlpha = 0.4;
-            ctx.fillStyle = NES.PAL.W;
-            ctx.fillRect(psx, psy, p.w, p.h);
-            ctx.globalAlpha = 1;
-        } else {
-            if (weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, 0);
-            NES.drawTurtleSprite(ctx, psx, psy, p.direction, p.animFrame, turtleId, turtleScale);
-            if (!weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, 0);
-        }
+        if (weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
+        NES.drawTurtleSprite(ctx, psx, psy, p.direction, p.animFrame, turtleId, turtleScale);
+        if (!weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
     }
 
-    // Attack effect: windup shows charge, active shows slash or whiff trail
-    if (p.atkPhase === 'WINDUP') {
-        var chargeAlpha = 0.2 + p.atkTimer / ATK_WINDUP * 0.3;
-        ctx.fillStyle = 'rgba(255, 255, 100, ' + chargeAlpha + ')';
-        ctx.beginPath();
-        ctx.arc(psx + p.w / 2, psy + p.h / 2, p.w * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-    } else if (p.atkPhase === 'ACTIVE') {
-        var slashOx = p.direction === 'right' ? p.w : (p.direction === 'left' ? -ts * 0.7 : 0);
-        var slashOy = p.direction === 'down' ? p.h : (p.direction === 'up' ? -ts * 0.7 : 0);
-        var slashW = (p.direction === 'left' || p.direction === 'right') ? ts * 0.7 : p.w;
-        var slashH = (p.direction === 'up' || p.direction === 'down') ? ts * 0.7 : p.h * 0.6;
-        var hasHit = p.atkHitIds && p.atkHitIds.size > 0;
-        if (hasHit) {
-            // Hit: bright yellow slash
-            var slashAlpha = 0.5 + (1 - p.atkTimer / ATK_ACTIVE) * 0.4;
-            ctx.fillStyle = 'rgba(255, 255, 0, ' + slashAlpha + ')';
-            ctx.fillRect(psx + slashOx, psy + slashOy + p.h * 0.1, slashW, slashH);
-        } else {
-            // Whiff: faint arc trail
-            ctx.strokeStyle = 'rgba(200, 200, 255, ' + (0.2 + p.atkTimer / ATK_ACTIVE * 0.3) + ')';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            var trailCx = psx + p.w / 2 + (slashOx > 0 ? slashOx * 0.5 : slashOx * 0.5);
-            var trailCy = psy + p.h / 2 + (slashOy > 0 ? slashOy * 0.5 : slashOy * 0.5);
-            var arcR = ts * 0.5;
-            var startAngle = p.direction === 'right' ? -0.8 : p.direction === 'left' ? 2.3 : p.direction === 'up' ? 3.6 : 0.8;
-            ctx.arc(trailCx, trailCy, arcR, startAngle, startAngle + 1.6);
-            ctx.stroke();
+    // Remote players in level
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        var _rLvlMap = MP.getLevelRemotes();
+        for (var _rLvlId in _rLvlMap) {
+            var _rLvl = _rLvlMap[_rLvlId];
+            // Skip placeholder entries that haven't received a real position yet
+            if (!_rLvl._posReceived) continue;
+            var _rlx = _rLvl.px - cx;
+            var _rly = _rLvl.py - cy;
+            // Only draw if within viewport
+            if (_rlx > -ts * 2 && _rlx < CANVAS_WIDTH + ts * 2 && _rly > -ts * 2 && _rly < CANVAS_HEIGHT + ts * 2) {
+                var _rTurtleScale = (ts * 0.75) / 16;  // match p.w = lts * 0.75
+                var _rTid = _rLvl.tid || 'leo';
+                var _rAtkFrame = (_rLvl.atkPhase === 'ACTIVE' && _rLvl.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
+                var _rWeaponBehind = (_rTid === 'donnie' && _rLvl.facing === 'up');
+                if (_rLvl.atkPhase === 'ACTIVE') {
+                    ctx.globalAlpha = 0.7;
+                    if (_rWeaponBehind) NES.drawWeaponOverlay(ctx, _rlx, _rly, _rLvl.facing, _rTid, _rTurtleScale, _rLvl.atkPhase, _rAtkFrame);
+                    NES.drawTurtleSprite(ctx, _rlx, _rly, _rLvl.facing, _rLvl.frame || 0, _rTid, _rTurtleScale);
+                    if (!_rWeaponBehind) NES.drawWeaponOverlay(ctx, _rlx, _rly, _rLvl.facing, _rTid, _rTurtleScale, _rLvl.atkPhase, _rAtkFrame);
+                    ctx.globalAlpha = 0.4;
+                    ctx.fillStyle = NES.PAL.W;
+                    ctx.fillRect(_rlx, _rly, ts, ts);
+                    ctx.globalAlpha = 1;
+                } else {
+                    if (_rWeaponBehind) NES.drawWeaponOverlay(ctx, _rlx, _rly, _rLvl.facing, _rTid, _rTurtleScale, _rLvl.atkPhase, 0);
+                    NES.drawTurtleSprite(ctx, _rlx, _rly, _rLvl.facing, _rLvl.frame || 0, _rTid, _rTurtleScale);
+                    if (!_rWeaponBehind) NES.drawWeaponOverlay(ctx, _rlx, _rly, _rLvl.facing, _rTid, _rTurtleScale, _rLvl.atkPhase, 0);
+                }
+                // WINDUP charge glow
+                if (_rLvl.atkPhase === 'WINDUP') {
+                    var _rChargeAlpha = 0.2 + _rLvl.atkTimer / ATK_WINDUP * 0.3;
+                    ctx.fillStyle = 'rgba(255, 255, 100, ' + _rChargeAlpha + ')';
+                    ctx.beginPath();
+                    ctx.arc(_rlx + ts / 2, _rly + ts / 2, ts * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                // Name tag above sprite
+                if (_rLvl.displayName) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+                    ctx.font = 'bold 7px monospace';
+                    var _rNameW = ctx.measureText(_rLvl.displayName).width + 4;
+                    ctx.fillRect(_rlx + ts / 2 - _rNameW / 2, _rly - 14, _rNameW, 9);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(_rLvl.displayName, _rlx + ts / 2, _rly - 7);
+                    ctx.textAlign = 'left';
+                }
+            }
         }
     }
 
@@ -13033,6 +13429,21 @@ function drawLevel() {
         ctx.textAlign = 'center';
         ctx.fillText('★', sipx + sip.w / 2, sipy - 4);
         ctx.textAlign = 'left';
+    } else if (L.specialItemPos && L.specialItemCollected && L.specialItem) {
+        // Show "TAKEN" at the item spawn location so others know it's gone
+        var _sipTaken = L.specialItemPos;
+        var _sipTakenX = _sipTaken.x - cx, _sipTakenY = _sipTaken.y - cy;
+        if (_sipTakenX > -ts * 2 && _sipTakenX < CANVAS_WIDTH + ts && _sipTakenY > -ts * 2 && _sipTakenY < CANVAS_HEIGHT + ts) {
+            ctx.globalAlpha = 0.55;
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(_sipTakenX, _sipTakenY + _sipTaken.h / 2 - 6, _sipTaken.w, 12);
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = 'bold 7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('TAKEN', _sipTakenX + _sipTaken.w / 2, _sipTakenY + _sipTaken.h / 2 + 3);
+            ctx.textAlign = 'left';
+        }
     }
 
     // HUD: Turtle portrait + HP
@@ -13170,6 +13581,33 @@ function drawLevel() {
         ctx.font = 'bold 18px monospace';
         ctx.fillText('DEFEATED', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 16);
         ctx.textAlign = 'left';
+    }
+
+    // ── Chat bubbles in level mode ──────────────────────────────
+    if (typeof MP !== 'undefined') {
+        var _lvlBubbles = MP.getChatBubbles();
+        var _lvlNow = Date.now();
+        for (var _bk in _lvlBubbles) {
+            if (_lvlNow >= _lvlBubbles[_bk].expire) { delete _lvlBubbles[_bk]; }
+        }
+        // Local player bubble
+        if (_lvlBubbles['__self__']) {
+            var _lsp = L.player;
+            var _lsx = _lsp.x - L.camera.x + _lsp.w / 2;
+            var _lsy = _lsp.y - L.camera.y;
+            drawSpeechBubble(ctx, _lvlBubbles['__self__'].text, _lsx - _lsp.w / 2, _lsy, _lsp.w, '#58d8f8');
+        }
+        // Remote players bubbles
+        var _lvlRems = MP.getLevelRemotes();
+        for (var _lrBk in _lvlRems) {
+            if (!_lvlBubbles[_lrBk]) continue;
+            var _lrB = _lvlRems[_lrBk];
+            if (!_lrB._posReceived) continue;
+            var _lrBx = _lrB.px - L.camera.x;
+            var _lrBy = _lrB.py - L.camera.y;
+            var _lrBw = L.player ? L.player.w : 24;
+            drawSpeechBubble(ctx, _lvlBubbles[_lrBk].text, _lrBx, _lrBy, _lrBw, '#80ff80');
+        }
     }
 }
 

@@ -411,6 +411,29 @@ class Zone {
     }
     return result;
   }
+
+  // Returns [{pid, ws}] for all open connections in AOI neighbor cells of a
+  // world-pixel coordinate. Used to AOI-filter join/leave/enemy_sync broadcasts.
+  getPlayersNearPixel(worldPx, worldPy, excludeId) {
+    const tileX = Math.floor(worldPx / TILE_PX);
+    const tileY = Math.floor(worldPy / TILE_PX);
+    const { cx, cy } = posToCell(tileX, tileY, 1);
+    const nearbyIds = this.aoi.getNeighborPlayers(cx, cy, excludeId);
+    const result = [];
+    for (const pid of nearbyIds) {
+      const ws = this.conns.get(pid);
+      if (ws && ws.readyState === 1) result.push({ pid, ws });
+    }
+    return result;
+  }
+
+  // Convenience wrapper: looks up an entity's current pixel position, then
+  // delegates to getPlayersNearPixel.
+  getPlayersNearEntity(entityId) {
+    const entity = this.entities.get(entityId);
+    if (!entity) return [];
+    return this.getPlayersNearPixel(entity.px, entity.py, entityId);
+  }
 }
 
 function wireSnapshot(entity) {

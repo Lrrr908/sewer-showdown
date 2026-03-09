@@ -38,6 +38,10 @@ var MP = (function () {
     var lastResumeResult = null;
 
     var remotePlayers = {};
+    // Last-seen positions for players that left our AOI (so arrows keep showing)
+    // id -> { px, py, displayName, _lastSeen: timestamp }
+    var _lastSeenPos = {};
+    var _LAST_SEEN_TTL = 5 * 60 * 1000; // keep ghost arrows for 5 minutes
     var selfPlayer = null;
     var serverTick = 0;
 
@@ -68,14 +72,37 @@ var MP = (function () {
     var ugcCache = {};
 
     // --- Enemy sync state ---
-    // Outgoing: kills/hits queued by game, flushed on timer or immediately for kills.
+    // Outgoing: kills/hits/shots queued by game, flushed on timer or immediately for kills.
     var _outKills = [];
     var _outHits  = [];
+    var _outShots = [];
+    var _outAtks  = [];   // turtle attack-fired events
     var _enemySyncLastFlush = 0;
     var _ENEMY_SYNC_FLUSH_MS = 120;  // max 8 hit batches/sec
 
     // Incoming: queued from server, drained each game frame.
-    var _inEnemySyncs = [];
+    // Each event type has its own queue so consumers don't steal each other's data.
+    var _inEnemySyncs = [];  // {kills, hits} — drained by updateRegionEnemies
+    var _inShotSyncs  = [];  // flat shot objects — drained by updateVanProjectiles
+    var _inAtkSyncs   = [];  // flat atk objects  — drained by _processRemoteAtks
+
+    // --- Level room state ---
+    var _levelRoomId      = null;   // current instance ID while in a level
+    var _isLevelHost      = false;  // true if this client is the room host
+    var _levelRemotes     = {};     // entityId -> { px, py, facing, atkPhase, atkTimer, tid, frame, displayName }
+    var _inLevelJoins     = [];     // [{entityId, displayName}]
+    var _inLevelLeaves    = [];     // [entityId]
+    var _inLevelPos       = [];     // [{entityId, px, py, facing, atkPhase, tid}]
+    var _inLevelSyncs     = [];     // [{kills, item}]
+    var _inLevelItemState = null;   // item snapshot received on join
+    var _inLevelDeadEnemies = null; // [enemyId] list received on join
+    var _inLevelEnemySyncs = [];    // [{id,x,y,hp,s,fd}] host→non-host enemy positions
+    var _lastLevelPosSend = 0;
+    var _LEVEL_POS_MS = 100;        // throttle: send position max 10 times/sec
+
+    // Overworld enemy sync
+    var _inOwDeadEnemies  = null;   // [enemyId] received from server after ow_join
+    var _inOwEnemySyncs   = [];     // [{id,x,y,s}] positions from nearby players
 
     var onHelloOk = null;
     var onSnapshot = null;
@@ -238,18 +265,35 @@ var MP = (function () {
 
     function _flushEnemySync(force) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
-        if (_outKills.length === 0 && _outHits.length === 0) return;
+        if (_outKills.length === 0 && _outHits.length === 0 && _outShots.length === 0 && _outAtks.length === 0) return;
         var now = Date.now();
         if (!force && now - _enemySyncLastFlush < _ENEMY_SYNC_FLUSH_MS) return;
         _enemySyncLastFlush = now;
-        ws.send(JSON.stringify({ t: 'enemy_sync', kills: _outKills, hits: _outHits }));
+        ws.send(JSON.stringify({ t: 'enemy_sync', kills: _outKills, hits: _outHits, shots: _outShots, atks: _outAtks }));
         _outKills = [];
         _outHits  = [];
+        _outShots = [];
+        _outAtks  = [];
     }
 
-    function sendEnemyKill(enemyId) {
+    // Send a single "attack fired" event so remote clients can trigger the full
+    // weapon animation locally from one message (mirrors the van-shot pattern).
+    function sendTurtleAtk(x, y, direction, turtleId) {
+        if (!ws || ws.readyState !== 1 || !authenticated || !entityId) return;
+        _outAtks.push({ id: entityId, x: Math.round(x), y: Math.round(y), dir: direction || 's', tid: turtleId || 'leo', t: Date.now() });
+        _flushEnemySync(true);  // fire immediately — same priority as kills
+    }
+
+    function sendVanShot(x, y, vx, vy, life) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
-        _outKills.push(enemyId);
+        _outShots.push({ x: Math.round(x), y: Math.round(y), vx: Math.round(vx), vy: Math.round(vy),
+                         life: life || 1.6, t: Date.now() });
+        _flushEnemySync(true);  // shots go out immediately like kills
+    }
+
+    function sendEnemyKill(enemyId, worldX, worldY) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        _outKills.push({ id: enemyId, x: Math.round(worldX || 0), y: Math.round(worldY || 0) });
         _flushEnemySync(true);  // kills go out immediately
     }
 
@@ -268,6 +312,126 @@ var MP = (function () {
         _inEnemySyncs = [];
         return result;
     }
+
+    function drainShotSyncs() {
+        if (_inShotSyncs.length === 0) return null;
+        var result = _inShotSyncs;
+        _inShotSyncs = [];
+        return result;
+    }
+
+    function drainAtkSyncs() {
+        if (_inAtkSyncs.length === 0) return null;
+        var result = _inAtkSyncs;
+        _inAtkSyncs = [];
+        return result;
+    }
+
+    // ── Level room API ────────────────────────────────────────────────────
+
+    function sendJoinLevel(instanceId) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        _levelRoomId = instanceId;
+        _isLevelHost = false;
+        _levelRemotes = {};
+        console.log('[level] joining room:', instanceId);
+        ws.send(JSON.stringify({ t: 'join_level', instanceId: instanceId }));
+    }
+
+    function sendLeaveLevel(instanceId) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        if (_levelRoomId === instanceId) {
+            _levelRoomId = null;
+            _isLevelHost = false;
+            _levelRemotes = {};
+        }
+        ws.send(JSON.stringify({ t: 'leave_level', instanceId: instanceId }));
+    }
+
+    function sendLevelPos(instanceId, px, py, facing, atkPhase, tid) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        var now = Date.now();
+        if (now - _lastLevelPosSend < _LEVEL_POS_MS) return;
+        _lastLevelPosSend = now;
+        ws.send(JSON.stringify({
+            t: 'level_pos',
+            instanceId: instanceId,
+            px: Math.round(px),
+            py: Math.round(py),
+            facing: facing || 's',
+            atkPhase: atkPhase || 'IDLE',
+            tid: tid || 'leo'
+        }));
+    }
+
+    function sendLevelSync(instanceId, kills, itemId) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        var payload = { t: 'level_sync', instanceId: instanceId, kills: kills || [] };
+        if (itemId) payload.item = { id: itemId };
+        ws.send(JSON.stringify(payload));
+    }
+
+    function drainLevelJoins() {
+        if (_inLevelJoins.length === 0) return null;
+        var r = _inLevelJoins; _inLevelJoins = []; return r;
+    }
+
+    function drainLevelLeaves() {
+        if (_inLevelLeaves.length === 0) return null;
+        var r = _inLevelLeaves; _inLevelLeaves = []; return r;
+    }
+
+    function drainLevelPos() {
+        if (_inLevelPos.length === 0) return null;
+        var r = _inLevelPos; _inLevelPos = []; return r;
+    }
+
+    function drainLevelSyncs() {
+        if (_inLevelSyncs.length === 0) return null;
+        var r = _inLevelSyncs; _inLevelSyncs = []; return r;
+    }
+
+    function drainLevelItemState() {
+        var r = _inLevelItemState; _inLevelItemState = null; return r;
+    }
+
+    function drainLevelDeadEnemies() {
+        var r = _inLevelDeadEnemies; _inLevelDeadEnemies = null; return r;
+    }
+
+    function sendLevelEnemySync(instanceId, enemies) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        ws.send(JSON.stringify({ t: 'level_enemy_sync', instanceId: instanceId, enemies: enemies }));
+    }
+
+    function drainLevelEnemySyncs() {
+        if (_inLevelEnemySyncs.length === 0) return null;
+        var r = _inLevelEnemySyncs; _inLevelEnemySyncs = []; return r;
+    }
+
+    // ── Overworld enemy sync ─────────────────────────────────────────────────
+    function sendOwJoin(regionId) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        ws.send(JSON.stringify({ t: 'ow_join', regionId: regionId }));
+    }
+
+    function drainOwDeadEnemies() {
+        var r = _inOwDeadEnemies; _inOwDeadEnemies = null; return r;
+    }
+
+    function sendOwEnemySync(enemies) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        ws.send(JSON.stringify({ t: 'ow_enemy_sync', enemies: enemies }));
+    }
+
+    function drainOwEnemySyncs() {
+        if (_inOwEnemySyncs.length === 0) return null;
+        var r = _inOwEnemySyncs; _inOwEnemySyncs = []; return r;
+    }
+
+    function isLevelHost() { return _isLevelHost; }
+
+    function getLevelRemotes() { return _levelRemotes; }
 
     function updateRender() {
         var localTargetX = predTile.x * TILE_SIZE;
@@ -317,14 +481,36 @@ var MP = (function () {
             if (!remotePlayers[rid]) delete remoteRenderPx[rid];
         }
 
-        // Expire stale remote players (no update for 5+ seconds = out of AOI)
-        var staleThreshold = Date.now() - 30000;
+        // Expire stale remote players (no update for 60s = out of AOI or truly gone)
+        var staleThreshold = Date.now() - 60000;
         for (var sid in remotePlayers) {
-            if (remotePlayers[sid]._lastUpdate && remotePlayers[sid]._lastUpdate < staleThreshold) {
+            var _srp = remotePlayers[sid];
+            if (_srp._lastUpdate && _srp._lastUpdate < staleThreshold) {
+                // Save last known position so the arrow keeps showing
+                if (_srp.px != null || _srp.x != null) {
+                    _lastSeenPos[sid] = {
+                        px: _srp.px != null ? _srp.px : _srp.x * 64,
+                        py: _srp.py != null ? _srp.py : _srp.y * 64,
+                        displayName: _srp.displayName || sid,
+                        _lastSeen: _srp._lastUpdate || Date.now()
+                    };
+                }
                 delete remotePlayers[sid];
                 delete remoteRenderPx[sid];
             }
         }
+
+        // Prune ghost arrows that are older than 5 minutes
+        var ghostCutoff = Date.now() - _LAST_SEEN_TTL;
+        for (var gsid in _lastSeenPos) {
+            if (_lastSeenPos[gsid]._lastSeen < ghostCutoff) delete _lastSeenPos[gsid];
+        }
+    }
+
+    function getLastSeenPlayers() {
+        var arr = [];
+        for (var id in _lastSeenPos) arr.push(_lastSeenPos[id]);
+        return arr;
     }
 
     // --- Auth ---
@@ -572,17 +758,41 @@ var MP = (function () {
                 }
                 if (msg.removes) {
                     for (var r = 0; r < msg.removes.length; r++) {
-                        delete remotePlayers[msg.removes[r]];
+                        var _rmId = msg.removes[r];
+                        var _rmRp = remotePlayers[_rmId];
+                        if (_rmRp && (_rmRp.px != null || _rmRp.x != null)) {
+                            _lastSeenPos[_rmId] = {
+                                px: _rmRp.px != null ? _rmRp.px : _rmRp.x * 64,
+                                py: _rmRp.py != null ? _rmRp.py : _rmRp.y * 64,
+                                displayName: _rmRp.displayName || _rmId,
+                                _lastSeen: Date.now()
+                            };
+                        }
+                        delete remotePlayers[_rmId];
+                        delete remoteRenderPx[_rmId];
                     }
                 }
                 if (onDelta) onDelta(msg);
                 break;
 
             case 'enemy_sync':
-                // Relay from server: another player killed/hit enemies. Queue for game to apply.
+                // Relay from server: another player killed/hit enemies, fired a shot, or swung a weapon.
                 if (msg.zone && msg.zone !== currentZone) break;
-                if (msg.kills && msg.kills.length > 0 || msg.hits && msg.hits.length > 0) {
+                // Kills/hits go into the enemy queue
+                if ((msg.kills && msg.kills.length > 0) || (msg.hits && msg.hits.length > 0)) {
                     _inEnemySyncs.push({ kills: msg.kills || [], hits: msg.hits || [] });
+                }
+                // Shots into shot queue (flat list)
+                if (msg.shots && msg.shots.length > 0) {
+                    for (var _msi = 0; _msi < msg.shots.length; _msi++) {
+                        _inShotSyncs.push(msg.shots[_msi]);
+                    }
+                }
+                // Turtle attacks into atk queue (flat list)
+                if (msg.atks && msg.atks.length > 0) {
+                    for (var _mai = 0; _mai < msg.atks.length; _mai++) {
+                        _inAtkSyncs.push(msg.atks[_mai]);
+                    }
                 }
                 break;
 
@@ -616,6 +826,8 @@ var MP = (function () {
                         } else {
                             remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, vpx: bvpx, vpy: bvpy, vf: bvf, displayName: bdn, atk: batk, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }], _lastUpdate: now };
                         }
+                        // Player (re)entered AOI — remove from ghost list
+                        delete _lastSeenPos[bid];
                     }
                 }
                 if (onDelta) onDelta(msg);
@@ -628,7 +840,10 @@ var MP = (function () {
                 resetPredictionState();
                 collisionGrid = null;
                 collisionHash = null;
-                _outKills = []; _outHits = []; _inEnemySyncs = [];
+                _outKills = []; _outHits = []; _outShots = []; _outAtks = []; _inEnemySyncs = []; _inShotSyncs = []; _inAtkSyncs = [];
+                _inLevelJoins = []; _inLevelLeaves = []; _inLevelPos = []; _inLevelSyncs = []; _inLevelItemState = null; _inLevelDeadEnemies = null; _inLevelEnemySyncs = [];
+                _inOwDeadEnemies = null; _inOwEnemySyncs = [];
+                _lastSeenPos = {};
                 console.log('[mp] transfer_begin:', msg.from, '->', msg.to);
                 if (onTransferBegin) onTransferBegin(msg);
                 break;
@@ -668,6 +883,136 @@ var MP = (function () {
                         expire: Date.now() + bubbleDuration
                     };
                     if (onChatReceived) onChatReceived(msg);
+                }
+                break;
+
+            // ── Level room messages ──────────────────────────────────────
+            case 'level_joined':
+                // Server reply: we joined the room — store host flag, initial items,
+                // and pre-populate _levelRemotes with players already in the room.
+                if (msg.instanceId === _levelRoomId) {
+                    _isLevelHost = !!msg.isHost;
+                    _inLevelItemState = msg.items || {};
+                    console.log('[level] level_joined isHost=' + _isLevelHost + ' existingMembers=' + (msg.members ? msg.members.length : 0) + ' deadEnemies=' + (msg.deadEnemies ? msg.deadEnemies.length : 0));
+                    // Store dead enemy list so game.js can apply it
+                    if (Array.isArray(msg.deadEnemies) && msg.deadEnemies.length > 0) {
+                        _inLevelDeadEnemies = msg.deadEnemies;
+                    }
+                    // Seed level remotes with existing members so we don't wait for their next level_pos
+                    if (Array.isArray(msg.members)) {
+                        for (var _lmi = 0; _lmi < msg.members.length; _lmi++) {
+                            var _lm = msg.members[_lmi];
+                            if (_lm.entityId && _lm.entityId !== entityId && !_levelRemotes[_lm.entityId]) {
+                                _levelRemotes[_lm.entityId] = {
+                                    px: 0, py: 0, facing: 's',
+                                    atkPhase: 'IDLE', atkTimer: 0,
+                                    frame: 0, tid: 'leo',
+                                    displayName: _lm.displayName || _lm.entityId,
+                                    _posReceived: false   // flag: position not yet known
+                                };
+                                console.log('[level] pre-seeded remote player:', _lm.entityId, _lm.displayName);
+                            }
+                        }
+                    }
+                }
+                break;
+
+            case 'level_player_join':
+                if (msg.entityId && msg.entityId !== entityId) {
+                    console.log('[level] player joined room:', msg.entityId, msg.displayName);
+                    _inLevelJoins.push({ entityId: msg.entityId, displayName: msg.displayName || msg.entityId });
+                    // Force an immediate level_pos on the next frame so the new joiner
+                    // gets our position right away (bypass the 100ms throttle).
+                    _lastLevelPosSend = 0;
+                }
+                if (msg.newHostId === entityId) {
+                    _isLevelHost = true;
+                }
+                break;
+
+            case 'level_pos_request':
+                // Server asks us to immediately re-broadcast our position (a new player just joined)
+                console.log('[level] pos_request received — sending position immediately');
+                _lastLevelPosSend = 0;
+                break;
+
+            case 'level_player_leave':
+                if (msg.entityId) {
+                    _inLevelLeaves.push(msg.entityId);
+                    delete _levelRemotes[msg.entityId];
+                }
+                if (msg.newHostId === entityId) {
+                    _isLevelHost = true;
+                }
+                break;
+
+            case 'level_pos':
+                if (msg.entityId && msg.entityId !== entityId) {
+                    _inLevelPos.push({
+                        entityId: msg.entityId,
+                        px: msg.px, py: msg.py,
+                        facing: msg.facing,
+                        atkPhase: msg.atkPhase,
+                        tid: msg.tid,
+                        _posReceived: true
+                    });
+                }
+                break;
+
+            case 'level_sync':
+                _inLevelSyncs.push({
+                    kills: msg.kills || [],
+                    item: msg.item || null
+                });
+                break;
+
+            case 'level_enemy_sync':
+                if (Array.isArray(msg.enemies)) {
+                    for (var _lei = 0; _lei < msg.enemies.length; _lei++) {
+                        _inLevelEnemySyncs.push(msg.enemies[_lei]);
+                    }
+                }
+                break;
+
+            case 'ow_dead_enemies':
+                _inOwDeadEnemies = Array.isArray(msg.deadEnemies) ? msg.deadEnemies : [];
+                break;
+
+            case 'ow_enemy_sync':
+                if (Array.isArray(msg.enemies)) {
+                    for (var _owsei = 0; _owsei < msg.enemies.length; _owsei++) {
+                        _inOwEnemySyncs.push(msg.enemies[_owsei]);
+                    }
+                }
+                break;
+
+            case 'zone_players':
+                // Zone-wide directory: seed _lastSeenPos for every player we don't
+                // already have in remotePlayers so arrows show from the very start.
+                if (Array.isArray(msg.players)) {
+                    var _now_zp = Date.now();
+                    for (var _zpi = 0; _zpi < msg.players.length; _zpi++) {
+                        var _zpp = msg.players[_zpi];
+                        if (!_zpp || !_zpp.id) continue;
+                        if (remotePlayers[_zpp.id]) {
+                            // Already tracked by AOI — update its last-seen ghost too so
+                            // the arrow persists if they exit AOI before the next broadcast.
+                            _lastSeenPos[_zpp.id] = {
+                                px: _zpp.px,
+                                py: _zpp.py,
+                                displayName: _zpp.dn || _zpp.id,
+                                _lastSeen: _now_zp
+                            };
+                        } else {
+                            // Not in AOI range yet — put/update in ghost list so arrow appears.
+                            _lastSeenPos[_zpp.id] = {
+                                px: _zpp.px,
+                                py: _zpp.py,
+                                displayName: _zpp.dn || _zpp.id,
+                                _lastSeen: _now_zp
+                            };
+                        }
+                    }
                 }
                 break;
 
@@ -881,9 +1226,36 @@ var MP = (function () {
         sendSpawnPos: sendSpawnPos,
         sendPosSync: sendPosSync,
         sendAtkSync: sendAtkSync,
+        sendTurtleAtk: sendTurtleAtk,
+        sendVanShot: sendVanShot,
         sendEnemyKill: sendEnemyKill,
         sendEnemyHit: sendEnemyHit,
         drainEnemySyncs: drainEnemySyncs,
+        drainShotSyncs: drainShotSyncs,
+        drainAtkSyncs: drainAtkSyncs,
+
+        // Level room
+        sendJoinLevel: sendJoinLevel,
+        sendLeaveLevel: sendLeaveLevel,
+        sendLevelPos: sendLevelPos,
+        sendLevelSync: sendLevelSync,
+        drainLevelJoins: drainLevelJoins,
+        drainLevelLeaves: drainLevelLeaves,
+        drainLevelPos: drainLevelPos,
+        drainLevelSyncs: drainLevelSyncs,
+        drainLevelItemState: drainLevelItemState,
+        drainLevelDeadEnemies: drainLevelDeadEnemies,
+        sendLevelEnemySync: sendLevelEnemySync,
+        drainLevelEnemySyncs: drainLevelEnemySyncs,
+        isLevelHost: isLevelHost,
+        getLevelRemotes: getLevelRemotes,
+
+        // Overworld enemy sync
+        sendOwJoin: sendOwJoin,
+        drainOwDeadEnemies: drainOwDeadEnemies,
+        sendOwEnemySync: sendOwEnemySync,
+        drainOwEnemySyncs: drainOwEnemySyncs,
+
         sendAction: sendAction,
         requestTransfer: requestTransfer,
         requestCollision: requestCollision,
@@ -894,6 +1266,7 @@ var MP = (function () {
         updateRender: updateRender,
 
         getRemotePlayers: getRemotePlayers,
+        getLastSeenPlayers: getLastSeenPlayers,
         drawRemotePlayers: drawRemotePlayers,
         getSelfPlayer: function () { return selfPlayer; },
         getSelfRenderPos: function () { return { x: localRenderPx.x, y: localRenderPx.y }; },
