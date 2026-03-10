@@ -348,12 +348,12 @@ var MP = (function () {
         ws.send(JSON.stringify({ t: 'leave_level', instanceId: instanceId }));
     }
 
-    function sendLevelPos(instanceId, px, py, facing, atkPhase, tid) {
+    function sendLevelPos(instanceId, px, py, facing, atkPhase, tid, roomId) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
         var now = Date.now();
         if (now - _lastLevelPosSend < _LEVEL_POS_MS) return;
         _lastLevelPosSend = now;
-        ws.send(JSON.stringify({
+        var msg = {
             t: 'level_pos',
             instanceId: instanceId,
             px: Math.round(px),
@@ -361,7 +361,9 @@ var MP = (function () {
             facing: facing || 's',
             atkPhase: atkPhase || 'IDLE',
             tid: tid || 'leo'
-        }));
+        };
+        if (roomId !== undefined && roomId !== null) msg.roomId = roomId;
+        ws.send(JSON.stringify(msg));
     }
 
     function sendLevelSync(instanceId, kills, itemId) {
@@ -966,6 +968,7 @@ var MP = (function () {
                         atkPhase: msg.atkPhase,
                         tid: msg.tid,
                         displayName: _lpDn,
+                        roomId: (msg.roomId !== undefined) ? msg.roomId : null,
                         _posReceived: true
                     });
                 }

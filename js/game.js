@@ -11819,6 +11819,401 @@ function generateLevelRT(theme, size, seed, difficulty) {
     };
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ZELDA-STYLE DUNGEON GENERATOR
+// ═══════════════════════════════════════════════════════════════
+
+// Dungeon tile type IDs
+var DT_FLOOR    = 0;
+var DT_WALL     = 1;
+var DT_HAZARD   = 2;
+var DT_PILLAR   = 3;  // solid decoration
+var DT_CARPET   = 4;  // walkable rug/carpet
+var DT_PEDESTAL = 5;  // item pedestal (walkable)
+var DT_DOOR     = 6;  // door opening → room transition
+var DT_EXIT     = 7;  // south door of entry room → exits to world
+
+var DUNGEON_TILE_TYPES = {
+    '0': { name: 'floor',    solid: false },
+    '1': { name: 'wall',     solid: true  },
+    '2': { name: 'hazard',   solid: false },
+    '3': { name: 'pillar',   solid: true  },
+    '4': { name: 'carpet',   solid: false },
+    '5': { name: 'pedestal', solid: false },
+    '6': { name: 'door',     solid: false },
+    '7': { name: 'exitdoor', solid: false }
+};
+
+// Direction helpers
+var DUNGEON_OPPOSITE = { n: 's', s: 'n', e: 'w', w: 'e' };
+var DUNGEON_TRANS_DURATION = 0.38; // seconds
+
+function generateDungeon(theme, seed, diff, artistId, artistName) {
+    var rng    = mulberry32RT(seedHashRT(seed));
+    var enemyHp = DIFF_HP_RT[diff] || 1;
+
+    // Room dimensions: fill the screen minus HUD band
+    var TS = 32;
+    var ROOM_W = Math.max(17, Math.min(25, Math.floor(CANVAS_WIDTH  / TS)));
+    var ROOM_H = Math.max(11, Math.min(15, Math.floor((CANVAS_HEIGHT - 48) / TS)));
+    // Force odd so center column/row is clear
+    if (ROOM_W % 2 === 0) ROOM_W--;
+    if (ROOM_H % 2 === 0) ROOM_H--;
+
+    var MID_X = Math.floor(ROOM_W / 2);
+    var MID_Y = Math.floor(ROOM_H / 2);
+
+    var numRooms = 2 + Math.min(3, diff); // 3 (diff1) to 5 (diff3+)
+
+    // ── Build connection graph ──────────────────────────────────
+    // Rooms 0…N-1 in a vertical chain; optional east branch at room 1
+    // Room 0 = entry (south door = world exit), rooms go northward
+    // Final room in the main chain = item/boss room
+
+    var hasBranch = numRooms >= 4 && diff >= 3;
+
+    // Each room: doors object { n: roomId|null, s: roomId|null, e: roomId|null, w: roomId|null }
+    // Build connections then construct rooms
+
+    var mainChainLen = hasBranch ? numRooms - 1 : numRooms;
+    var branchRoomId = hasBranch ? numRooms - 1 : -1;
+
+    var doorConfigs = [];
+    for (var ri = 0; ri < numRooms; ri++) {
+        doorConfigs.push({ n: null, s: null, e: null, w: null });
+    }
+
+    // Main vertical chain: 0→1→2→...→mainChainLen-1
+    for (var ci = 0; ci < mainChainLen - 1; ci++) {
+        doorConfigs[ci].n     = ci + 1;  // room ci connects north to ci+1
+        doorConfigs[ci + 1].s = ci;      // room ci+1 connects south back to ci
+    }
+
+    // East branch: room 1 connects east to branchRoom
+    if (hasBranch) {
+        doorConfigs[1].e = branchRoomId;
+        doorConfigs[branchRoomId].w = 1;
+    }
+
+    var itemRoomId = mainChainLen - 1; // last room in main chain
+
+    // ── Construct each room ─────────────────────────────────────
+    function buildTilemap(isEntry, isBoss, doors) {
+        var tm = [];
+        var r, c;
+        for (r = 0; r < ROOM_H; r++) {
+            tm[r] = new Array(ROOM_W).fill(DT_WALL);
+        }
+        // Carve inner floor
+        for (r = 1; r < ROOM_H - 1; r++) {
+            for (c = 1; c < ROOM_W - 1; c++) {
+                tm[r][c] = DT_FLOOR;
+            }
+        }
+
+        // Cut door openings (3 tiles wide)
+        function cutDoor(side, tileId) {
+            var i;
+            if (side === 'n') {
+                for (i = -1; i <= 1; i++) tm[0][MID_X + i] = tileId;
+                // also clear the tile just inside (wall row 0 + floor row 1)
+            } else if (side === 's') {
+                for (i = -1; i <= 1; i++) tm[ROOM_H - 1][MID_X + i] = tileId;
+            } else if (side === 'e') {
+                for (i = -1; i <= 1; i++) tm[MID_Y + i][ROOM_W - 1] = tileId;
+            } else if (side === 'w') {
+                for (i = -1; i <= 1; i++) tm[MID_Y + i][0] = tileId;
+            }
+        }
+
+        if (doors.n !== null) cutDoor('n', DT_DOOR);
+        if (doors.s !== null) cutDoor('s', isEntry ? DT_EXIT : DT_DOOR);
+        if (doors.e !== null) cutDoor('e', DT_DOOR);
+        if (doors.w !== null) cutDoor('w', DT_DOOR);
+
+        // ── Decorations ─────────────────────────────────────────
+        if (isEntry) {
+            // Pillars at inner corners
+            tm[1][1]           = DT_PILLAR;
+            tm[1][ROOM_W - 2]  = DT_PILLAR;
+            tm[ROOM_H - 2][1]  = DT_PILLAR;
+            tm[ROOM_H - 2][ROOM_W - 2] = DT_PILLAR;
+            // Carpet strip (north-south center)
+            for (r = 2; r < ROOM_H - 2; r++) {
+                if (tm[r][MID_X] === DT_FLOOR) tm[r][MID_X] = DT_CARPET;
+                if (tm[r][MID_X - 1] === DT_FLOOR) tm[r][MID_X - 1] = DT_CARPET;
+                if (tm[r][MID_X + 1] === DT_FLOOR) tm[r][MID_X + 1] = DT_CARPET;
+            }
+        } else if (isBoss) {
+            // Checkerboard carpet in center zone
+            for (r = 2; r < ROOM_H - 2; r++) {
+                for (c = 2; c < ROOM_W - 2; c++) {
+                    if (tm[r][c] === DT_FLOOR && (r + c) % 2 === 0) tm[r][c] = DT_CARPET;
+                }
+            }
+            // Item pedestal in center
+            tm[MID_Y][MID_X] = DT_PEDESTAL;
+            // Corner pillars
+            tm[2][2]               = DT_PILLAR;
+            tm[2][ROOM_W - 3]      = DT_PILLAR;
+            tm[ROOM_H - 3][2]      = DT_PILLAR;
+            tm[ROOM_H - 3][ROOM_W - 3] = DT_PILLAR;
+        } else {
+            // Random pillars + small carpet patches
+            var seed2 = seedHashRT(seed + '_rm' + ri);
+            var rng2 = mulberry32RT(seed2);
+            // 1-3 random pillar pairs
+            var numPillars = 1 + Math.floor(rng2() * 3);
+            for (var pi = 0; pi < numPillars; pi++) {
+                var pr = 2 + Math.floor(rng2() * (ROOM_H - 5));
+                var pc = 2 + Math.floor(rng2() * ((ROOM_W - 5) / 2)) * 2; // even column for symmetry
+                if (tm[pr][pc] === DT_FLOOR) tm[pr][pc] = DT_PILLAR;
+                var mirrorC = ROOM_W - 1 - pc;
+                if (mirrorC !== pc && tm[pr][mirrorC] === DT_FLOOR) tm[pr][mirrorC] = DT_PILLAR;
+            }
+            // Small hazard patch (theme-appropriate)
+            var hazardCount = Math.floor(rng2() * 3) + (diff > 2 ? 2 : 0);
+            for (var hz = 0; hz < hazardCount; hz++) {
+                var hr = 2 + Math.floor(rng2() * (ROOM_H - 4));
+                var hc = 2 + Math.floor(rng2() * (ROOM_W - 4));
+                if (tm[hr][hc] === DT_FLOOR) tm[hr][hc] = DT_HAZARD;
+            }
+        }
+
+        return tm;
+    }
+
+    function buildEnemies(roomId, isEntry, isBoss, tilemap) {
+        if (isEntry) return [];
+        var budget = isBoss
+            ? (BUDGET_BASE + (BUDGET_DIFF_MOD[diff] || 0))
+            : (20 + (BUDGET_DIFF_MOD[diff] || 0) / 2);
+        var enemies = [], spent = 0;
+
+        // Collect walkable tiles far from entry
+        var walkable = [];
+        for (var ry = 2; ry < ROOM_H - 2; ry++) {
+            for (var rx = 2; rx < ROOM_W - 2; rx++) {
+                var t = tilemap[ry][rx];
+                if (t === DT_FLOOR || t === DT_CARPET) {
+                    walkable.push({ x: rx, y: ry });
+                }
+            }
+        }
+        // Shuffle
+        for (var wi = walkable.length - 1; wi > 0; wi--) {
+            var wj = Math.floor(rng() * (wi + 1));
+            var tmp = walkable[wi]; walkable[wi] = walkable[wj]; walkable[wj] = tmp;
+        }
+
+        var maxEnemies = isBoss ? (2 + diff) : (1 + Math.floor(diff / 2));
+        for (var ei = 0; ei < walkable.length && enemies.length < maxEnemies && spent < budget; ei++) {
+            var pos = walkable[ei];
+            // Skip pedestal tile area
+            if (Math.abs(pos.x - MID_X) < 2 && Math.abs(pos.y - MID_Y) < 2) continue;
+            var roll = rng();
+            var eType = 'foot';
+            if (isBoss && diff >= 3 && roll < 0.4 && spent + ENEMY_COST_RT.foot_shield <= budget) {
+                eType = 'foot_shield';
+            } else if (diff >= RANGED_MIN_DIFF_RT && roll < 0.35 && spent + ENEMY_COST_RT.foot_ranged <= budget) {
+                eType = 'foot_ranged';
+            } else if (diff >= RUNNER_MIN_DIFF_RT && roll < 0.5 && spent + ENEMY_COST_RT.foot_runner <= budget) {
+                eType = 'foot_runner';
+            }
+            var eHp = enemyHp + (isBoss ? 1 : 0);
+            if (eType === 'foot_shield') eHp = enemyHp + 2;
+            var pL = Math.max(1, pos.x - 5), pR = Math.min(ROOM_W - 2, pos.x + 5);
+            enemies.push({ type: eType, x: pos.x, y: pos.y, hp: eHp,
+                patrol: { left: pL, right: pR } });
+            spent += ENEMY_COST_RT[eType] || 10;
+        }
+        return enemies;
+    }
+
+    function buildArtFrames(tilemap) {
+        if (theme !== 'gallery') return [];
+        var frames = [];
+        for (var ry = 1; ry < ROOM_H - 1; ry++) {
+            for (var rx = 1; rx < ROOM_W - 1; rx++) {
+                var t = tilemap[ry][rx];
+                if ((t === DT_FLOOR || t === DT_CARPET) && tilemap[ry - 1] && tilemap[ry - 1][rx] === DT_WALL && rng() < 0.3) {
+                    frames.push({ x: rx, y: ry, side: 'north' });
+                }
+            }
+        }
+        return frames;
+    }
+
+    // Compute entry positions for each door side (where player spawns entering through that door)
+    function buildEntryPositions(doors) {
+        var ep = {};
+        if (doors.n !== null) ep.n = { x: MID_X * TS, y: 2 * TS };                  // entered via north door → near north
+        if (doors.s !== null) ep.s = { x: MID_X * TS, y: (ROOM_H - 3) * TS };       // entered via south door → near south
+        if (doors.e !== null) ep.e = { x: (ROOM_W - 3) * TS, y: MID_Y * TS };        // entered via east door → near east
+        if (doors.w !== null) ep.w = { x: 2 * TS, y: MID_Y * TS };                   // entered via west door → near west
+        return ep;
+    }
+
+    var rooms = [];
+    for (var ri = 0; ri < numRooms; ri++) {
+        var doors   = doorConfigs[ri];
+        var isEntry = (ri === 0);
+        var isBoss  = (ri === itemRoomId);
+        var tm = buildTilemap(isEntry, isBoss, doors);
+        var enemies = buildEnemies(ri, isEntry, isBoss, tm);
+        var artFrames = isBoss || isEntry ? buildArtFrames(tm) : [];
+        rooms.push({
+            id:             ri,
+            tilemap:        tm,
+            tileTypes:      DUNGEON_TILE_TYPES,
+            enemies:        enemies,
+            doors:          doors,
+            entryPositions: buildEntryPositions(doors),
+            artFrames:      artFrames,
+            itemSpawn:      isBoss ? { x: MID_X, y: MID_Y } : null,
+            isEntry:        isEntry,
+            isBoss:         isBoss
+        });
+    }
+
+    // Build spawns for level init (entry room, near south center — just inside)
+    var entryRoom = rooms[0];
+    var spawnX = MID_X, spawnY = ROOM_H - 3; // 2 tiles from south door
+
+    return {
+        type:        'dungeon',
+        id:          theme + '_dungeon_' + seedHashRT(seed),
+        name:        (LEVEL_THEMES[theme] || LEVEL_THEMES.street).name,
+        theme:       theme,
+        seed:        seed,
+        artistId:    artistId   || null,
+        artistName:  artistName || null,
+        // These fields mirror the flat-level format for compatibility
+        world:       { widthTiles: ROOM_W, heightTiles: ROOM_H, tileSize: TS },
+        tilemap:     entryRoom.tilemap,
+        tileTypes:   DUNGEON_TILE_TYPES,
+        enemies:     entryRoom.enemies,
+        artFrames:   entryRoom.artFrames,
+        itemSpawn:   entryRoom.itemSpawn,
+        spawns:      { player: { x: spawnX, y: spawnY }, exit: { x: -100, y: -100 } },
+        // Dungeon-specific
+        rooms:       rooms,
+        entryRoomId: 0,
+        itemRoomId:  itemRoomId,
+        roomW:       ROOM_W,
+        roomH:       ROOM_H
+    };
+}
+
+// ── Dungeon room loader ─────────────────────────────────────────
+// Swaps tilemap/enemies/artFrames/itemSpawn into L from a dungeon room.
+// Respects L.dungeonCleared to skip already-killed enemies.
+function _loadDungeonRoom(L, room) {
+    var lts = L.tileSize;
+    L.tilemap   = room.tilemap;
+    L.tileTypes = room.tileTypes || DUNGEON_TILE_TYPES;
+    L.width     = L.dungeon.roomW;
+    L.height    = L.dungeon.roomH;
+    L.dungeonDoors = room.doors;
+    L.artFrames = room.artFrames || [];
+
+    var cleared = L.dungeonCleared[room.id];
+
+    L.enemies = cleared ? [] : room.enemies.map(function(e, idx) {
+        var isRanged = e.type === 'foot_ranged';
+        var isShield = e.type === 'foot_shield';
+        var isRunner = e.type === 'foot_runner';
+        return {
+            id:           'e_r' + room.id + '_' + idx,
+            type:         e.type,
+            ranged:       isRanged,
+            shield:       isShield,
+            runner:       isRunner,
+            boss:         false,
+            x:            e.x * lts,
+            y:            e.y * lts,
+            w:            lts * (isRunner ? 0.6 : 0.7),
+            h:            lts * (isRunner ? 0.6 : 0.7),
+            hp:           e.hp || 1,
+            maxHp:        e.hp || 1,
+            alive:        true,
+            patrolLeft:   e.patrol ? e.patrol.left  * lts : e.x * lts - lts * 3,
+            patrolRight:  e.patrol ? e.patrol.right * lts : e.x * lts + lts * 3,
+            patrolCx:     e.patrol ? (e.patrol.left + e.patrol.right) * lts / 2 : e.x * lts,
+            patrolCy:     e.y * lts,
+            facingDir:    1,
+            animTimer:    0,
+            state:        'PATROL',
+            stateTimer:   0,
+            stunTimer:    0,
+            kbVx: 0, kbVy: 0, kbTimer: 0,
+            chaseRadius:  isRanged ? lts * 7 : isRunner ? lts * 8 : lts * 5,
+            attackRadius: isRanged ? lts * 4.5 : isShield ? lts * 1.0 : lts * 1.2,
+            attackCooldown: 0,
+            shieldUp:     isShield
+        };
+    });
+
+    // Item spawn (boss room only)
+    if (room.itemSpawn && !cleared) {
+        if (!L.specialItem) {
+            L.specialItem = getSpecialItemForLevel(L.dungeon.theme, L.dungeon.seed);
+        }
+        L.specialItemPos = {
+            x: room.itemSpawn.x * lts,
+            y: room.itemSpawn.y * lts,
+            w: lts * 0.8,
+            h: lts * 0.8
+        };
+        L.specialItemCollected = false;
+    } else if (cleared || !room.itemSpawn) {
+        L.specialItemPos = null;
+    }
+
+    // Camera: dungeon rooms are exactly screen-sized so camera stays at 0,0
+    L.camera.x = 0;
+    L.camera.y = 0;
+    L.projectiles = [];
+}
+
+// ── Finish a room transition ────────────────────────────────────
+function _finishRoomTransition(L) {
+    var tr = L.transition;
+    var toRoom = L.dungeon.rooms[tr.toRoomId];
+
+    // Mark from-room cleared if all enemies dead
+    var fromRoom = L.dungeon.rooms[tr.fromRoomId];
+    var allDead = L.enemies.every(function(e) { return !e.alive; });
+    if (allDead && fromRoom.enemies.length > 0) L.dungeonCleared[tr.fromRoomId] = true;
+
+    // Switch room
+    L.currentRoomId = tr.toRoomId;
+    _loadDungeonRoom(L, toRoom);
+
+    // Place player at the opposite door entrance
+    var p = L.player;
+    var oppDir = DUNGEON_OPPOSITE[tr.dir];
+    var ep = toRoom.entryPositions[oppDir];
+    if (ep) {
+        p.x = ep.x - p.w / 2 + L.tileSize * 0.5;
+        p.y = ep.y - p.h / 2 + L.tileSize * 0.5;
+    }
+    p.vx = 0; p.vy = 0; p.kbTimer = 0;
+
+    // Refresh total enemy count for HUD
+    L.totalEnemies += toRoom.enemies.length;
+
+    // Force camera to the correct centered position immediately so the first
+    // draw frame after the transition never shows a mis-positioned room.
+    var lts2 = L.tileSize;
+    var _dw2 = L.width * lts2, _dh2 = L.height * lts2;
+    L.camera.x = -Math.max(0, (CANVAS_WIDTH  - _dw2) / 2);
+    L.camera.y = -Math.max(0, (CANVAS_HEIGHT - _dh2) / 2);
+
+    L.transition = null;
+    L.dungeonRoomMsg = null;
+}
+
 // ── Difficulty from district ────────────────────────────────────
 function getDifficultyForEntrance() {
     var dist = getPlayerDistrict ? getPlayerDistrict() : null;
@@ -11838,19 +12233,17 @@ async function startEnterLevelFromContext(ctx) {
         var diff = getDifficultyForEntrance();
         // Gallery levels are easier
         if (ctx.theme === 'gallery') diff = Math.max(1, diff - 1);
-        var sizeKey = diff <= 2 ? 'S' : (diff <= 3 ? 'M' : 'L');
-        console.log('Generating level: theme=' + ctx.theme + ' seed=' + ctx.seed + ' diff=' + diff + ' size=' + sizeKey);
-        var levelData = generateLevelRT(ctx.theme, sizeKey, ctx.seed, diff);
-        // Attach artist context for gallery levels
-        if (ctx.artistId) {
-            levelData.artistId = ctx.artistId;
-            var artist = ARTISTS[ctx.artistId];
-            if (artist) {
-                levelData.artistName = artist.name;
-                levelData.name = 'Gallery of ' + artist.name;
-            }
+        console.log('Generating dungeon: theme=' + ctx.theme + ' seed=' + ctx.seed + ' diff=' + diff);
+
+        // Build artist name for gallery levels
+        var artistId   = ctx.artistId || null;
+        var artistName = null;
+        if (artistId && ARTISTS[artistId]) {
+            artistName = ARTISTS[artistId].name;
         }
-        levelData.contextId = ctx.contextId;
+
+        var levelData = generateDungeon(ctx.theme, ctx.seed, diff, artistId, artistName);
+        levelData.contextId  = ctx.contextId;
         levelData.instanceId = ctx.instanceId;
         await startEnterLevelWithData(levelData);
     }
@@ -11894,11 +12287,13 @@ async function startEnterLevelWithData(levelData) {
 
     var levelId = levelData.id || 'unknown';
 
-    // Integrity gate
-    var integrityErrors = verifyLevelIntegrity(levelData, levelId);
-    if (integrityErrors.length > 0) {
-        console.error('Level ' + levelId + ' failed integrity (' + integrityErrors.length + ' errors), aborting entry');
-        return;
+    // Integrity gate — skip for dungeon type (room-based structure)
+    if (levelData.type !== 'dungeon') {
+        var integrityErrors = verifyLevelIntegrity(levelData, levelId);
+        if (integrityErrors.length > 0) {
+            console.error('Level ' + levelId + ' failed integrity (' + integrityErrors.length + ' errors), aborting entry');
+            return;
+        }
     }
 
     var lw = levelData.world.widthTiles;
@@ -11992,7 +12387,7 @@ async function startEnterLevelWithData(levelData) {
             w: lts, h: lts
         },
         camera: { x: 0, y: 0 },
-        fadeIn: 1.0,
+        fadeIn: 0,
         complete: false,
         failed: false,
         screenShake: 0,
@@ -12027,7 +12422,15 @@ async function startEnterLevelWithData(levelData) {
         victoryTimer: 0,
         // Co-op room
         _instanceId: levelData.instanceId || null,
-        _isHost: false
+        _isHost: false,
+        // Dungeon (multi-room) state
+        dungeon:        levelData.type === 'dungeon' ? levelData : null,
+        currentRoomId:  levelData.type === 'dungeon' ? (levelData.entryRoomId || 0) : null,
+        dungeonCleared: levelData.type === 'dungeon' ? {} : null,
+        dungeonDoors:   levelData.type === 'dungeon' ? levelData.rooms[levelData.entryRoomId || 0].doors : null,
+        transition:     null,
+        dungeonRoomMsg: null,
+        dungeonMsgTimer: 0
     };
 
     game.mode = 'LEVEL';
@@ -12335,6 +12738,21 @@ function updateLevel(dt) {
 
     if (L.complete || L.failed) return;
 
+    // ── Dungeon room-message timer ──────────────────────────────
+    if (L.dungeon && L.dungeonMsgTimer > 0) {
+        L.dungeonMsgTimer -= dt;
+        if (L.dungeonMsgTimer <= 0) L.dungeonRoomMsg = null;
+    }
+
+    // ── Dungeon room transition tick ────────────────────────────
+    if (L.transition) {
+        L.transition.progress += dt / DUNGEON_TRANS_DURATION;
+        if (L.transition.progress >= 1) {
+            _finishRoomTransition(L);
+        }
+        return; // freeze all other updates during slide
+    }
+
     var lts = L.tileSize;
     var p = L.player;
     var baseSpeed = lts * 5;
@@ -12486,10 +12904,96 @@ function updateLevel(dt) {
         p.invTimer = 0.3;
     }
 
+    // ── Dungeon door detection ──────────────────────────────────
+    if (L.dungeon && !L.transition) {
+        var _pcx = Math.floor((p.x + p.w / 2) / lts);
+        var _pcy = Math.floor((p.y + p.h / 2) / lts);
+        var _pTile = (L.tilemap[_pcy] && L.tilemap[_pcy][_pcx]) || 0;
+        var _ROOM_W = L.dungeon.roomW, _ROOM_H = L.dungeon.roomH;
+        var _MID_X  = Math.floor(_ROOM_W / 2), _MID_Y = Math.floor(_ROOM_H / 2);
+
+        // World exit door (south door of entry room)
+        if (_pTile === DT_EXIT) {
+            L.complete = true;
+            game.levelState = 'COMPLETE';
+            game.progress.levelWins[L.id] = true;
+            if (L.seed) game.progress.levelWins[L.seed] = true;
+            finalizeLevelScore();
+            recordHighScore();
+            saveGame();
+            L.showResults = true;
+            L.resultsTimer = 0;
+            return;
+        }
+
+        // Door tiles (DT_DOOR = 6): figure out which direction
+        if (_pTile === DT_DOOR) {
+            var _dd = L.dungeonDoors;
+            var _transDir = null;
+            var _toRoomId = null;
+
+            // Determine direction by where player is (near which wall)
+            if (_pcy === 0 && _dd.n !== null)              { _transDir = 'n'; _toRoomId = _dd.n; }
+            else if (_pcy === _ROOM_H - 1 && _dd.s !== null) { _transDir = 's'; _toRoomId = _dd.s; }
+            else if (_pcx === _ROOM_W - 1 && _dd.e !== null) { _transDir = 'e'; _toRoomId = _dd.e; }
+            else if (_pcx === 0 && _dd.w !== null)           { _transDir = 'w'; _toRoomId = _dd.w; }
+
+            if (_transDir !== null && _toRoomId !== null) {
+                // Check if room is locked (has living enemies)
+                var _hasAlive = L.enemies.some(function(e) { return e.alive; });
+                var _curCleared = !_hasAlive || (L.dungeonCleared[L.currentRoomId]);
+                if (!_curCleared) {
+                    // Locked — push player back and flash message
+                    p.x -= dx * moveSpeed * dt * 3;
+                    p.y -= dy * moveSpeed * dt * 3;
+                    if (!L.dungeonRoomMsg) {
+                        L.dungeonRoomMsg = 'DEFEAT ALL ENEMIES!';
+                        L.dungeonMsgTimer = 2.0;
+                    }
+                } else {
+                    // Mark current room cleared if needed
+                    if (_hasAlive === false) L.dungeonCleared[L.currentRoomId] = true;
+                    // Snapshot from-room tilemap for the slide animation
+                    var _fromTilemap = L.tilemap.map(function(row) { return row.slice(); });
+                    var _fromArtFrames = L.artFrames ? L.artFrames.slice() : [];
+                    L.transition = {
+                        dir:          _transDir,
+                        fromRoomId:   L.currentRoomId,
+                        toRoomId:     _toRoomId,
+                        progress:     0,
+                        fromTilemap:  _fromTilemap,
+                        fromEnemies:  L.enemies.slice(),
+                        fromArtFrames: _fromArtFrames,
+                        playerStartX: p.x,
+                        playerStartY: p.y
+                    };
+                }
+            }
+        }
+    }
+
     // ── Enemy FSM loop ──────────────────────────────────────────
     // Host (or solo) runs full AI; non-host only runs hit/collision
-    var _runEnemyAI = (typeof MP === 'undefined' || !MP.isConnected() || !L._instanceId || L._isHost !== false);
+    // Always run enemy AI locally — each client controls enemies in their own current room.
+    // When both players share a room the host's ~6 Hz sync overwrites the guest's locally
+    // computed positions, keeping them in sync.  When players are in different rooms each
+    // client is the sole authority for their room's enemies, so AI must always run.
+    var _runEnemyAI = true;
     var pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
+
+    // Build a list of all players in the current room (local + remote co-op)
+    // Used so enemies target whoever is closest rather than only the local player.
+    var _allRoomPlayers = [{ cx: pcx, cy: pcy, isLocal: true }];
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        var _coopRemotes = MP.getLevelRemotes();
+        for (var _crId in _coopRemotes) {
+            var _cr = _coopRemotes[_crId];
+            if (!_cr._posReceived) continue;
+            // Only include remote players actually in this dungeon room (or non-dungeon levels)
+            if (L.dungeon && _cr.roomId !== null && _cr.roomId !== undefined && _cr.roomId !== L.currentRoomId) continue;
+            _allRoomPlayers.push({ cx: _cr.px + (p.w / 2), cy: _cr.py + (p.h / 2), isLocal: false });
+        }
+    }
 
     for (var i = 0; i < L.enemies.length; i++) {
         var e = L.enemies[i];
@@ -12499,7 +13003,14 @@ function updateLevel(dt) {
         if (e.attackCooldown > 0) e.attackCooldown -= dt;
 
         var ecx = e.x + e.w / 2, ecy = e.y + e.h / 2;
-        var distToPlayer = Math.hypot(pcx - ecx, pcy - ecy);
+
+        // Find nearest player among all in-room players (local + co-op remotes)
+        var _nearTcx = pcx, _nearTcy = pcy, _nearDist = Math.hypot(pcx - ecx, pcy - ecy);
+        for (var _npi = 1; _npi < _allRoomPlayers.length; _npi++) {
+            var _npd = Math.hypot(_allRoomPlayers[_npi].cx - ecx, _allRoomPlayers[_npi].cy - ecy);
+            if (_npd < _nearDist) { _nearDist = _npd; _nearTcx = _allRoomPlayers[_npi].cx; _nearTcy = _allRoomPlayers[_npi].cy; }
+        }
+        var distToPlayer = _nearDist;
 
         if (_runEnemyAI) {
         // Knockback (with wall-pin cancel)
@@ -12546,7 +13057,7 @@ function updateLevel(dt) {
             // Boss movement (phase 2+)
             if (e.bossPhase >= 2) {
                 var bmSpeed = lts * (e.bossPhase >= 3 ? 1.2 : 0.6);
-                var btDx = pcx - ecx, btDy = pcy - ecy;
+                var btDx = _nearTcx - ecx, btDy = _nearTcy - ecy;
                 var btLen = Math.hypot(btDx, btDy);
                 if (btLen > lts * 3) {
                     btDx /= btLen; btDy /= btLen;
@@ -12564,7 +13075,7 @@ function updateLevel(dt) {
                 e.bossFireTimer = fireRate;
                 // Fire projectile patterns
                 var numProj = e.bossPhase >= 3 ? 5 : e.bossPhase >= 2 ? 3 : 2;
-                var baseAngle = Math.atan2(pcy - ecy, pcx - ecx);
+                var baseAngle = Math.atan2(_nearTcy - ecy, _nearTcx - ecx);
                 var spread = e.bossPhase >= 3 ? 0.8 : 0.4;
                 for (var bp = 0; bp < numProj; bp++) {
                     var pAngle2 = baseAngle + (bp - (numProj - 1) / 2) * (spread / Math.max(1, numProj - 1));
@@ -12602,7 +13113,7 @@ function updateLevel(dt) {
                         patrolLeft: minionX - lts * 4,
                         patrolRight: minionX + lts * 4,
                         patrolCx: minionX, patrolCy: minionY,
-                        facingDir: pcx > minionX ? 1 : -1,
+                        facingDir: _nearTcx > minionX ? 1 : -1,
                         animTimer: 0,
                         state: 'CHASE',
                         stateTimer: 0, stunTimer: 0,
@@ -12635,7 +13146,7 @@ function updateLevel(dt) {
         } else if (e.state === 'CHASE') {
             var chaseMult = e.runner ? ENEMY_CHASE_SPEED_MULT * 1.5 : ENEMY_CHASE_SPEED_MULT;
             var chaseSpeed = lts * chaseMult;
-            var toDx = pcx - ecx, toDy = pcy - ecy;
+            var toDx = _nearTcx - ecx, toDy = _nearTcy - ecy;
             var toLen = Math.hypot(toDx, toDy);
             if (toLen > 1) {
                 toDx /= toLen; toDy /= toLen;
@@ -12655,8 +13166,8 @@ function updateLevel(dt) {
         } else if (e.state === 'ATTACK') {
             if (e.stateTimer >= ENEMY_ATTACK_WINDUP) {
                 if (e.ranged) {
-                    // Fire projectile towards player
-                    var fDir = Math.atan2(pcy - ecy, pcx - ecx);
+                    // Fire projectile towards nearest player
+                    var fDir = Math.atan2(_nearTcy - ecy, _nearTcx - ecx);
                     L.projectiles.push({
                         x: ecx, y: ecy,
                         vx: Math.cos(fDir) * PROJ_SPEED * lts,
@@ -12664,7 +13175,8 @@ function updateLevel(dt) {
                         life: 3.0
                     });
                 } else {
-                    // Melee damage
+                    // Melee damage — always check against the LOCAL player
+                    // (each client handles damage to themselves independently)
                     if (p.invTimer <= 0 && levelRectsOverlap(p.x, p.y, p.w, p.h, e.x - lts * 0.3, e.y - lts * 0.3, e.w + lts * 0.6, e.h + lts * 0.6)) {
                         p.hp -= 1;
                         p.damageTaken++;
@@ -12821,7 +13333,7 @@ function updateLevel(dt) {
     // ── Multiplayer level sync ──────────────────────────────────
     if (typeof MP !== 'undefined' && MP.isConnected() && L._instanceId) {
         // Send our position to other players in the room
-        MP.sendLevelPos(L._instanceId, p.x, p.y, p.direction, p.atkPhase, p.turtleId || 'leo');
+        MP.sendLevelPos(L._instanceId, p.x, p.y, p.direction, p.atkPhase, p.turtleId || 'leo', L.dungeon ? L.currentRoomId : undefined);
 
         // Apply incoming position updates from remote players
         var _lvlPosUpdates = MP.drainLevelPos();
@@ -12833,11 +13345,13 @@ function updateLevel(dt) {
                     console.log('[level] new remote player appeared:', _lpu.entityId, 'at', _lpu.px, _lpu.py);
                     _lvlR[_lpu.entityId] = { px: _lpu.px, py: _lpu.py, _rpx: _lpu.px, _rpy: _lpu.py,
                         facing: _lpu.facing || 's', atkPhase: 'IDLE', atkTimer: 0, frame: 0, tid: _lpu.tid || 'leo',
-                        displayName: _lpu.displayName || null, _posReceived: true };
+                        displayName: _lpu.displayName || null, roomId: _lpu.roomId !== undefined ? _lpu.roomId : null,
+                        _posReceived: true };
                 } else {
                     var _lr = _lvlR[_lpu.entityId];
                     if (!_lr._posReceived) console.log('[level] remote player first pos:', _lpu.entityId, 'at', _lpu.px, _lpu.py);
                     _lr.px = _lpu.px; _lr.py = _lpu.py; _lr.facing = _lpu.facing || 's';
+                    if (_lpu.roomId !== undefined) _lr.roomId = _lpu.roomId;
                     _lr._posReceived = true;
                     // Trigger windup animation if attack phase changed to WINDUP
                     if (_lpu.atkPhase === 'WINDUP' && _lr.atkPhase !== 'WINDUP') {
@@ -13026,18 +13540,25 @@ function updateLevel(dt) {
         }
     }
 
-    // ── Camera (center level when smaller than viewport) ───────
-    var cw = CANVAS_WIDTH, ch = CANVAS_HEIGHT;
-    var worldW = L.width * lts, worldH = L.height * lts;
-    if (worldW <= cw) {
-        L.camera.x = -(cw - worldW) / 2;
+    // ── Camera ──────────────────────────────────────────────────
+    if (L.dungeon) {
+        // Dungeon rooms are exactly screen-sized — center them
+        var _dungW = L.width * lts, _dungH = L.height * lts;
+        L.camera.x = -Math.max(0, (CANVAS_WIDTH  - _dungW) / 2);
+        L.camera.y = -Math.max(0, (CANVAS_HEIGHT - _dungH) / 2);
     } else {
-        L.camera.x = Math.max(0, Math.min(worldW - cw, p.x - cw / 2));
-    }
-    if (worldH <= ch) {
-        L.camera.y = -(ch - worldH) / 2;
-    } else {
-        L.camera.y = Math.max(0, Math.min(worldH - ch, p.y - ch / 2));
+        var cw = CANVAS_WIDTH, ch = CANVAS_HEIGHT;
+        var worldW = L.width * lts, worldH = L.height * lts;
+        if (worldW <= cw) {
+            L.camera.x = -(cw - worldW) / 2;
+        } else {
+            L.camera.x = Math.max(0, Math.min(worldW - cw, p.x - cw / 2));
+        }
+        if (worldH <= ch) {
+            L.camera.y = -(ch - worldH) / 2;
+        } else {
+            L.camera.y = Math.max(0, Math.min(worldH - ch, p.y - ch / 2));
+        }
     }
 }
 
@@ -13063,6 +13584,388 @@ function levelRectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
 }
 
+// ── Dungeon draw helpers ────────────────────────────────────────
+
+function _drawDungeonPlayer(L, cx, cy, ts) {
+    var p = L.player;
+    var psx = p.x - cx, psy = p.y - cy;
+    var turtleScale = (ts * 0.75) / 16;
+    var atkFrame = (p.atkPhase === 'ACTIVE' && p.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
+    var turtleId = p.turtleId || 'leo';
+    var weaponBehind = (turtleId === 'donnie' && p.direction === 'up');
+    if (p.invTimer > 0 && Math.floor(p.invTimer * 12) % 2 === 0) return; // flicker
+    if (weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
+    NES.drawTurtleSprite(ctx, psx, psy, p.direction, p.animFrame, turtleId, turtleScale);
+    if (!weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
+}
+
+function _drawDungeonEnemies(L, cx, cy, ts) {
+    for (var i = 0; i < L.enemies.length; i++) {
+        var e = L.enemies[i];
+        if (!e.alive) continue;
+        var esx = e.x - cx, esy = e.y - cy;
+        if (e.stunTimer > 0 && Math.floor(e.stunTimer * 10) % 2 === 0) continue;
+        var bodyColor = e.ranged ? NES.PAL.N : e.shield ? NES.PAL.G : e.runner ? NES.PAL.C : NES.PAL.R;
+        if (e.state === 'ATTACK') bodyColor = e.ranged ? NES.PAL.B : e.shield ? NES.PAL.L : NES.PAL.P;
+        var enemySpriteKey = e.ranged ? 'enemyRanged' : e.shield ? 'enemyShield' : e.runner ? 'enemyRunner' : 'enemyFoot';
+        var enemySprite = game.sprites[enemySpriteKey];
+        var animFrame2 = (Math.floor(e.animTimer / 0.2) % 2) + 1;
+        var patBase = (e.runner || e.ranged) ? 'enemyCyborg' : 'enemyDemon';
+        var patKey  = patBase + 'Walk' + animFrame2;
+        var nesPat  = NES.PATTERNS[patKey];
+        if (enemySprite) {
+            ctx.save();
+            if (e.facingDir < 0) { ctx.translate(esx + e.w, esy); ctx.scale(-1, 1); ctx.drawImage(enemySprite, 0, 0, e.w, e.h); }
+            else { ctx.drawImage(enemySprite, esx, esy, e.w, e.h); }
+            ctx.restore();
+        } else if (nesPat) {
+            var nesScale = e.w / nesPat[0].length;
+            ctx.save(); ctx.imageSmoothingEnabled = false;
+            if (e.facingDir < 0) { ctx.translate(esx + e.w, esy); ctx.scale(-1, 1); NES.drawSprite(ctx, 0, 0, patKey, nesScale); }
+            else { NES.drawSprite(ctx, esx, esy, patKey, nesScale); }
+            ctx.restore();
+        } else {
+            ctx.fillStyle = bodyColor;
+            ctx.fillRect(esx + 2, esy + 2, e.w - 4, e.h - 4);
+            ctx.strokeStyle = NES.PAL.K; ctx.lineWidth = 2;
+            ctx.strokeRect(esx + 2, esy + 2, e.w - 4, e.h - 4);
+        }
+        // HP bar
+        if (e.hp < e.maxHp) {
+            ctx.fillStyle = '#111'; ctx.fillRect(esx, esy - 5, e.w, 3);
+            ctx.fillStyle = '#22bb44'; ctx.fillRect(esx, esy - 5, e.w * (e.hp / e.maxHp), 3);
+        }
+        // Shield indicator
+        if (e.shield && e.shieldUp) {
+            ctx.strokeStyle = '#aaddff'; ctx.lineWidth = 2;
+            ctx.strokeRect(esx, esy, e.w, e.h);
+        }
+    }
+    // Hit sparks
+    for (var hi = 0; hi < L.hitSparks.length; hi++) {
+        var spark = L.hitSparks[hi];
+        var spkx = spark.x - cx, spky = spark.y - cy;
+        var alpha = spark.life / 0.12;
+        var sz = 6 + (1 - alpha) * 8;
+        ctx.fillStyle = 'rgba(255,255,200,' + alpha + ')';
+        ctx.fillRect(spkx - sz/2, spky - sz/2, sz, sz);
+    }
+}
+
+function _drawDungeonHUD(L, ts) {
+    var p = L.player;
+    // HP bar
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(8, 8, 150, 28);
+    NES.drawTurtleSprite(ctx, 10, 9, 'down', 0, p.turtleId || 'leo', 1.6);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px monospace'; ctx.fillText('HP:', 38, 24);
+    for (var h = 0; h < p.maxHp; h++) {
+        ctx.fillStyle = h < p.hp ? '#22bb44' : '#333333';
+        ctx.fillRect(62 + h * 18, 14, 15, 12);
+    }
+    // Score
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(CANVAS_WIDTH - 130, 8, 122, 24);
+    ctx.fillStyle = '#fcfc00'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
+    ctx.fillText('SCORE: ' + L.score, CANVAS_WIDTH - 14, 24); ctx.textAlign = 'left';
+    // Room name banner
+    var dungeon = L.dungeon;
+    var roomNum = (L.currentRoomId || 0) + 1;
+    var roomTotal = dungeon ? dungeon.rooms.length : 1;
+    var curRoom = dungeon ? dungeon.rooms[L.currentRoomId || 0] : null;
+    var roomLabel = curRoom && curRoom.isEntry ? 'ENTRANCE' : curRoom && curRoom.isBoss ? 'BOSS ROOM' : 'ROOM ' + roomNum + '/' + roomTotal;
+    var bannerName = dungeon ? ((dungeon.theme === 'gallery' && dungeon.artistName) ? dungeon.artistName.toUpperCase() + ' - ' + roomLabel : (dungeon.name || '').toUpperCase() + ' - ' + roomLabel) : (L.data.name || '').toUpperCase();
+    var bannerW = Math.max(160, bannerName.length * 7 + 20);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(CANVAS_WIDTH/2 - bannerW/2, 4, bannerW, 18);
+    ctx.fillStyle = dungeon && dungeon.theme === 'gallery' ? '#ff88ff' : '#00ff00';
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(bannerName, CANVAS_WIDTH/2, 16); ctx.textAlign = 'left';
+    // Point popups
+    for (var popi = 0; popi < L.pointPopups.length; popi++) {
+        var pop = L.pointPopups[popi];
+        var popx = pop.x - L.camera.x, popy = pop.y - L.camera.y;
+        var popAlpha = Math.min(1.0, pop.life);
+        var pr2 = parseInt(pop.color.slice(1,3),16), pg2 = parseInt(pop.color.slice(3,5),16), pb2 = parseInt(pop.color.slice(5,7),16);
+        ctx.fillStyle = 'rgba(' + pr2 + ',' + pg2 + ',' + pb2 + ',' + popAlpha + ')';
+        ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(pop.text, popx, popy); ctx.textAlign = 'left';
+    }
+    // Item tracker
+    var itemY = 36;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(8, itemY, 112, 14);
+    for (var iti = 0; iti < 10; iti++) {
+        var itId = SPECIAL_ITEMS[iti].id;
+        ctx.fillStyle = game.progress.collectedItems[itId] ? SPECIAL_ITEMS[iti].color : '#333333';
+        ctx.fillRect(12 + iti * 11, itemY + 3, 8, 8);
+    }
+    // Locked-room message
+    if (L.dungeonRoomMsg && L.dungeonMsgTimer > 0) {
+        var msgAlpha = Math.min(1, L.dungeonMsgTimer);
+        ctx.fillStyle = 'rgba(0,0,0,' + (msgAlpha * 0.75) + ')';
+        ctx.fillRect(CANVAS_WIDTH/2 - 130, CANVAS_HEIGHT/2 - 16, 260, 32);
+        ctx.fillStyle = 'rgba(255,80,80,' + msgAlpha + ')';
+        ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(L.dungeonRoomMsg, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 4);
+        ctx.textAlign = 'left';
+    }
+    // Gallery splash
+    if (L.gallerySplash > 0) {
+        var sA = Math.min(1, L.gallerySplash);
+        ctx.fillStyle = 'rgba(0,0,0,' + (sA * 0.8) + ')'; ctx.fillRect(0, CANVAS_HEIGHT/2 - 40, CANVAS_WIDTH, 80);
+        ctx.fillStyle = 'rgba(255,136,255,' + sA + ')'; ctx.font = 'bold 16px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('GALLERY OF', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 12);
+        ctx.fillStyle = 'rgba(252,252,0,' + sA + ')'; ctx.font = 'bold 20px monospace';
+        ctx.fillText((L.artistName||'').toUpperCase(), CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 18);
+        ctx.textAlign = 'left';
+    }
+    // Fail / results / victory overlays
+    if (L.failed) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, CANVAS_HEIGHT/2 - 28, CANVAS_WIDTH, 56);
+        ctx.fillStyle = '#ff4444'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(BRAND.title, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 8);
+        ctx.fillStyle = '#ff6666'; ctx.font = 'bold 18px monospace';
+        ctx.fillText('YOU LOSE', CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 16); ctx.textAlign = 'left';
+    }
+    if (L.showResults) { drawResultsScreen(L); }
+}
+
+function _drawDungeonMiniMap(L, ts) {
+    if (!L.dungeon) return;
+    var rooms = L.dungeon.rooms;
+    var numRooms = rooms.length;
+    var mmSize   = 10; // px per room cell
+    var mmPad    = 4;
+    var mmW      = mmSize * 3 + mmPad * 2; // max 3 columns (branch)
+    var mmH      = mmSize * numRooms + mmPad * 2;
+    var mmX      = CANVAS_WIDTH - mmW - 8;
+    var mmY      = 40;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(mmX - 2, mmY - 2, mmW + 4, mmH + 4);
+
+    // Compute layout positions for each room
+    // Rooms 0..mainChain-1 are in column 1 (x=1), branch is in column 2 (x=2)
+    var hasBranch = L.dungeon.rooms.some(function(r) { return r.doors && (r.doors.e !== null || r.doors.w !== null) && !r.isEntry; });
+    for (var ri = 0; ri < numRooms; ri++) {
+        var room = rooms[ri];
+        var col = 1; // default middle column
+        if (hasBranch && room.doors && room.doors.w !== null && !room.isEntry) col = 2; // east branch room
+        var row = ri < numRooms - 1 ? (numRooms - 1 - ri) : 0; // entry at bottom (row = numRooms-1)
+        // entry = row numRooms-1 (bottom), boss = row 0 (top)
+        row = numRooms - 1 - ri;
+
+        var explored = (L.dungeonCleared[ri] || ri === L.currentRoomId);
+        var isCurrent = (ri === L.currentRoomId);
+
+        var rx = mmX + mmPad + (col - 1) * (mmSize + 2);
+        var ry = mmY + mmPad + row * (mmSize + 2);
+
+        if (!explored && ri !== L.currentRoomId) {
+            ctx.fillStyle = '#333333';
+        } else if (L.dungeonCleared[ri]) {
+            ctx.fillStyle = '#224422';
+        } else if (room.isBoss) {
+            ctx.fillStyle = '#442244';
+        } else if (room.isEntry) {
+            ctx.fillStyle = '#224444';
+        } else {
+            ctx.fillStyle = '#443322';
+        }
+        ctx.fillRect(rx, ry, mmSize, mmSize);
+
+        if (isCurrent) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(rx, ry, mmSize, mmSize);
+            // Player dot
+            ctx.fillStyle = '#ffff00';
+            ctx.fillRect(rx + mmSize/2 - 2, ry + mmSize/2 - 2, 4, 4);
+        }
+
+        // Door connector lines between rooms
+        if (room.doors && room.doors.n !== null) {
+            ctx.strokeStyle = explored ? '#558855' : '#444444';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(rx + mmSize/2, ry);
+            ctx.lineTo(rx + mmSize/2, ry - 2);
+            ctx.stroke();
+        }
+    }
+    // Label
+    ctx.fillStyle = '#aaaaaa'; ctx.font = '7px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('MAP', mmX + mmW/2, mmY - 4); ctx.textAlign = 'left';
+}
+
+// Helper: draw one room's tilemap with an x/y pixel offset
+function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
+    var ts = L.tileSize;
+    var cx = L.camera.x - offsetX, cy = L.camera.y - offsetY;
+    var RW = L.dungeon.roomW, RH = L.dungeon.roomH;
+    var themeKeys = LEVEL_SPRITE_KEYS[L.data.theme] || null;
+    var theme = L.data.theme;
+    var nesWall = theme === 'sewer'   ? 'sewerWall'   :
+                  theme === 'street'  ? 'streetWall'  :
+                  theme === 'dock'    ? 'dockWall'    :
+                  theme === 'gallery' ? 'galleryWall' : 'sewerWall';
+    var nesFloor = theme === 'sewer'   ? 'sewerFloor'   :
+                   theme === 'street'  ? 'streetFloor'  :
+                   theme === 'dock'    ? 'dockFloor'    :
+                   theme === 'gallery' ? 'galleryFloor' : 'sewerFloor';
+    var wallSprite  = themeKeys ? game.sprites[themeKeys.wall]  : null;
+    var floorSprite = themeKeys ? game.sprites[themeKeys.floor] : null;
+
+    // Theme accent colours
+    var accentWall    = theme === 'gallery' ? '#8855aa' :
+                        theme === 'dock'    ? '#2a4a6a' :
+                        theme === 'street'  ? '#44332a' : '#222244';
+    var accentPillar  = theme === 'gallery' ? '#cc9933' :
+                        theme === 'dock'    ? '#556677' : '#998844';
+    var carpetColor   = theme === 'gallery' ? 'rgba(100,40,120,0.55)' :
+                        theme === 'dock'    ? 'rgba(20,60,90,0.55)'   : 'rgba(140,20,20,0.55)';
+
+    var hzInfo = THEME_HAZARD[theme];
+    var now = Date.now();
+
+    // Thick border ring around the room (Zelda-style)
+    var roomPxW = RW * ts - cx * 0, roomPxH = RH * ts;
+    // (border is just the wall tiles themselves)
+
+    for (var ty = 0; ty < RH; ty++) {
+        for (var tx = 0; tx < RW; tx++) {
+            var px = tx * ts - cx;
+            var py = ty * ts - cy;
+            if (px > CANVAS_WIDTH + ts || px < -ts || py > CANVAS_HEIGHT + ts || py < -ts) continue;
+            var tileId = (tilemap[ty] && tilemap[ty][tx]) || 0;
+
+            // ── Floor base for all non-wall tiles ──────────────
+            if (tileId !== DT_WALL) {
+                if (floorSprite) ctx.drawImage(floorSprite, px, py, ts, ts);
+                else NES.drawTileStretched(ctx, px, py, ts, ts, nesFloor);
+            }
+
+            if (tileId === DT_WALL) {
+                // Stone wall
+                if (wallSprite) {
+                    ctx.drawImage(wallSprite, px, py, ts, ts);
+                } else {
+                    NES.drawTileStretched(ctx, px, py, ts, ts, nesWall);
+                }
+                // Dark inner edge shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.30)';
+                ctx.fillRect(px, py + ts - 3, ts, 3);
+                ctx.fillRect(px + ts - 3, py, 3, ts);
+            } else if (tileId === DT_HAZARD) {
+                var hzPulse = 0.38 + Math.sin(now / 280) * 0.14;
+                var hzCol = theme === 'sewer' ? NES.PAL.C : theme === 'dock' ? NES.PAL.N : theme === 'gallery' ? NES.PAL.P : NES.PAL.T;
+                ctx.globalAlpha = hzPulse;
+                ctx.fillStyle = hzCol;
+                ctx.fillRect(px + 3, py + 3, ts - 6, ts - 6);
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold ' + Math.floor(ts * 0.38) + 'px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('!', px + ts / 2, py + ts * 0.67);
+                ctx.textAlign = 'left';
+            } else if (tileId === DT_PILLAR) {
+                // Stone pillar / statue
+                ctx.fillStyle = accentPillar;
+                ctx.fillRect(px + 4, py + 2, ts - 8, ts - 4);
+                ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                ctx.fillRect(px + ts - 8, py + 2, 4, ts - 4); // right shadow
+                ctx.fillRect(px + 4, py + ts - 6, ts - 8, 4); // bottom shadow
+                ctx.fillStyle = '#ffffff44';
+                ctx.fillRect(px + 4, py + 2, 3, ts - 6); // left highlight
+                // Top cap
+                ctx.fillStyle = '#ccaa55';
+                ctx.fillRect(px + 3, py + 1, ts - 6, 5);
+            } else if (tileId === DT_CARPET) {
+                // Rug/carpet overlay
+                ctx.fillStyle = carpetColor;
+                ctx.fillRect(px + 2, py + 2, ts - 4, ts - 4);
+                // Subtle border detail
+                ctx.strokeStyle = 'rgba(255,220,150,0.25)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(px + 3, py + 3, ts - 6, ts - 6);
+            } else if (tileId === DT_PEDESTAL) {
+                // Item pedestal
+                ctx.fillStyle = '#c8a844';
+                ctx.fillRect(px + 6, py + ts - 8, ts - 12, 8);
+                ctx.fillRect(px + 4, py + 6, ts - 8, ts - 14);
+                // Inner recess
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(px + 6, py + 8, ts - 12, ts - 16);
+                // Glow
+                var pedPulse = 0.3 + Math.sin(now / 220) * 0.2;
+                ctx.fillStyle = 'rgba(255,240,80,' + pedPulse + ')';
+                ctx.beginPath();
+                ctx.arc(px + ts / 2, py + ts / 2, ts * 0.28, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (tileId === DT_DOOR) {
+                // Door archway frame
+                ctx.fillStyle = accentWall;
+                if (ty === 0) {
+                    // North door: archway on top edge
+                    ctx.fillRect(px, py, ts, 6);
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    ctx.fillRect(px, py, 3, ts);
+                    ctx.fillRect(px + ts - 3, py, 3, ts);
+                } else if (ty === RH - 1) {
+                    // South door
+                    ctx.fillRect(px, py + ts - 6, ts, 6);
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    ctx.fillRect(px, py, 3, ts);
+                    ctx.fillRect(px + ts - 3, py, 3, ts);
+                } else if (tx === 0) {
+                    // West door
+                    ctx.fillRect(px, py, 6, ts);
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    ctx.fillRect(px, py, ts, 3);
+                    ctx.fillRect(px, py + ts - 3, ts, 3);
+                } else if (tx === RW - 1) {
+                    // East door
+                    ctx.fillRect(px + ts - 6, py, 6, ts);
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    ctx.fillRect(px, py, ts, 3);
+                    ctx.fillRect(px, py + ts - 3, ts, 3);
+                }
+            } else if (tileId === DT_EXIT) {
+                // Exit door: glowing green archway
+                var exitPulse = 0.5 + Math.sin(now / 250) * 0.25;
+                if (ty === RH - 1) {
+                    ctx.fillStyle = 'rgba(30,200,80,' + (exitPulse * 0.7) + ')';
+                    ctx.fillRect(px, py, ts, ts);
+                    // Arrow hint
+                    ctx.fillStyle = '#22ff66';
+                    ctx.font = 'bold ' + Math.floor(ts * 0.45) + 'px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('▼', px + ts / 2, py + ts * 0.72);
+                    ctx.textAlign = 'left';
+                }
+            }
+        }
+    }
+
+    // Art frames (gallery)
+    if (artFrames && artFrames.length > 0) {
+        for (var afi = 0; afi < artFrames.length; afi++) {
+            var af = artFrames[afi];
+            var afx = af.x * ts - cx, afy = af.y * ts - cy;
+            if (afx < -ts || afx > CANVAS_WIDTH + ts || afy < -ts || afy > CANVAS_HEIGHT + ts) continue;
+            ctx.fillStyle = '#c8a050';
+            ctx.fillRect(afx + 4, afy + 2, ts - 8, ts * 0.6);
+            var artSeed = seedHashRT((L.artistId || 'art') + '_' + afi);
+            var artRng = mulberry32RT(artSeed);
+            var r = Math.floor(artRng() * 128 + 80), g2 = Math.floor(artRng() * 128 + 80), b2 = Math.floor(artRng() * 128 + 80);
+            ctx.fillStyle = 'rgb(' + r + ',' + g2 + ',' + b2 + ')';
+            ctx.fillRect(afx + 6, afy + 4, ts - 12, ts * 0.6 - 4);
+            ctx.fillStyle = 'rgb(' + (255-r) + ',' + (255-g2) + ',' + (255-b2) + ')';
+            var pt = Math.floor(artRng() * 3);
+            if (pt === 0) { ctx.beginPath(); ctx.arc(afx + ts/2, afy + ts*0.3, ts*0.12, 0, Math.PI*2); ctx.fill(); }
+            else if (pt === 1) { ctx.fillRect(afx + ts*0.3, afy + ts*0.15, ts*0.4, ts*0.3); }
+            else { ctx.beginPath(); ctx.moveTo(afx + ts/2, afy+6); ctx.lineTo(afx+ts*0.7, afy+ts*0.5); ctx.lineTo(afx+ts*0.3, afy+ts*0.5); ctx.closePath(); ctx.fill(); }
+        }
+    }
+}
+
 function drawLevel() {
     var L = game.level;
     if (!L) return;
@@ -13077,6 +13980,126 @@ function drawLevel() {
 
     ctx.fillStyle = NES.PAL.K;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    // ── Dungeon: screen-slide transition between rooms ──────────
+    if (L.dungeon && L.transition) {
+        var tr = L.transition;
+        var t  = Math.min(1, tr.progress);
+        // Ease in-out
+        var ease = t < 0.5 ? 2*t*t : -1 + (4 - 2*t) * t;
+        var RPXW = L.dungeon.roomW * ts;
+        var RPXH = L.dungeon.roomH * ts;
+        var dir  = tr.dir;
+
+        var fromOx = 0, fromOy = 0, toOx = 0, toOy = 0;
+        if (dir === 'n') { fromOy =  ease * RPXH;       toOy = -(1 - ease) * RPXH; }
+        else if (dir === 's') { fromOy = -ease * RPXH;  toOy =  (1 - ease) * RPXH; }
+        else if (dir === 'e') { fromOx = -ease * RPXW;  toOx =  (1 - ease) * RPXW; }
+        else if (dir === 'w') { fromOx =  ease * RPXW;  toOx = -(1 - ease) * RPXW; }
+
+        // Draw from-room (sliding away)
+        _drawDungeonRoom(L, tr.fromTilemap, tr.fromArtFrames, fromOx, fromOy);
+
+        // Temporarily swap in the to-room tilemap for drawing
+        var _saveTm = L.tilemap; var _saveAf = L.artFrames;
+        var toRoom = L.dungeon.rooms[tr.toRoomId];
+        L.tilemap   = toRoom.tilemap;
+        L.artFrames = toRoom.artFrames || [];
+        _drawDungeonRoom(L, toRoom.tilemap, toRoom.artFrames || [], toOx, toOy);
+        L.tilemap   = _saveTm;
+        L.artFrames = _saveAf;
+
+        // Draw player sliding with from-room
+        var _pp = L.player;
+        var _psx = _pp.x - L.camera.x + fromOx;
+        var _psy = _pp.y - L.camera.y + fromOy;
+        var _pTid = _pp.turtleId || 'leo';
+        var _pScale = (ts * 0.75) / 16;
+        NES.drawTurtleSprite(ctx, _psx, _psy, _pp.direction, 0, _pTid, _pScale);
+
+        // Draw remote players that are in the from-room, sliding with it
+        if (typeof MP !== 'undefined' && MP.isConnected()) {
+            var _trRems = MP.getLevelRemotes();
+            for (var _trId in _trRems) {
+                var _trRem = _trRems[_trId];
+                if (!_trRem._posReceived) continue;
+                if (_trRem.roomId !== null && _trRem.roomId !== undefined && _trRem.roomId !== tr.fromRoomId) continue;
+                var _trx = (_trRem._rpx !== undefined ? _trRem._rpx : _trRem.px) + fromOx;
+                var _try2 = (_trRem._rpy !== undefined ? _trRem._rpy : _trRem.py) + fromOy;
+                NES.drawTurtleSprite(ctx, _trx, _try2, _trRem.facing || 's', _trRem.frame || 0, _trRem.tid || 'leo', _pScale);
+                if (_trRem.displayName) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.font = 'bold 7px monospace';
+                    var _trNW = ctx.measureText(_trRem.displayName).width + 4;
+                    ctx.fillRect(_trx + ts/2 - _trNW/2, _try2 - 14, _trNW, 9);
+                    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
+                    ctx.fillText(_trRem.displayName, _trx + ts/2, _try2 - 7); ctx.textAlign = 'left';
+                }
+            }
+        }
+
+        // HUD stays on top (drawn after return in the normal path)
+        // Just do fade + HUD here
+        if (L.fadeIn > 0) {
+            ctx.fillStyle = 'rgba(0,0,0,' + L.fadeIn + ')';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        }
+        _drawDungeonHUD(L, ts);
+        return;
+    }
+
+    // ── Dungeon: normal single-room draw ────────────────────────
+    if (L.dungeon) {
+        _drawDungeonRoom(L, L.tilemap, L.artFrames, 0, 0);
+
+        // Special item pedestal (if not collected)
+        if (L.specialItemPos && !L.specialItemCollected && L.specialItem) {
+            var sip = L.specialItemPos;
+            var sipx = sip.x - cx, sipy = sip.y - cy;
+            var pulse = Math.sin(Date.now() / 200) * 0.3 + 0.7;
+            var itemDef = L.specialItem;
+            ctx.fillStyle = 'rgba(' + parseInt(itemDef.color.slice(1,3),16) + ',' + parseInt(itemDef.color.slice(3,5),16) + ',' + parseInt(itemDef.color.slice(5,7),16) + ',' + (pulse*0.4) + ')';
+            ctx.beginPath(); ctx.arc(sipx + sip.w/2, sipy + sip.h/2, ts*0.7, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = itemDef.color;
+            ctx.beginPath(); ctx.arc(sipx + sip.w/2, sipy + sip.h/2, ts*0.3*pulse, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#ffffff88';
+            ctx.beginPath(); ctx.arc(sipx + sip.w*0.35, sipy + sip.h*0.35, ts*0.1, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 7px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(itemDef.name ? itemDef.name.toUpperCase() : 'ITEM', sipx + sip.w/2, sipy - 4);
+            ctx.textAlign = 'left';
+        }
+
+        _drawDungeonEnemies(L, cx, cy, ts);
+        // Remote co-op players in dungeon (only those in the same room)
+        if (typeof MP !== 'undefined' && MP.isConnected()) {
+            var _dLvlMap = MP.getLevelRemotes();
+            for (var _dLvlId in _dLvlMap) {
+                var _dRem = _dLvlMap[_dLvlId];
+                if (!_dRem._posReceived) continue;
+                // Skip players in a different dungeon room
+                if (L.dungeon && _dRem.roomId !== null && _dRem.roomId !== undefined && _dRem.roomId !== L.currentRoomId) continue;
+                var _drx = (_dRem._rpx !== undefined ? _dRem._rpx : _dRem.px) - cx;
+                var _dry = (_dRem._rpy !== undefined ? _dRem._rpy : _dRem.py) - cy;
+                var _dScale = (ts * 0.75) / 16;
+                var _dTid = _dRem.tid || 'leo';
+                NES.drawTurtleSprite(ctx, _drx, _dry, _dRem.facing || 's', _dRem.frame || 0, _dTid, _dScale);
+                if (_dRem.displayName) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.font = 'bold 7px monospace';
+                    var _dNW = ctx.measureText(_dRem.displayName).width + 4;
+                    ctx.fillRect(_drx + ts/2 - _dNW/2, _dry - 14, _dNW, 9);
+                    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
+                    ctx.fillText(_dRem.displayName, _drx + ts/2, _dry - 7); ctx.textAlign = 'left';
+                }
+            }
+        }
+        _drawDungeonPlayer(L, cx, cy, ts);
+        _drawDungeonHUD(L, ts);
+        _drawDungeonMiniMap(L, ts);
+        return;
+    }
+
+    // ── Legacy flat-level draw (non-dungeon) ────────────────────
 
     // Tilemap
     var sx0 = Math.floor(cx / ts);

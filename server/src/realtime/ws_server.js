@@ -379,7 +379,7 @@ function initWsServer(wss) {
         case 'level_pos': {
           if (typeof msg.instanceId !== 'string') break;
           // Relay position to all room members except sender
-          levelRoom.broadcast(msg.instanceId, {
+          const levelPosMsg = {
             t: 'level_pos',
             instanceId: msg.instanceId,
             entityId,
@@ -388,7 +388,9 @@ function initWsServer(wss) {
             facing: msg.facing,
             atkPhase: msg.atkPhase,
             tid: msg.tid
-          }, entityId);
+          };
+          if (msg.roomId !== undefined && msg.roomId !== null) levelPosMsg.roomId = msg.roomId;
+          levelRoom.broadcast(msg.instanceId, levelPosMsg, entityId);
           break;
         }
 
