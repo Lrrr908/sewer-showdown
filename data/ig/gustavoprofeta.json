@@ -1,0 +1,37 @@
+{
+  "artistId": "gustavoprofeta",
+  "artistName": "GUSTAVOPROFETA",
+  "updatedAt": "2026-03-10T00:14:04.711Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/Cv9t92Vgaxy/",
+      "authorName": "GUSTAVOPROFETA",
+      "authorUrl": "https://www.instagram.com/gustavoprofeta/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/Cv9t92Vgaxy.jpg",
+      "openUrl": "https://www.instagram.com/p/Cv9t92Vgaxy/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:14:04.711Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/Cvxeif5vLSm/",
+      "authorName": "GUSTAVOPROFETA",
+      "authorUrl": "https://www.instagram.com/gustavoprofeta/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/Cvxeif5vLSm.jpg",
+      "openUrl": "https://www.instagram.com/p/Cvxeif5vLSm/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:14:04.711Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DTOj08EgUSP/",
+      "authorName": "GUSTAVOPROFETA",
+      "authorUrl": "https://www.instagram.com/gustavoprofeta/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DTOj08EgUSP.jpg",
+      "openUrl": "https://www.instagram.com/p/DTOj08EgUSP/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:14:04.711Z"
+    }
+  ]
+}

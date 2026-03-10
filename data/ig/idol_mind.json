@@ -1,0 +1,37 @@
+{
+  "artistId": "idol_mind",
+  "artistName": "IDOL MIND",
+  "updatedAt": "2026-03-10T00:27:57.838Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/DVRJkxQAlyx/",
+      "authorName": "IDOL MIND",
+      "authorUrl": "https://www.instagram.com/idol.mind/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVRJkxQAlyx.jpg",
+      "openUrl": "https://www.instagram.com/p/DVRJkxQAlyx/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:27:57.838Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DU_uUJTAqF1/",
+      "authorName": "IDOL MIND",
+      "authorUrl": "https://www.instagram.com/idol.mind/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DU_uUJTAqF1.jpg",
+      "openUrl": "https://www.instagram.com/p/DU_uUJTAqF1/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:27:57.838Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DU9IWkhAvn9/",
+      "authorName": "IDOL MIND",
+      "authorUrl": "https://www.instagram.com/idol.mind/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DU9IWkhAvn9.jpg",
+      "openUrl": "https://www.instagram.com/p/DU9IWkhAvn9/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:27:57.838Z"
+    }
+  ]
+}

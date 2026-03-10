@@ -1,0 +1,37 @@
+{
+  "artistId": "turt_ferguson",
+  "artistName": "TURT FERGUSON",
+  "updatedAt": "2026-03-10T00:14:56.126Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/DVWFl_nAGJE/",
+      "authorName": "TURT FERGUSON",
+      "authorUrl": "https://www.instagram.com/turt_ferguson/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVWFl_nAGJE.jpg",
+      "openUrl": "https://www.instagram.com/p/DVWFl_nAGJE/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:14:56.126Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DVUdn-CEg01/",
+      "authorName": "TURT FERGUSON",
+      "authorUrl": "https://www.instagram.com/turt_ferguson/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVUdn-CEg01.jpg",
+      "openUrl": "https://www.instagram.com/p/DVUdn-CEg01/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:14:56.126Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DSkqX8XiRo3/",
+      "authorName": "TURT FERGUSON",
+      "authorUrl": "https://www.instagram.com/turt_ferguson/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DSkqX8XiRo3.jpg",
+      "openUrl": "https://www.instagram.com/p/DSkqX8XiRo3/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:14:56.126Z"
+    }
+  ]
+}

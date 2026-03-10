@@ -1,0 +1,37 @@
+{
+  "artistId": "whothefugawe",
+  "artistName": "WHOTHEFUGAWE",
+  "updatedAt": "2026-03-10T00:24:28.208Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/DTjbZOcCT1C/",
+      "authorName": "WHOTHEFUGAWE",
+      "authorUrl": "https://www.instagram.com/whothefugawe/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DTjbZOcCT1C.jpg",
+      "openUrl": "https://www.instagram.com/p/DTjbZOcCT1C/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:24:28.208Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DS_CIL4khwc/",
+      "authorName": "WHOTHEFUGAWE",
+      "authorUrl": "https://www.instagram.com/whothefugawe/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DS_CIL4khwc.jpg",
+      "openUrl": "https://www.instagram.com/p/DS_CIL4khwc/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:24:28.208Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DRTDT_XAaVx/",
+      "authorName": "WHOTHEFUGAWE",
+      "authorUrl": "https://www.instagram.com/whothefugawe/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DRTDT_XAaVx.jpg",
+      "openUrl": "https://www.instagram.com/p/DRTDT_XAaVx/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:24:28.208Z"
+    }
+  ]
+}

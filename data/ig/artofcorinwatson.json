@@ -1,0 +1,37 @@
+{
+  "artistId": "artofcorinwatson",
+  "artistName": "ARTOFCORINWATSON",
+  "updatedAt": "2026-03-10T00:23:43.659Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/DTGYbO5kjbM/",
+      "authorName": "ARTOFCORINWATSON",
+      "authorUrl": "https://www.instagram.com/artofcorinwatson/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DTGYbO5kjbM.jpg",
+      "openUrl": "https://www.instagram.com/p/DTGYbO5kjbM/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:23:43.659Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DVj_PD0j3Ll/",
+      "authorName": "ARTOFCORINWATSON",
+      "authorUrl": "https://www.instagram.com/artofcorinwatson/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DVj_PD0j3Ll.jpg",
+      "openUrl": "https://www.instagram.com/p/DVj_PD0j3Ll/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:23:43.659Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/DLZPB0pO0Eu/",
+      "authorName": "ARTOFCORINWATSON",
+      "authorUrl": "https://www.instagram.com/artofcorinwatson/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DLZPB0pO0Eu.jpg",
+      "openUrl": "https://www.instagram.com/p/DLZPB0pO0Eu/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:23:43.659Z"
+    }
+  ]
+}

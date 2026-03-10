@@ -270,8 +270,15 @@ async function main() {
     ];
     const vp = viewports[Math.floor(Math.random() * viewports.length)];
 
-    const browser = await chromium.launch({
+    // Use the real Chrome profile so existing Instagram login session is available.
+    // Chrome MUST be fully closed before running this script.
+    const CHROME_PROFILE = process.env.CHROME_PROFILE || '/tmp/chrome-scraper-profile';
+    const context = await chromium.launchPersistentContext(CHROME_PROFILE, {
         headless: false,
+        channel: 'chrome',
+        viewport: vp,
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
         args: [
             '--disable-blink-features=AutomationControlled',
             '--no-first-run',
@@ -279,17 +286,38 @@ async function main() {
         ]
     });
 
-    const context = await browser.newContext({
-        viewport: vp,
-        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        locale: 'en-US',
-        timezoneId: 'America/New_York',
-    });
-
     // Block unnecessary resources to reduce fingerprint and speed up
     await context.route('**/*.{woff,woff2,ttf}', route => route.abort());
 
     const page = await context.newPage();
+
+    // ── Verify Instagram login ────────────────────────────────────
+    console.log('Checking Instagram login status...');
+    await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await humanDelay(2, 4);
+
+    const isLoggedIn = await page.evaluate(() => {
+        return !document.querySelector('input[name="username"]');
+    });
+
+    if (!isLoggedIn) {
+        console.log('');
+        console.log('*** Instagram login required ***');
+        console.log('Please log in to Instagram in the browser window, then wait...');
+        console.log('');
+
+        await page.goto('https://www.instagram.com/accounts/login/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+        try {
+            await page.waitForFunction(() => !document.querySelector('input[name="username"]'), { timeout: 180000 });
+            await humanDelay(2, 4);
+            console.log('Logged in! Continuing...\n');
+        } catch (e) {
+            console.log('Login timed out — continuing anyway...\n');
+        }
+    } else {
+        console.log('Already logged in.\n');
+    }
 
     let success = 0, failed = 0, skipped = 0;
 
@@ -317,7 +345,7 @@ async function main() {
         }
     }
 
-    await browser.close();
+    await context.close();
 
     console.log('\n=== Summary ===');
     console.log('  Success: ' + success);

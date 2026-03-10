@@ -1,0 +1,37 @@
+{
+  "artistId": "dirtyyetti",
+  "artistName": "DIRTYYETTI",
+  "updatedAt": "2026-03-10T00:28:46.283Z",
+  "items": [
+    {
+      "postUrl": "https://www.instagram.com/p/DUEJ-pElLsI/",
+      "authorName": "DIRTYYETTI",
+      "authorUrl": "https://www.instagram.com/dirtyyetti/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/DUEJ-pElLsI.jpg",
+      "openUrl": "https://www.instagram.com/p/DUEJ-pElLsI/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:28:46.283Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/C3GEqE7LNiU/",
+      "authorName": "DIRTYYETTI",
+      "authorUrl": "https://www.instagram.com/dirtyyetti/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/C3GEqE7LNiU.jpg",
+      "openUrl": "https://www.instagram.com/p/C3GEqE7LNiU/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:28:46.283Z"
+    },
+    {
+      "postUrl": "https://www.instagram.com/p/C3Dfyo7rpyB/",
+      "authorName": "DIRTYYETTI",
+      "authorUrl": "https://www.instagram.com/dirtyyetti/",
+      "title": null,
+      "imageUrl": "data/ig-thumbs/C3Dfyo7rpyB.jpg",
+      "openUrl": "https://www.instagram.com/p/C3Dfyo7rpyB/",
+      "status": "local",
+      "fetchedAt": "2026-03-10T00:28:46.283Z"
+    }
+  ]
+}

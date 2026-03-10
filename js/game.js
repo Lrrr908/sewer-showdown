@@ -11014,6 +11014,13 @@ if (buildingOverlayEl) {
     });
 }
 
+// Clicking the canvas while the scoreboard is open closes it
+canvas.addEventListener('click', function() {
+    if (game.showScoreBoard) {
+        game.showScoreBoard = false;
+    }
+});
+
 // ============================================
 // FOCUS LOSS — clear input on blur/hidden to prevent stuck directions
 // ============================================
@@ -12104,8 +12111,10 @@ function finalizeLevelScore() {
 }
 
 function recordHighScore() {
+    var _hsName = (typeof MP !== 'undefined' && MP.displayName) ? MP.displayName : (game.activeTurtle || 'Player');
     var entry = {
         score: game.progress.score,
+        name: _hsName,
         date: new Date().toISOString().slice(0, 10),
         galleriesVisited: Object.keys(game.progress.galleriesVisited).length,
         levelsCleared: Object.keys(game.progress.levelWins).length,
@@ -13731,15 +13740,22 @@ function drawScoreBoard() {
         for (var si4 = 0; si4 < Math.min(hist.length, 10); si4++) {
             var entry = hist[si4];
             var ey = by2 + 44 + si4 * 20;
+            var rowColor = si4 === 0 ? '#fcfc00' : '#ffffff';
+            // Rank
             ctx.textAlign = 'left';
-            ctx.fillStyle = si4 === 0 ? '#fcfc00' : '#ffffff';
+            ctx.fillStyle = rowColor;
             var rank = (si4 + 1) + '.';
             if (si4 + 1 < 10) rank = ' ' + rank;
             ctx.fillText(rank, bx2 + 14, ey);
+            // Player name — use saved name, fall back to current display name for old entries
+            var _fallbackName = (typeof MP !== 'undefined' && MP.displayName) ? MP.displayName : (game.activeTurtle || 'Player');
+            var eName = (entry.name || _fallbackName).substring(0, 16);
+            ctx.fillStyle = si4 === 0 ? '#fcfc00' : '#aaddff';
+            ctx.fillText(eName, bx2 + 38, ey);
+            // Score (right-aligned at far edge)
             ctx.textAlign = 'right';
-            ctx.fillText(entry.score.toLocaleString(), cx2 + 40, ey);
-            ctx.fillStyle = '#888888';
-            ctx.fillText(entry.date || '', bx2 + bw2 - 14, ey);
+            ctx.fillStyle = rowColor;
+            ctx.fillText(entry.score.toLocaleString(), bx2 + bw2 - 10, ey);
         }
     }
 
@@ -13755,7 +13771,7 @@ function drawScoreBoard() {
     ctx.fillStyle = '#555555';
     ctx.font = '8px monospace';
     var blink4 = Math.floor(Date.now() / 500) % 2;
-    if (blink4) ctx.fillText('PRESS H OR ACTION TO CLOSE', cx2, by2 + bh2 + 16);
+    if (blink4) ctx.fillText('PRESS H, ACTION, OR TAP TO CLOSE', cx2, by2 + bh2 + 16);
     ctx.textAlign = 'left';
 }
 
