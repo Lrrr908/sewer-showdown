@@ -4819,11 +4819,24 @@ const SPRITE_MANIFEST = {
     dungWallGalleryB:  'sprites/dungeon/wall_gallery_b.png',
     dungWallGalleryC:  'sprites/dungeon/wall_gallery_c.png',
     dungWallGalleryTop:'sprites/dungeon/wall_gallery_top_a.png',
-    dungCarpetSewer:   'sprites/dungeon/carpet_sewer_a.png',
-    dungCarpetSewerB:  'sprites/dungeon/carpet_sewer_b.png',
-    dungCarpetSewerC:  'sprites/dungeon/carpet_sewer_c.png',
-    dungCarpetGallery: 'sprites/dungeon/carpet_gallery_a.png',
-    dungCarpetGalleryB:'sprites/dungeon/carpet_gallery_b.png',
+    // Horizontal (top/bottom) border tiles — scrollwork
+    dungHWallSewerA:   'sprites/dungeon/hwall_sewer_row2_a.png',
+    dungHWallSewerB:   'sprites/dungeon/hwall_sewer_row2_b.png',
+    dungHWallSewerC:   'sprites/dungeon/hwall_sewer_row2_c.png',
+    dungHWallSewerD:   'sprites/dungeon/hwall_sewer_row2_d.png',
+    dungHWallGalleryA: 'sprites/dungeon/hwall_gallery_row2_a.png',
+    dungHWallGalleryB: 'sprites/dungeon/hwall_gallery_row2_b.png',
+    // Corner tiles
+    dungCornerSewer:   'sprites/dungeon/corner_sewer_tl.png',
+    dungCornerGallery: 'sprites/dungeon/corner_gallery_tl.png',
+    // Carpet tiles
+    dungCarpetSewer:   'sprites/dungeon/carpet_sewer_pure_b.png',
+    dungCarpetSewerB:  'sprites/dungeon/carpet_sewer_pure_c.png',
+    dungCarpetSewerC:  'sprites/dungeon/carpet_sewer_pure_a.png',
+    dungCarpetEdgeL:   'sprites/dungeon/carpet_edge_l.png',
+    dungCarpetEdgeR:   'sprites/dungeon/carpet_edge_r.png',
+    dungCarpetGallery: 'sprites/dungeon/carpet_gallery_int_a.png',
+    dungCarpetGalleryB:'sprites/dungeon/carpet_gallery_int_b.png',
     dungUrn:           'sprites/dungeon/urn_sewer.png',
 
     // World map (optional — fallback to colored rects)
@@ -4865,9 +4878,13 @@ const OPTIONAL_SPRITE_KEYS = [
     // Dungeon tiles (13.x)
     'dungFloorA','dungFloorB','dungFloorC','dungFloorD',
     'dungFloorE','dungFloorF','dungFloorG','dungFloorH',
-    'dungWallSewer','dungWallSewerB','dungWallSewerC','dungWallSewerTop',
-    'dungWallGallery','dungWallGalleryB','dungWallGalleryC','dungWallGalleryTop',
+    'dungWallSewer','dungWallSewerB','dungWallSewerC',
+    'dungWallGallery','dungWallGalleryB','dungWallGalleryC',
+    'dungHWallSewerA','dungHWallSewerB','dungHWallSewerC','dungHWallSewerD',
+    'dungHWallGalleryA','dungHWallGalleryB',
+    'dungCornerSewer','dungCornerGallery',
     'dungCarpetSewer','dungCarpetSewerB','dungCarpetSewerC',
+    'dungCarpetEdgeL','dungCarpetEdgeR',
     'dungCarpetGallery','dungCarpetGalleryB',
     'dungUrn'
 ];
@@ -13842,17 +13859,30 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
         sp.dungFloorA, sp.dungFloorB, sp.dungFloorC, sp.dungFloorD,
         sp.dungFloorE, sp.dungFloorF, sp.dungFloorG, sp.dungFloorH
     ];
+    // Vertical border sprites (left/right walls)
     var wallSprites = isGallery
         ? [sp.dungWallGallery, sp.dungWallGalleryB, sp.dungWallGalleryC]
         : [sp.dungWallSewer,   sp.dungWallSewerB,   sp.dungWallSewerC];
-    var carpetSprites = isGallery
+    // Horizontal border sprites (top/bottom walls — the scrollwork row)
+    var hWallSprites = isGallery
+        ? [sp.dungHWallGalleryA, sp.dungHWallGalleryB]
+        : [sp.dungHWallSewerA, sp.dungHWallSewerB, sp.dungHWallSewerC, sp.dungHWallSewerD];
+    // Corner sprite (top-left, flipped for other corners)
+    var cornerSprite = isGallery ? sp.dungCornerGallery : sp.dungCornerSewer;
+    // Carpet sprites
+    var carpetIntSprites = isGallery
         ? [sp.dungCarpetGallery, sp.dungCarpetGalleryB]
         : [sp.dungCarpetSewer,   sp.dungCarpetSewerB,  sp.dungCarpetSewerC];
+    var carpetEdgeLSprite = sp.dungCarpetEdgeL;
+    var carpetEdgeRSprite = sp.dungCarpetEdgeR;
     var urnSprite = sp.dungUrn;
-    var hasFloor   = floorSprites[0]  != null;
-    var hasWall    = wallSprites[0]   != null;
-    var hasCarpet  = carpetSprites[0] != null;
-    var hasUrn     = urnSprite        != null;
+    var hasFloor    = floorSprites[0]    != null;
+    var hasWall     = wallSprites[0]     != null;
+    var hasHWall    = hWallSprites[0]    != null;
+    var hasCorner   = cornerSprite       != null;
+    var hasCarpet   = carpetIntSprites[0]!= null;
+    var hasCarpetEdge = carpetEdgeLSprite != null;
+    var hasUrn      = urnSprite          != null;
 
     // ── Fallback palette (used for overlay tints and tiles without sprites) ────
     var pal;
@@ -13932,12 +13962,36 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
 
             if (tileId === DT_WALL) {
                 if (isEdge) {
-                    // ── Border wall: use real Zelda sprite ─────────────────────
-                    if (hasWall) {
-                        var wSpr = wallSprites[h % wallSprites.length];
+                    // ── Border wall: direction-aware Zelda sprites ──────────────
+                    var isCorner2 = (tx === 0 || tx === RW-1) && (ty === 0 || ty === RH-1);
+                    var isTopBot  = (ty === 0 || ty === RH-1) && !isCorner2;
+
+                    if (isCorner2 && hasCorner) {
+                        // Corner tile — flip to match the corner direction
+                        ctx.save();
+                        ctx.translate(px + (tx === RW-1 ? ts : 0), py + (ty === RH-1 ? ts : 0));
+                        ctx.scale(tx === RW-1 ? -1 : 1, ty === RH-1 ? -1 : 1);
+                        ctx.drawImage(cornerSprite, 0, 0, ts, ts);
+                        ctx.restore();
+                    } else if (isTopBot && hasHWall) {
+                        // Top/bottom: horizontal scrollwork tiles
+                        var hSpr = hWallSprites[tx % hWallSprites.length];
+                        if (!hSpr) hSpr = hWallSprites[0];
+                        if (ty === RH-1) {
+                            // Flip vertically for bottom border
+                            ctx.save();
+                            ctx.translate(px, py + ts);
+                            ctx.scale(1, -1);
+                            ctx.drawImage(hSpr, 0, 0, ts, ts);
+                            ctx.restore();
+                        } else {
+                            ctx.drawImage(hSpr, px, py, ts, ts);
+                        }
+                    } else if (!isTopBot && hasWall) {
+                        // Left/right: vertical stripe tiles, flip right side
+                        var wSpr = wallSprites[ty % wallSprites.length];
                         if (!wSpr) wSpr = wallSprites[0];
-                        // For right/bottom borders, flip the tile visually by drawing mirrored
-                        if (tx === RW - 1 || ty === RH - 1) {
+                        if (tx === RW-1) {
                             ctx.save();
                             ctx.translate(px + ts, py);
                             ctx.scale(-1, 1);
@@ -13947,7 +14001,7 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                             ctx.drawImage(wSpr, px, py, ts, ts);
                         }
                     } else {
-                        // Procedural fallback
+                        // Procedural fallback for any missing sprites
                         ctx.fillStyle = (h % 5 < 1) ? pal.borderSh : pal.borderBase;
                         ctx.fillRect(px, py, ts, ts);
                         if (ty === 0)    { ctx.fillStyle = pal.borderHi; ctx.fillRect(px, py, ts, 3); }
@@ -14034,33 +14088,40 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                     }
 
                 } else if (tileId === DT_CARPET) {
-                    if (hasCarpet) {
-                        // Real Zelda carpet sprite — tile it across carpet area
-                        var cSpr = carpetSprites[h % carpetSprites.length];
-                        if (!cSpr) cSpr = carpetSprites[0];
-                        ctx.drawImage(cSpr, px, py, ts, ts);
-                    } else {
-                        // Procedural fallback
-                        ctx.fillStyle = pal.carpet;
-                        ctx.fillRect(px, py, ts, ts);
-                    }
-                    // Gold border on exposed edges (same whether sprite or procedural)
                     var nN = ty > 0      ? (tilemap[ty-1][tx] || 0) : -1;
                     var nS = ty < RH - 1 ? (tilemap[ty+1][tx] || 0) : -1;
                     var nW = tx > 0      ? (tilemap[ty][tx-1] || 0) : -1;
                     var nE = tx < RW - 1 ? (tilemap[ty][tx+1] || 0) : -1;
-                    var cbw = Math.max(3, Math.round(ts * 0.12));
-                    ctx.fillStyle = pal.carpetBorder;
-                    if (nN !== DT_CARPET) ctx.fillRect(px, py, ts, cbw);
-                    if (nS !== DT_CARPET) ctx.fillRect(px, py + ts - cbw, ts, cbw);
-                    if (nW !== DT_CARPET) ctx.fillRect(px, py, cbw, ts);
-                    if (nE !== DT_CARPET) ctx.fillRect(px + ts - cbw, py, cbw, ts);
-                    ctx.fillStyle = pal.carpetBorder2;
-                    var rs = Math.max(3, Math.round(ts / 7));
-                    if (nN !== DT_CARPET) { for (var ri = rs; ri < ts - rs; ri += rs * 2) ctx.fillRect(px + ri, py + 1, rs - 1, cbw - 2); }
-                    if (nS !== DT_CARPET) { for (var ri = rs; ri < ts - rs; ri += rs * 2) ctx.fillRect(px + ri, py + ts - cbw + 1, rs - 1, cbw - 2); }
-                    if (nW !== DT_CARPET) { for (var ri = rs; ri < ts - rs; ri += rs * 2) ctx.fillRect(px + 1, py + ri, cbw - 2, rs - 1); }
-                    if (nE !== DT_CARPET) { for (var ri = rs; ri < ts - rs; ri += rs * 2) ctx.fillRect(px + ts - cbw + 1, py + ri, cbw - 2, rs - 1); }
+                    var isLeftEdge  = (nW !== DT_CARPET);
+                    var isRightEdge = (nE !== DT_CARPET);
+
+                    if (hasCarpetEdge && isLeftEdge && carpetEdgeLSprite) {
+                        // Left edge carpet with authentic rope border
+                        ctx.drawImage(carpetEdgeLSprite, px, py, ts, ts);
+                    } else if (hasCarpetEdge && isRightEdge && carpetEdgeRSprite) {
+                        // Right edge carpet with authentic rope border
+                        ctx.drawImage(carpetEdgeRSprite, px, py, ts, ts);
+                    } else if (hasCarpet) {
+                        // Interior carpet tile
+                        var cSpr = carpetIntSprites[h % carpetIntSprites.length];
+                        if (!cSpr) cSpr = carpetIntSprites[0];
+                        ctx.drawImage(cSpr, px, py, ts, ts);
+                    } else {
+                        ctx.fillStyle = pal.carpet;
+                        ctx.fillRect(px, py, ts, ts);
+                    }
+                    // Top/bottom gold strip (sprite doesn't cover these edges)
+                    if (!hasCarpet) {
+                        var cbw = Math.max(3, Math.round(ts * 0.12));
+                        ctx.fillStyle = pal.carpetBorder;
+                        if (nN !== DT_CARPET) ctx.fillRect(px, py, ts, cbw);
+                        if (nS !== DT_CARPET) ctx.fillRect(px, py + ts - cbw, ts, cbw);
+                    } else {
+                        // Thin gold line on top/bottom exposed edges only
+                        var cbw = Math.max(3, Math.round(ts * 0.1));
+                        if (nN !== DT_CARPET) { ctx.fillStyle = pal.carpetBorder; ctx.fillRect(px, py, ts, cbw); }
+                        if (nS !== DT_CARPET) { ctx.fillStyle = pal.carpetBorder; ctx.fillRect(px, py + ts - cbw, ts, cbw); }
+                    }
 
                 } else if (tileId === DT_PEDESTAL) {
                     ctx.fillStyle = pal.wallSh;
