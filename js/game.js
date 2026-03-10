@@ -4802,6 +4802,30 @@ const SPRITE_MANIFEST = {
     hazardCone:        'sprites/extracted/hazard_cone.png',
     hazardOil:         'sprites/extracted/hazard_oil.png',
 
+    // Dungeon tiles (extracted from Zelda reference — optional, procedural fallback when missing)
+    dungFloorA:        'sprites/dungeon/floor_sewer_a.png',
+    dungFloorB:        'sprites/dungeon/floor_sewer_b.png',
+    dungFloorC:        'sprites/dungeon/floor_sewer_c.png',
+    dungFloorD:        'sprites/dungeon/floor_sewer_d.png',
+    dungFloorE:        'sprites/dungeon/floor_sewer_e.png',
+    dungFloorF:        'sprites/dungeon/floor_sewer_f.png',
+    dungFloorG:        'sprites/dungeon/floor_sewer_g.png',
+    dungFloorH:        'sprites/dungeon/floor_sewer_h.png',
+    dungWallSewer:     'sprites/dungeon/wall_sewer_a.png',
+    dungWallSewerB:    'sprites/dungeon/wall_sewer_b.png',
+    dungWallSewerC:    'sprites/dungeon/wall_sewer_c.png',
+    dungWallSewerTop:  'sprites/dungeon/wall_sewer_top.png',
+    dungWallGallery:   'sprites/dungeon/wall_gallery_a.png',
+    dungWallGalleryB:  'sprites/dungeon/wall_gallery_b.png',
+    dungWallGalleryC:  'sprites/dungeon/wall_gallery_c.png',
+    dungWallGalleryTop:'sprites/dungeon/wall_gallery_top_a.png',
+    dungCarpetSewer:   'sprites/dungeon/carpet_sewer_a.png',
+    dungCarpetSewerB:  'sprites/dungeon/carpet_sewer_b.png',
+    dungCarpetSewerC:  'sprites/dungeon/carpet_sewer_c.png',
+    dungCarpetGallery: 'sprites/dungeon/carpet_gallery_a.png',
+    dungCarpetGalleryB:'sprites/dungeon/carpet_gallery_b.png',
+    dungUrn:           'sprites/dungeon/urn_sewer.png',
+
     // World map (optional — fallback to colored rects)
     worldLand:         'sprites/world/land.png',
     worldCoast:        'sprites/world/coast.png',
@@ -4837,7 +4861,15 @@ const OPTIONAL_SPRITE_KEYS = [
     // Enemy types (12.2)
     'enemyShield', 'enemyRunner',
     // Hazard tiles (12.2)
-    'hazardSludge', 'hazardCone', 'hazardOil'
+    'hazardSludge', 'hazardCone', 'hazardOil',
+    // Dungeon tiles (13.x)
+    'dungFloorA','dungFloorB','dungFloorC','dungFloorD',
+    'dungFloorE','dungFloorF','dungFloorG','dungFloorH',
+    'dungWallSewer','dungWallSewerB','dungWallSewerC','dungWallSewerTop',
+    'dungWallGallery','dungWallGalleryB','dungWallGalleryC','dungWallGalleryTop',
+    'dungCarpetSewer','dungCarpetSewerB','dungCarpetSewerC',
+    'dungCarpetGallery','dungCarpetGalleryB',
+    'dungUrn'
 ];
 
 const SPRITE_ALIASES = {
@@ -13800,142 +13832,282 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
     var ts = L.tileSize;
     var cx = L.camera.x - offsetX, cy = L.camera.y - offsetY;
     var RW = L.dungeon.roomW, RH = L.dungeon.roomH;
-    var themeKeys = LEVEL_SPRITE_KEYS[L.data.theme] || null;
     var theme = L.data.theme;
-    var nesWall = theme === 'sewer'   ? 'sewerWall'   :
-                  theme === 'street'  ? 'streetWall'  :
-                  theme === 'dock'    ? 'dockWall'    :
-                  theme === 'gallery' ? 'galleryWall' : 'sewerWall';
-    var nesFloor = theme === 'sewer'   ? 'sewerFloor'   :
-                   theme === 'street'  ? 'streetFloor'  :
-                   theme === 'dock'    ? 'dockFloor'    :
-                   theme === 'gallery' ? 'galleryFloor' : 'sewerFloor';
-    var wallSprite  = themeKeys ? game.sprites[themeKeys.wall]  : null;
-    var floorSprite = themeKeys ? game.sprites[themeKeys.floor] : null;
-
-    // Theme accent colours
-    var accentWall    = theme === 'gallery' ? '#8855aa' :
-                        theme === 'dock'    ? '#2a4a6a' :
-                        theme === 'street'  ? '#44332a' : '#222244';
-    var accentPillar  = theme === 'gallery' ? '#cc9933' :
-                        theme === 'dock'    ? '#556677' : '#998844';
-    var carpetColor   = theme === 'gallery' ? 'rgba(100,40,120,0.55)' :
-                        theme === 'dock'    ? 'rgba(20,60,90,0.55)'   : 'rgba(140,20,20,0.55)';
-
-    var hzInfo = THEME_HAZARD[theme];
     var now = Date.now();
+    var sp = game.sprites;
 
-    // Thick border ring around the room (Zelda-style)
-    var roomPxW = RW * ts - cx * 0, roomPxH = RH * ts;
-    // (border is just the wall tiles themselves)
+    // ── Per-theme sprite sets (all fall back to procedural if sprites missing) ─
+    var isGallery = (theme === 'gallery' || theme === 'dock' || theme === 'street');
+    var floorSprites = [
+        sp.dungFloorA, sp.dungFloorB, sp.dungFloorC, sp.dungFloorD,
+        sp.dungFloorE, sp.dungFloorF, sp.dungFloorG, sp.dungFloorH
+    ];
+    var wallSprites = isGallery
+        ? [sp.dungWallGallery, sp.dungWallGalleryB, sp.dungWallGalleryC]
+        : [sp.dungWallSewer,   sp.dungWallSewerB,   sp.dungWallSewerC];
+    var carpetSprites = isGallery
+        ? [sp.dungCarpetGallery, sp.dungCarpetGalleryB]
+        : [sp.dungCarpetSewer,   sp.dungCarpetSewerB,  sp.dungCarpetSewerC];
+    var urnSprite = sp.dungUrn;
+    var hasFloor   = floorSprites[0]  != null;
+    var hasWall    = wallSprites[0]   != null;
+    var hasCarpet  = carpetSprites[0] != null;
+    var hasUrn     = urnSprite        != null;
 
+    // ── Fallback palette (used for overlay tints and tiles without sprites) ────
+    var pal;
+    if (theme === 'gallery') {
+        pal = {
+            floorMortar:'#2a2214', floor:'#c8bc8c', floorHi:'#e0d4a8', floorSh:'#8c7e58',
+            wallMortar:'#1e1408',  wall:'#8c6c20',  wallHi:'#b08a38',  wallSh:'#4a380c',
+            borderBase:'#c88820', borderHi:'#f0cc60', borderSh:'#5a3a00',
+            borderScroll:'#ffee88',
+            carpet:'#44cc44', carpetBorder:'#22aa22', carpetBorder2:'#aaffaa',
+            urnBody:'#ddbb33', urnDark:'#664400', urnHi:'#fff4aa', urnMid:'#bb8822',
+        };
+    } else if (theme === 'dock') {
+        pal = {
+            floorMortar:'#0c1010', floor:'#606858', floorHi:'#808e7a', floorSh:'#383c34',
+            wallMortar:'#080c0c', wall:'#243030', wallHi:'#3a4c4c', wallSh:'#101818',
+            borderBase:'#0a2040', borderHi:'#1a5080', borderSh:'#040c1c',
+            borderScroll:'#44aacc',
+            carpet:'#0a3c50', carpetBorder:'#44aaaa', carpetBorder2:'#aadddd',
+            urnBody:'#507080', urnDark:'#1e3040', urnHi:'#90b8c8', urnMid:'#3a5868',
+        };
+    } else if (theme === 'street') {
+        pal = {
+            floorMortar:'#100c0a', floor:'#545050', floorHi:'#706c68', floorSh:'#2c2826',
+            wallMortar:'#0a0806', wall:'#602018', wallHi:'#883028', wallSh:'#300c08',
+            borderBase:'#c88820', borderHi:'#f0cc60', borderSh:'#5a3a00',
+            borderScroll:'#ffee88',
+            carpet:'#994400', carpetBorder:'#eecc22', carpetBorder2:'#ffee88',
+            urnBody:'#887060', urnDark:'#3a2818', urnHi:'#ccc0b0', urnMid:'#5e4e40',
+        };
+    } else {
+        // Sewer / Crypt
+        pal = {
+            floorMortar:'#141210', floor:'#8a8278', floorHi:'#aaa090', floorSh:'#585048',
+            wallMortar:'#0e0c0a', wall:'#3e3a30', wallHi:'#5e5a4c', wallSh:'#1c1a14',
+            borderBase:'#aa00cc', borderHi:'#dd44ff', borderSh:'#440066',
+            borderScroll:'#ee88ff',
+            carpet:'#cc2222', carpetBorder:'#ddaa11', carpetBorder2:'#ffee88',
+            urnBody:'#ddaa11', urnDark:'#774400', urnHi:'#ffee88', urnMid:'#bb8800',
+        };
+    }
+
+    // Per-tile deterministic hash for sprite variant selection
+    function th(tx, ty) { return (((tx * 73856093) ^ (ty * 19349663)) >>> 0) % 64; }
+
+    // Procedural slab fallback
+    function drawSlab(px, py, base, hi, sh) {
+        ctx.fillStyle = base;
+        ctx.fillRect(px + 1, py + 1, ts - 2, ts - 2);
+        ctx.fillStyle = hi;
+        ctx.fillRect(px + 1, py + 1, ts - 2, 2);
+        ctx.fillRect(px + 1, py + 3, 2, ts - 4);
+        ctx.fillStyle = sh;
+        ctx.fillRect(px + 1, py + ts - 3, ts - 2, 2);
+        ctx.fillRect(px + ts - 3, py + 1, 2, ts - 4);
+    }
+
+    // ── Pass 1: fill mortar background ──────────────────────────────────────
+    for (var ty2 = 0; ty2 < RH; ty2++) {
+        for (var tx2 = 0; tx2 < RW; tx2++) {
+            var px2 = tx2 * ts - cx, py2 = ty2 * ts - cy;
+            if (px2 > CANVAS_WIDTH + ts || px2 < -ts || py2 > CANVAS_HEIGHT + ts || py2 < -ts) continue;
+            ctx.fillStyle = pal.floorMortar;
+            ctx.fillRect(px2, py2, ts, ts);
+        }
+    }
+
+    // ── Pass 2: draw tile details ────────────────────────────────────────────
     for (var ty = 0; ty < RH; ty++) {
         for (var tx = 0; tx < RW; tx++) {
             var px = tx * ts - cx;
             var py = ty * ts - cy;
             if (px > CANVAS_WIDTH + ts || px < -ts || py > CANVAS_HEIGHT + ts || py < -ts) continue;
             var tileId = (tilemap[ty] && tilemap[ty][tx]) || 0;
-
-            // ── Floor base for all non-wall tiles ──────────────
-            if (tileId !== DT_WALL) {
-                if (floorSprite) ctx.drawImage(floorSprite, px, py, ts, ts);
-                else NES.drawTileStretched(ctx, px, py, ts, ts, nesFloor);
-            }
+            var isEdge = (tx === 0 || tx === RW-1 || ty === 0 || ty === RH-1);
+            var h = th(tx, ty);
 
             if (tileId === DT_WALL) {
-                // Stone wall
-                if (wallSprite) {
-                    ctx.drawImage(wallSprite, px, py, ts, ts);
+                if (isEdge) {
+                    // ── Border wall: use real Zelda sprite ─────────────────────
+                    if (hasWall) {
+                        var wSpr = wallSprites[h % wallSprites.length];
+                        if (!wSpr) wSpr = wallSprites[0];
+                        // For right/bottom borders, flip the tile visually by drawing mirrored
+                        if (tx === RW - 1 || ty === RH - 1) {
+                            ctx.save();
+                            ctx.translate(px + ts, py);
+                            ctx.scale(-1, 1);
+                            ctx.drawImage(wSpr, 0, 0, ts, ts);
+                            ctx.restore();
+                        } else {
+                            ctx.drawImage(wSpr, px, py, ts, ts);
+                        }
+                    } else {
+                        // Procedural fallback
+                        ctx.fillStyle = (h % 5 < 1) ? pal.borderSh : pal.borderBase;
+                        ctx.fillRect(px, py, ts, ts);
+                        if (ty === 0)    { ctx.fillStyle = pal.borderHi; ctx.fillRect(px, py, ts, 3); }
+                        if (tx === 0)    { ctx.fillStyle = pal.borderHi; ctx.fillRect(px, py, 3, ts); }
+                        if (ty === RH-1) { ctx.fillStyle = pal.borderSh; ctx.fillRect(px, py + ts - 3, ts, 3); }
+                        if (tx === RW-1) { ctx.fillStyle = pal.borderSh; ctx.fillRect(px + ts - 3, py, 3, ts); }
+                    }
                 } else {
-                    NES.drawTileStretched(ctx, px, py, ts, ts, nesWall);
+                    // ── Inner obstacle wall: use floor sprite tinted dark ───────
+                    if (hasFloor) {
+                        var iSpr = floorSprites[h % floorSprites.length];
+                        if (!iSpr) iSpr = floorSprites[0];
+                        ctx.drawImage(iSpr, px, py, ts, ts);
+                        ctx.fillStyle = 'rgba(0,0,0,0.52)';
+                        ctx.fillRect(px, py, ts, ts);
+                    } else {
+                        drawSlab(px, py, pal.wall, pal.wallHi, pal.wallSh);
+                        var bH = Math.max(5, Math.round(ts / 4));
+                        ctx.fillStyle = pal.wallMortar;
+                        for (var br2 = 1; br2 < 4; br2++) {
+                            ctx.fillRect(px + 1, py + br2 * bH, ts - 2, 1);
+                            var vx2 = ((ty + br2) % 2 === 0) ? px + 1 : px + Math.round(ts/2);
+                            ctx.fillRect(vx2, py + br2 * bH + 1, 1, bH - 1);
+                        }
+                    }
                 }
-                // Dark inner edge shadow
-                ctx.fillStyle = 'rgba(0,0,0,0.30)';
-                ctx.fillRect(px, py + ts - 3, ts, 3);
-                ctx.fillRect(px + ts - 3, py, 3, ts);
-            } else if (tileId === DT_HAZARD) {
-                var hzPulse = 0.38 + Math.sin(now / 280) * 0.14;
-                var hzCol = theme === 'sewer' ? NES.PAL.C : theme === 'dock' ? NES.PAL.N : theme === 'gallery' ? NES.PAL.P : NES.PAL.T;
-                ctx.globalAlpha = hzPulse;
-                ctx.fillStyle = hzCol;
-                ctx.fillRect(px + 3, py + 3, ts - 6, ts - 6);
-                ctx.globalAlpha = 1;
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold ' + Math.floor(ts * 0.38) + 'px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText('!', px + ts / 2, py + ts * 0.67);
-                ctx.textAlign = 'left';
-            } else if (tileId === DT_PILLAR) {
-                // Stone pillar / statue
-                ctx.fillStyle = accentPillar;
-                ctx.fillRect(px + 4, py + 2, ts - 8, ts - 4);
-                ctx.fillStyle = 'rgba(0,0,0,0.45)';
-                ctx.fillRect(px + ts - 8, py + 2, 4, ts - 4); // right shadow
-                ctx.fillRect(px + 4, py + ts - 6, ts - 8, 4); // bottom shadow
-                ctx.fillStyle = '#ffffff44';
-                ctx.fillRect(px + 4, py + 2, 3, ts - 6); // left highlight
-                // Top cap
-                ctx.fillStyle = '#ccaa55';
-                ctx.fillRect(px + 3, py + 1, ts - 6, 5);
-            } else if (tileId === DT_CARPET) {
-                // Rug/carpet overlay
-                ctx.fillStyle = carpetColor;
-                ctx.fillRect(px + 2, py + 2, ts - 4, ts - 4);
-                // Subtle border detail
-                ctx.strokeStyle = 'rgba(255,220,150,0.25)';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(px + 3, py + 3, ts - 6, ts - 6);
-            } else if (tileId === DT_PEDESTAL) {
-                // Item pedestal
-                ctx.fillStyle = '#c8a844';
-                ctx.fillRect(px + 6, py + ts - 8, ts - 12, 8);
-                ctx.fillRect(px + 4, py + 6, ts - 8, ts - 14);
-                // Inner recess
-                ctx.fillStyle = 'rgba(0,0,0,0.3)';
-                ctx.fillRect(px + 6, py + 8, ts - 12, ts - 16);
-                // Glow
-                var pedPulse = 0.3 + Math.sin(now / 220) * 0.2;
-                ctx.fillStyle = 'rgba(255,240,80,' + pedPulse + ')';
-                ctx.beginPath();
-                ctx.arc(px + ts / 2, py + ts / 2, ts * 0.28, 0, Math.PI * 2);
-                ctx.fill();
-            } else if (tileId === DT_DOOR) {
-                // Door archway frame
-                ctx.fillStyle = accentWall;
-                if (ty === 0) {
-                    // North door: archway on top edge
-                    ctx.fillRect(px, py, ts, 6);
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    ctx.fillRect(px, py, 3, ts);
-                    ctx.fillRect(px + ts - 3, py, 3, ts);
-                } else if (ty === RH - 1) {
-                    // South door
-                    ctx.fillRect(px, py + ts - 6, ts, 6);
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    ctx.fillRect(px, py, 3, ts);
-                    ctx.fillRect(px + ts - 3, py, 3, ts);
-                } else if (tx === 0) {
-                    // West door
-                    ctx.fillRect(px, py, 6, ts);
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    ctx.fillRect(px, py, ts, 3);
-                    ctx.fillRect(px, py + ts - 3, ts, 3);
-                } else if (tx === RW - 1) {
-                    // East door
-                    ctx.fillRect(px + ts - 6, py, 6, ts);
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    ctx.fillRect(px, py, ts, 3);
-                    ctx.fillRect(px, py + ts - 3, ts, 3);
+
+            } else {
+                // ── FLOOR BASE ──────────────────────────────────────────────────
+                if (hasFloor) {
+                    var fSpr = floorSprites[h % floorSprites.length];
+                    if (!fSpr) fSpr = floorSprites[0];
+                    ctx.drawImage(fSpr, px, py, ts, ts);
+                } else {
+                    var floorVariant = (h % 8 < 2) ? pal.floorSh : pal.floor;
+                    drawSlab(px, py, floorVariant, pal.floorHi, pal.floorSh);
                 }
-            } else if (tileId === DT_EXIT) {
-                // Exit door: glowing green archway
-                var exitPulse = 0.5 + Math.sin(now / 250) * 0.25;
-                if (ty === RH - 1) {
-                    ctx.fillStyle = 'rgba(30,200,80,' + (exitPulse * 0.7) + ')';
-                    ctx.fillRect(px, py, ts, ts);
-                    // Arrow hint
-                    ctx.fillStyle = '#22ff66';
-                    ctx.font = 'bold ' + Math.floor(ts * 0.45) + 'px monospace';
+
+                // ── TILE OVERLAYS ────────────────────────────────────────────────
+                if (tileId === DT_HAZARD) {
+                    var hzA = 0.55 + Math.sin(now / 260) * 0.22;
+                    var hzC = theme === 'sewer' ? 'rgba(80,220,50,' : theme === 'dock' ? 'rgba(40,170,220,' : 'rgba(220,60,40,';
+                    ctx.fillStyle = hzC + hzA + ')';
+                    ctx.fillRect(px + 3, py + 3, ts - 6, ts - 6);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold ' + Math.floor(ts * 0.4) + 'px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('!', px + ts / 2, py + ts * 0.68);
+                    ctx.textAlign = 'left';
+
+                } else if (tileId === DT_PILLAR) {
+                    if (hasUrn) {
+                        // Real Zelda urn sprite: draw tall (2× tile height), centered, rising above tile
+                        var urnH = Math.round(ts * 1.7);
+                        var urnW = Math.round(urnH * (urnSprite.width / urnSprite.height));
+                        var urnX = px + (ts - urnW) / 2;
+                        var urnY = py + ts - urnH + Math.round(ts * 0.05);
+                        // Shadow
+                        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+                        ctx.fillRect(px + Math.round(ts * 0.15), py + ts - Math.round(ts * 0.12), Math.round(ts * 0.7), Math.round(ts * 0.1));
+                        ctx.drawImage(urnSprite, urnX, urnY, urnW, urnH);
+                    } else {
+                        // Procedural gold urn fallback
+                        var ub = pal.urnBody, ud = pal.urnDark, uh = pal.urnHi, um = pal.urnMid;
+                        var uh2 = Math.round(ts * 0.12), ub2 = Math.round(ts * 0.2), uw = ts - 6, ux = px + 3;
+                        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+                        ctx.fillRect(ux + 4, py + ts - 3, uw - 2, 3);
+                        ctx.fillStyle = ud; ctx.fillRect(ux - 1, py + ts - ub2 - 1, uw + 2, ub2 + 1);
+                        ctx.fillStyle = ub; ctx.fillRect(ux, py + ts - ub2, uw, ub2);
+                        ctx.fillStyle = uh; ctx.fillRect(ux, py + ts - ub2, uw, 2);
+                        var waistY = py + uh2 + Math.round(ts * 0.22), waistH = Math.round(ts * 0.25);
+                        ctx.fillStyle = ud; ctx.fillRect(ux + 2, waistY - 1, uw - 4, waistH + 2);
+                        ctx.fillStyle = um; ctx.fillRect(ux + 3, waistY, uw - 6, waistH);
+                        ctx.fillStyle = uh; ctx.fillRect(ux + 3, waistY, 2, waistH);
+                        var bodyY = py + uh2, bodyH = waistY - bodyY;
+                        ctx.fillStyle = ud; ctx.fillRect(ux - 1, bodyY - 1, uw + 2, bodyH + 2);
+                        ctx.fillStyle = ub; ctx.fillRect(ux, bodyY, uw, bodyH);
+                        ctx.fillStyle = uh; ctx.fillRect(ux, bodyY, 3, bodyH);
+                        ctx.fillStyle = ud; ctx.fillRect(ux + uw - 3, bodyY, 3, bodyH);
+                        ctx.fillStyle = ud; ctx.fillRect(ux - 2, py, uw + 4, uh2 + 2);
+                        ctx.fillStyle = ub; ctx.fillRect(ux - 1, py + 1, uw + 2, uh2);
+                        ctx.fillStyle = uh; ctx.fillRect(ux - 1, py + 1, uw + 2, 2);
+                        ctx.fillStyle = uh; ctx.fillRect(px + Math.round(ts/2) - 1, waistY + Math.round(waistH/2) - 1, 3, 3);
+                    }
+
+                } else if (tileId === DT_CARPET) {
+                    if (hasCarpet) {
+                        // Real Zelda carpet sprite — tile it across carpet area
+                        var cSpr = carpetSprites[h % carpetSprites.length];
+                        if (!cSpr) cSpr = carpetSprites[0];
+                        ctx.drawImage(cSpr, px, py, ts, ts);
+                    } else {
+                        // Procedural fallback
+                        ctx.fillStyle = pal.carpet;
+                        ctx.fillRect(px, py, ts, ts);
+                    }
+                    // Gold border on exposed edges (same whether sprite or procedural)
+                    var nN = ty > 0      ? (tilemap[ty-1][tx] || 0) : -1;
+                    var nS = ty < RH - 1 ? (tilemap[ty+1][tx] || 0) : -1;
+                    var nW = tx > 0      ? (tilemap[ty][tx-1] || 0) : -1;
+                    var nE = tx < RW - 1 ? (tilemap[ty][tx+1] || 0) : -1;
+                    var cbw = Math.max(3, Math.round(ts * 0.12));
+                    ctx.fillStyle = pal.carpetBorder;
+                    if (nN !== DT_CARPET) ctx.fillRect(px, py, ts, cbw);
+                    if (nS !== DT_CARPET) ctx.fillRect(px, py + ts - cbw, ts, cbw);
+                    if (nW !== DT_CARPET) ctx.fillRect(px, py, cbw, ts);
+                    if (nE !== DT_CARPET) ctx.fillRect(px + ts - cbw, py, cbw, ts);
+                    ctx.fillStyle = pal.carpetBorder2;
+                    var rs = Math.max(3, Math.round(ts / 7));
+                    if (nN !== DT_CARPET) { for (var ri = rs; ri < ts - rs; ri += rs * 2) ctx.fillRect(px + ri, py + 1, rs - 1, cbw - 2); }
+                    if (nS !== DT_CARPET) { for (var ri = rs; ri < ts - rs; ri += rs * 2) ctx.fillRect(px + ri, py + ts - cbw + 1, rs - 1, cbw - 2); }
+                    if (nW !== DT_CARPET) { for (var ri = rs; ri < ts - rs; ri += rs * 2) ctx.fillRect(px + 1, py + ri, cbw - 2, rs - 1); }
+                    if (nE !== DT_CARPET) { for (var ri = rs; ri < ts - rs; ri += rs * 2) ctx.fillRect(px + ts - cbw + 1, py + ri, cbw - 2, rs - 1); }
+
+                } else if (tileId === DT_PEDESTAL) {
+                    ctx.fillStyle = pal.wallSh;
+                    ctx.fillRect(px + 4, py + 4, ts - 8, ts - 8);
+                    ctx.fillStyle = pal.wall;
+                    ctx.fillRect(px + 5, py + 5, ts - 10, ts - 10);
+                    ctx.fillStyle = pal.wallHi;
+                    ctx.fillRect(px + 5, py + 5, ts - 10, 2);
+                    ctx.fillRect(px + 5, py + 5, 2, ts - 10);
+                    var pedA = 0.45 + Math.sin(now / 200) * 0.3;
+                    ctx.fillStyle = 'rgba(255,240,60,' + pedA + ')';
+                    ctx.beginPath();
+                    ctx.arc(px + ts / 2, py + ts / 2, ts * 0.22, 0, Math.PI * 2);
+                    ctx.fill();
+
+                } else if (tileId === DT_DOOR) {
+                    // Door opening — wall sprite with open gap
+                    if (hasWall) {
+                        var dSpr = wallSprites[h % wallSprites.length] || wallSprites[0];
+                        ctx.drawImage(dSpr, px, py, ts, ts);
+                    } else {
+                        ctx.fillStyle = pal.borderBase;
+                        ctx.fillRect(px, py, ts, ts);
+                    }
+                    var dj = Math.max(3, Math.round(ts * 0.28));
+                    // Floor visible through opening
+                    if (hasFloor) {
+                        ctx.drawImage(floorSprites[h % floorSprites.length] || floorSprites[0], px + dj, py + dj, ts - dj*2, ts - dj*2);
+                    } else {
+                        ctx.fillStyle = pal.floorMortar; ctx.fillRect(px + dj, py + dj, ts - dj*2, ts - dj*2);
+                        drawSlab(px + dj - 1, py + dj - 1, pal.floor, pal.floorHi, pal.floorSh);
+                    }
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    if (ty === 0 || ty === RH-1) {
+                        ctx.fillRect(px, py, dj, ts); ctx.fillRect(px + ts - dj, py, dj, ts);
+                    } else {
+                        ctx.fillRect(px, py, ts, dj); ctx.fillRect(px, py + ts - dj, ts, dj);
+                    }
+
+                } else if (tileId === DT_EXIT) {
+                    var ea = 0.6 + Math.sin(now / 200) * 0.25;
+                    ctx.fillStyle = 'rgba(30,200,80,' + (ea * 0.5) + ')';
+                    ctx.fillRect(px + 2, py + 2, ts - 4, ts - 4);
+                    ctx.fillStyle = 'rgba(100,255,120,' + ea + ')';
+                    ctx.fillRect(px + 5, py + 5, ts - 10, ts - 10);
+                    ctx.fillStyle = '#22ff44';
+                    ctx.font = 'bold ' + Math.floor(ts * 0.44) + 'px monospace';
                     ctx.textAlign = 'center';
                     ctx.fillText('▼', px + ts / 2, py + ts * 0.72);
                     ctx.textAlign = 'left';
@@ -13944,24 +14116,34 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
         }
     }
 
-    // Art frames (gallery)
+    // ── Art frames (gallery theme) ─────────────────────────────────────────
     if (artFrames && artFrames.length > 0) {
         for (var afi = 0; afi < artFrames.length; afi++) {
             var af = artFrames[afi];
             var afx = af.x * ts - cx, afy = af.y * ts - cy;
             if (afx < -ts || afx > CANVAS_WIDTH + ts || afy < -ts || afy > CANVAS_HEIGHT + ts) continue;
-            ctx.fillStyle = '#c8a050';
-            ctx.fillRect(afx + 4, afy + 2, ts - 8, ts * 0.6);
+            ctx.fillStyle = '#3a2008';
+            ctx.fillRect(afx + 1, afy + 1, ts - 2, Math.round(ts * 0.68));
+            ctx.fillStyle = '#c8a040';
+            ctx.fillRect(afx + 2, afy + 2, ts - 4, Math.round(ts * 0.68) - 2);
+            ctx.fillStyle = '#ffdd88';
+            ctx.fillRect(afx + 2, afy + 2, ts - 4, 2);
             var artSeed = seedHashRT((L.artistId || 'art') + '_' + afi);
             var artRng = mulberry32RT(artSeed);
-            var r = Math.floor(artRng() * 128 + 80), g2 = Math.floor(artRng() * 128 + 80), b2 = Math.floor(artRng() * 128 + 80);
+            var r = Math.floor(artRng() * 128 + 80), g2 = Math.floor(artRng() * 100 + 80), b2 = Math.floor(artRng() * 128 + 80);
             ctx.fillStyle = 'rgb(' + r + ',' + g2 + ',' + b2 + ')';
-            ctx.fillRect(afx + 6, afy + 4, ts - 12, ts * 0.6 - 4);
-            ctx.fillStyle = 'rgb(' + (255-r) + ',' + (255-g2) + ',' + (255-b2) + ')';
+            ctx.fillRect(afx + 4, afy + 4, ts - 8, Math.round(ts * 0.68) - 4);
+            ctx.fillStyle = 'rgb(' + Math.min(255,r+80) + ',' + Math.min(255,g2+60) + ',' + Math.min(255,b2+80) + ')';
             var pt = Math.floor(artRng() * 3);
-            if (pt === 0) { ctx.beginPath(); ctx.arc(afx + ts/2, afy + ts*0.3, ts*0.12, 0, Math.PI*2); ctx.fill(); }
-            else if (pt === 1) { ctx.fillRect(afx + ts*0.3, afy + ts*0.15, ts*0.4, ts*0.3); }
-            else { ctx.beginPath(); ctx.moveTo(afx + ts/2, afy+6); ctx.lineTo(afx+ts*0.7, afy+ts*0.5); ctx.lineTo(afx+ts*0.3, afy+ts*0.5); ctx.closePath(); ctx.fill(); }
+            if (pt === 0) { ctx.beginPath(); ctx.arc(afx+ts/2, afy+ts*0.28, ts*0.13, 0, Math.PI*2); ctx.fill(); }
+            else if (pt === 1) { ctx.fillRect(afx+ts*0.28, afy+ts*0.14, ts*0.44, ts*0.32); }
+            else {
+                ctx.beginPath();
+                ctx.moveTo(afx+ts/2, afy+ts*0.1);
+                ctx.lineTo(afx+ts*0.74, afy+ts*0.52);
+                ctx.lineTo(afx+ts*0.26, afy+ts*0.52);
+                ctx.closePath(); ctx.fill();
+            }
         }
     }
 }
