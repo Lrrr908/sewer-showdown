@@ -469,7 +469,7 @@ var MP = (function () {
                     var frac = dt > 0 ? Math.min(1, (renderTime - a.t) / dt) : 1;
                     tpx = a.px + (b.px - a.px) * frac;
                     tpy = a.py + (b.py - a.py) * frac;
-                } else if (buf.length > 0) {
+                } else if (buf && buf.length > 0) {
                     var last = buf[buf.length - 1];
                     tpx = last.px;
                     tpy = last.py;
@@ -716,6 +716,9 @@ var MP = (function () {
                         } else {
                             if (p.dn) p.displayName = p.dn;
                             p._lastUpdate = Date.now();
+                            var _spx = p.px != null ? p.px : p.x * TILE_SIZE;
+                            var _spy = p.py != null ? p.py : p.y * TILE_SIZE;
+                            p._interpBuf = [{ px: _spx, py: _spy, t: Date.now() }];
                             remotePlayers[p.id] = p;
                         }
                     }
@@ -731,8 +734,6 @@ var MP = (function () {
             case 'delta':
                 if (msg.zone && msg.zone !== currentZone) break;
                 serverTick = msg.tick;
-                console.log('[mp] delta: upserts=' + (msg.upserts ? msg.upserts.length : 0) + ' removes=' + (msg.removes ? msg.removes.length : 0));
-                if (msg.upserts) { for (var _di = 0; _di < msg.upserts.length; _di++) { var _du = msg.upserts[_di]; console.log('[mp]   upsert: ' + _du.id + ' dn=' + (_du.dn||_du.displayName||'?') + ' px=' + _du.px + ',' + _du.py); } }
 
                 if (msg.ack) processAck(msg.ack.seq);
 
@@ -810,7 +811,6 @@ var MP = (function () {
             case 'pos_batch':
                 if (msg.zone && msg.zone !== currentZone) break;
                 serverTick = msg.tick;
-                if (msg.p && msg.p.length > 0) console.log('[mp] pos_batch: ' + msg.p.length + ' players', msg.p.map(function(e){return e[0].substr(0,8)+'@'+e[1]+','+e[2]}).join('; '));
                 if (msg.p) {
                     var now = Date.now();
                     for (var bi = 0; bi < msg.p.length; bi++) {

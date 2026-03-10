@@ -4857,6 +4857,8 @@ const SPRITE_MANIFEST = {
     ctFloorB6:'sprites/dungeon/floor_ct_b6.png', ctFloorB7:'sprites/dungeon/floor_ct_b7.png',
     ctHWallA0:'sprites/dungeon/hwall_ct_a0.png', ctHWallA1:'sprites/dungeon/hwall_ct_a1.png',
     ctHWallA2:'sprites/dungeon/hwall_ct_a2.png', ctHWallA3:'sprites/dungeon/hwall_ct_a3.png',
+    ctVWallA0:'sprites/dungeon/vwall_ct_a0.png', ctVWallA1:'sprites/dungeon/vwall_ct_a1.png',
+    ctVWallA2:'sprites/dungeon/vwall_ct_a2.png', ctVWallA3:'sprites/dungeon/vwall_ct_a3.png',
     ctCornerTL:          'sprites/dungeon/corner_ct_tl.png',
     ctCarpetInt0:        'sprites/dungeon/carpet_ct_int0.png',
     ctCarpetInt1:        'sprites/dungeon/carpet_ct_int1.png',
@@ -4924,6 +4926,7 @@ const OPTIONAL_SPRITE_KEYS = [
     'ctFloorA0','ctFloorA1','ctFloorA2','ctFloorA3','ctFloorA4','ctFloorA5','ctFloorA6','ctFloorA7',
     'ctFloorB0','ctFloorB1','ctFloorB2','ctFloorB3','ctFloorB4','ctFloorB5','ctFloorB6','ctFloorB7',
     'ctHWallA0','ctHWallA1','ctHWallA2','ctHWallA3',
+    'ctVWallA0','ctVWallA1','ctVWallA2','ctVWallA3',
     'ctCornerTL',
     'ctCarpetInt0','ctCarpetInt1','ctCarpetInt2',
     'ctCarpetEdgeL','ctCarpetEdgeR','ctCarpetEdgeT','ctCarpetEdgeB',
@@ -6934,7 +6937,6 @@ function requestAttack() {
             frame: 0
         });
         game.van.shotCooldown = 0.35;  // ~3 shots/second
-        game.owScreenShake = 2;
         if (typeof MP !== 'undefined' && MP.isConnected()) {
             MP.sendVanShot(projX, projY, vdx * 700, vdy * 700, 1.6);
         }
@@ -8448,8 +8450,8 @@ var REGION_ENEMY_CAR_SPEED    = 96;   // px/sec driving
 var REGION_ENEMY_WALK_SPEED   = 40;   // px/sec walking
 var REGION_ENEMY_CAR_W        = 64;   // display width  (32-px pattern × scale 2)
 var REGION_ENEMY_CAR_H        = 48;   // display height (24-px pattern × scale 2)
-var REGION_ENEMY_WALK_W       = 20;   // display size for walkers
-var REGION_ENEMY_WALK_H       = 20;
+var REGION_ENEMY_WALK_W       = 22;   // match building-level enemy size (lts * 0.7 ≈ 22)
+var REGION_ENEMY_WALK_H       = 22;
 var REGION_ENEMY_DEATH_TIME   = 1.2;  // seconds to show destroyed sprite
 
 var REGION_ENEMY_SIM_STEP     = 0.05; // simulation step (s) — same on all clients
@@ -9090,8 +9092,6 @@ function updateVanProjectiles(dt) {
                         ce.stunTimer = OW_STUN_TIME;
                         if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyHit(ce.id, ce.hp);
                     }
-                    // Sparks + shake
-                    game.owScreenShake = 4;
                     game.owHitSparks.push({ x: proj.x, y: proj.y, life: 0.2, maxLife: 0.2 });
                     // Extra sparks for satisfying impact
                     for (var _si = 0; _si < 3; _si++) {
@@ -9133,7 +9133,6 @@ function updateVanProjectiles(dt) {
                     var wecx = we.x + REGION_ENEMY_WALK_W / 2;
                     var wecy = we.y + REGION_ENEMY_WALK_H / 2;
                     _owAddKillScore(we.type, wecx, wecy);
-                    game.owScreenShake = 2;
                     game.owHitSparks.push({ x: wecx, y: wecy, life: 0.18, maxLife: 0.18 });
                     if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(we.id, wecx, wecy);
                 }
@@ -9204,7 +9203,6 @@ function updateRegionEnemies(dt) {
                     // Always record the kill so this enemy is never re-spawned locally
                     if (game._killedEnemyIds) game._killedEnemyIds.add(_pkid);
                     if (_pkx || _pky) {
-                        game.owScreenShake = Math.max(game.owScreenShake || 0, 3);
                         game.owHitSparks.push({ x: _pkx, y: _pky, life: 0.25, maxLife: 0.25 });
                     }
                 }
@@ -9320,8 +9318,6 @@ function updateRegionEnemies(dt) {
                 if (Math.abs(hdx) < hitRange && Math.abs(hdy) < hitRange) {
                     he.hp -= OW_TURTLE_ATK_DMG;
                     t._atkHitEnemies.add(he.id);
-                    // Screen shake + spark (same as level)
-                    game.owScreenShake = 3;
                     game.owHitSparks.push({ x: (atkCx + hecx) / 2, y: (atkCy + hecy) / 2, life: 0.12, maxLife: 0.12 });
                     // Knockback away from turtle center (use full distance for direction)
                     var tCx = t.x + t.width / 2, tCy = t.y + t.height / 2;
@@ -11921,7 +11917,8 @@ var DT_PILLAR   = 3;  // solid decoration
 var DT_CARPET   = 4;  // walkable rug/carpet
 var DT_PEDESTAL = 5;  // item pedestal (walkable)
 var DT_DOOR     = 6;  // door opening → room transition
-var DT_EXIT     = 7;  // south door of entry room → exits to world
+var DT_EXIT     = 7;  // south door of entry room → back to building (no score)
+var DT_VICTORY  = 8;  // opens in boss room after clearing → level complete + score
 
 var DUNGEON_TILE_TYPES = {
     '0': { name: 'floor',    solid: false },
@@ -11931,7 +11928,8 @@ var DUNGEON_TILE_TYPES = {
     '4': { name: 'carpet',   solid: false },
     '5': { name: 'pedestal', solid: false },
     '6': { name: 'door',     solid: false },
-    '7': { name: 'exitdoor', solid: false }
+    '7': { name: 'exitdoor', solid: false },
+    '8': { name: 'victory',  solid: false }
 };
 
 // Direction helpers
@@ -11984,6 +11982,9 @@ function generateDungeon(theme, seed, diff, artistId, artistName) {
         doorConfigs[1].e = branchRoomId;
         doorConfigs[branchRoomId].w = 1;
     }
+
+    // Entry room always has a south exit door back to the world
+    doorConfigs[0].s = -1;  // -1 = world exit (not a room id)
 
     var itemRoomId = mainChainLen - 1; // last room in main chain
 
@@ -12209,6 +12210,7 @@ function _loadDungeonRoom(L, room) {
 
     var cleared = L.dungeonCleared[room.id];
 
+    L._enemySyncTimer = 0; // force immediate sync broadcast on room load
     L.enemies = cleared ? [] : room.enemies.map(function(e, idx) {
         var isRanged = e.type === 'foot_ranged';
         var isShield = e.type === 'foot_shield';
@@ -13002,8 +13004,14 @@ function updateLevel(dt) {
         var _ROOM_W = L.dungeon.roomW, _ROOM_H = L.dungeon.roomH;
         var _MID_X  = Math.floor(_ROOM_W / 2), _MID_Y = Math.floor(_ROOM_H / 2);
 
-        // World exit door (south door of entry room)
+        // South exit door (entry room only) — go back to building, no score awarded
         if (_pTile === DT_EXIT) {
+            exitLevel();
+            return;
+        }
+
+        // Victory door (boss room, opens after clearing) — level complete + score card
+        if (_pTile === DT_VICTORY) {
             L.complete = true;
             game.levelState = 'COMPLETE';
             game.progress.levelWins[L.id] = true;
@@ -13028,7 +13036,7 @@ function updateLevel(dt) {
             else if (_pcx === _ROOM_W - 1 && _dd.e !== null) { _transDir = 'e'; _toRoomId = _dd.e; }
             else if (_pcx === 0 && _dd.w !== null)           { _transDir = 'w'; _toRoomId = _dd.w; }
 
-            if (_transDir !== null && _toRoomId !== null) {
+            if (_transDir !== null && _toRoomId !== null && _toRoomId >= 0) {
                 // Check if room is locked (has living enemies)
                 var _hasAlive = L.enemies.some(function(e) { return e.alive; });
                 var _curCleared = !_hasAlive || (L.dungeonCleared[L.currentRoomId]);
@@ -13309,7 +13317,6 @@ function updateLevel(dt) {
                 if (e.boss && !e.weakPointVisible) {
                     blocked = true;
                     p.atkHitIds.add(e.id);
-                    L.screenShake = 1;
                     L.hitSparks.push({ x: (ax + ecx) / 2, y: (ay + ecy) / 2, life: 0.06 });
                 }
                 // Shield check: shield blocks if player attacks from the front
@@ -13318,15 +13325,12 @@ function updateLevel(dt) {
                     if (attackFromRight || Math.abs(pcx - ecx) < lts * 0.3) {
                         blocked = true;
                         p.atkHitIds.add(e.id);
-                        L.screenShake = 1;
                         L.hitSparks.push({ x: (ax + ecx) / 2, y: (ay + ecy) / 2, life: 0.08 });
                     }
                 }
                 if (!blocked) {
                 e.hp -= 1;
                 p.atkHitIds.add(e.id);
-                // Hit confirm: screen shake + spark
-                L.screenShake = 3;
                 L.hitSparks.push({ x: (ax + ecx) / 2, y: (ay + ecy) / 2, life: 0.12 });
                 // Enemy knockback: away from player (boss has minimal KB)
                 var hitDir = Math.atan2(ecy - pcy, ecx - pcx);
@@ -13402,6 +13406,25 @@ function updateLevel(dt) {
             }
             continue;
         }
+    }
+
+    // ── Boss room clear → open victory door ─────────────────────
+    if (L.dungeon && !L.victoryDoorOpen &&
+        L.currentRoomId === L.dungeon.itemRoomId &&
+        L.enemies.length > 0 &&
+        L.enemies.every(function(e) { return !e.alive; })) {
+
+        L.victoryDoorOpen = true;
+        L.dungeonCleared[L.currentRoomId] = true;
+
+        // Cut a 3-tile opening in the north wall with DT_VICTORY tiles
+        var _vRW = L.dungeon.roomW, _vMX = Math.floor(_vRW / 2);
+        L.tilemap[0][_vMX - 1] = DT_VICTORY;
+        L.tilemap[0][_vMX]     = DT_VICTORY;
+        L.tilemap[0][_vMX + 1] = DT_VICTORY;
+
+        L.dungeonRoomMsg  = 'WAY OUT OPENED!';
+        L.dungeonMsgTimer = 3.0;
     }
 
     // ── Exit trigger ────────────────────────────────────────────
@@ -13514,10 +13537,12 @@ function updateLevel(dt) {
             }
         }
 
-        // On first join: apply host flag + item state + 24h dead enemy list
+        // Refresh host flag every tick so host-reassignment (partner leave/join) is immediate
+        L._isHost = MP.isLevelHost();
+
+        // On first join: apply item state + 24h dead enemy list
         var _lvlJoinedItem = MP.drainLevelItemState();
         if (_lvlJoinedItem !== null) {
-            L._isHost = MP.isLevelHost();
             // Apply server item state: mark already-taken items
             if (_lvlJoinedItem && L.specialItem && _lvlJoinedItem[L.specialItem.id]) {
                 var _srv = _lvlJoinedItem[L.specialItem.id];
@@ -13586,36 +13611,41 @@ function updateLevel(dt) {
         }
 
         // ── Enemy position sync ─────────────────────────────────
-        // Host broadcasts all enemy positions ~6 Hz so every client sees the same positions.
-        // Non-host skips AI movement (via _runEnemyAI=false) and snaps to received positions.
+        // Host broadcasts at 20 Hz. Non-host lerps toward received positions so AI
+        // divergence between packets is smoothed out rather than causing hard snaps.
         if (L.enemies) {
             if (L._isHost) {
                 if (!L._enemySyncTimer) L._enemySyncTimer = 0;
                 L._enemySyncTimer -= dt;
                 if (L._enemySyncTimer <= 0) {
-                    L._enemySyncTimer = 0.15;
+                    L._enemySyncTimer = 0.05; // 20 Hz
                     var _eSnap = [];
                     for (var _esi = 0; _esi < L.enemies.length; _esi++) {
                         var _ene = L.enemies[_esi];
                         if (_ene.alive) {
-                            _eSnap.push({ id: _ene.id, x: _ene.x, y: _ene.y, hp: _ene.hp, s: _ene.state, fd: _ene.facingDir });
+                            _eSnap.push({ id: _ene.id,
+                                          x: Math.round(_ene.x), y: Math.round(_ene.y),
+                                          hp: _ene.hp, s: _ene.state, fd: _ene.facingDir,
+                                          rm: L.currentRoomId });
                         }
                     }
                     if (_eSnap.length > 0) MP.sendLevelEnemySync(L._instanceId, _eSnap);
                 }
             } else if (L._isHost === false) {
-                // Non-host: apply received enemy positions from host
+                // Non-host: store synced target positions; lerp toward them each frame
                 var _esyncs = MP.drainLevelEnemySyncs();
                 if (_esyncs) {
                     for (var _esi2 = 0; _esi2 < _esyncs.length; _esi2++) {
                         var _esync = _esyncs[_esi2];
+                        // Ignore syncs for a different room
+                        if (_esync.rm !== undefined && _esync.rm !== L.currentRoomId) continue;
                         for (var _eli = 0; _eli < L.enemies.length; _eli++) {
                             var _le = L.enemies[_eli];
                             if (_le.id === _esync.id) {
-                                _le.x = _esync.x;
-                                _le.y = _esync.y;
+                                _le._tx = _esync.x;
+                                _le._ty = _esync.y;
                                 if (_esync.hp !== undefined) _le.hp = _esync.hp;
-                                if (_esync.s) _le.state = _esync.s;
+                                if (_esync.s)  _le.state = _esync.s;
                                 if (_esync.fd !== undefined) _le.facingDir = _esync.fd;
                                 if (_le.hp <= 0 && _le.alive) {
                                     _le.alive = false;
@@ -13625,6 +13655,14 @@ function updateLevel(dt) {
                             }
                         }
                     }
+                }
+                // Lerp all enemies toward their host-authoritative positions each frame
+                var _lf = Math.min(1, dt * 25); // converges in ~4-5 frames at 60 fps
+                for (var _eli3 = 0; _eli3 < L.enemies.length; _eli3++) {
+                    var _le3 = L.enemies[_eli3];
+                    if (!_le3.alive || _le3._tx === undefined) continue;
+                    _le3.x += (_le3._tx - _le3.x) * _lf;
+                    _le3.y += (_le3._ty - _le3.y) * _lf;
                 }
             }
         }
@@ -13679,7 +13717,7 @@ function levelRectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
 function _drawDungeonPlayer(L, cx, cy, ts) {
     var p = L.player;
     var psx = p.x - cx, psy = p.y - cy;
-    var turtleScale = (ts * 0.75) / 16;
+    var turtleScale = ts / 16;
     var atkFrame = (p.atkPhase === 'ACTIVE' && p.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
     var turtleId = p.turtleId || 'leo';
     var weaponBehind = (turtleId === 'donnie' && p.direction === 'up');
@@ -13910,6 +13948,7 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
     var ctFloorRowB = [sp.ctFloorB0,sp.ctFloorB1,sp.ctFloorB2,sp.ctFloorB3,
                        sp.ctFloorB4,sp.ctFloorB5,sp.ctFloorB6,sp.ctFloorB7].filter(Boolean);
     var ctHWall = [sp.ctHWallA0,sp.ctHWallA1,sp.ctHWallA2,sp.ctHWallA3].filter(Boolean);
+    var ctVWall = [sp.ctVWallA0,sp.ctVWallA1,sp.ctVWallA2,sp.ctVWallA3].filter(Boolean);
     // Vertical border sprites (left/right walls)
     var wallSprites = isGallery
         ? [sp.dungWallGallery, sp.dungWallGalleryB, sp.dungWallGalleryC]
@@ -14038,15 +14077,21 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                         } else {
                             ctx.drawImage(hSpr, px, py, ts, ts);
                         }
-                    } else if (!isTopBot && (isCT ? ctHWall.length > 0 : hasWall)) {
-                        // Left/right: for Cloud Tops use same golden brick rotated 90°
+                    } else if (!isTopBot && (isCT ? ctVWall.length > 0 : hasWall)) {
+                        // Left/right side walls
                         if (isCT) {
-                            var wSprCT = ctHWall[ty % ctHWall.length] || ctHWall[0];
-                            ctx.save();
-                            ctx.translate(px + ts/2, py + ts/2);
-                            ctx.rotate(tx === RW-1 ? -Math.PI/2 : Math.PI/2);
-                            ctx.drawImage(wSprCT, -ts/2, -ts/2, ts, ts);
-                            ctx.restore();
+                            var vArr = ctVWall.length > 0 ? ctVWall : ctHWall;
+                            var wSprCT = vArr[ty % vArr.length] || vArr[0];
+                            if (tx === RW-1) {
+                                // Right wall: flip horizontally so golden edge faces left (into room)
+                                ctx.save();
+                                ctx.translate(px + ts, py);
+                                ctx.scale(-1, 1);
+                                ctx.drawImage(wSprCT, 0, 0, ts, ts);
+                                ctx.restore();
+                            } else {
+                                ctx.drawImage(wSprCT, px, py, ts, ts);
+                            }
                         } else {
                             var wSpr = wallSprites[ty % wallSprites.length];
                             if (!wSpr) wSpr = wallSprites[0];
@@ -14251,6 +14296,7 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                     }
 
                 } else if (tileId === DT_EXIT) {
+                    // Back-to-building door: green pulsing with down arrow
                     var ea = 0.6 + Math.sin(now / 200) * 0.25;
                     ctx.fillStyle = 'rgba(30,200,80,' + (ea * 0.5) + ')';
                     ctx.fillRect(px + 2, py + 2, ts - 4, ts - 4);
@@ -14260,6 +14306,19 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                     ctx.font = 'bold ' + Math.floor(ts * 0.44) + 'px monospace';
                     ctx.textAlign = 'center';
                     ctx.fillText('▼', px + ts / 2, py + ts * 0.72);
+                    ctx.textAlign = 'left';
+
+                } else if (tileId === DT_VICTORY) {
+                    // Victory door: gold pulsing portal with star
+                    var va = 0.7 + Math.sin(now / 180) * 0.3;
+                    ctx.fillStyle = 'rgba(255,200,0,' + (va * 0.45) + ')';
+                    ctx.fillRect(px, py, ts, ts);
+                    ctx.fillStyle = 'rgba(255,240,80,' + va + ')';
+                    ctx.fillRect(px + 4, py + 4, ts - 8, ts - 8);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold ' + Math.floor(ts * 0.52) + 'px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('★', px + ts / 2, py + ts * 0.72);
                     ctx.textAlign = 'left';
                 }
             }
@@ -14413,9 +14472,17 @@ function drawLevel() {
                 if (L.dungeon && _dRem.roomId !== null && _dRem.roomId !== undefined && _dRem.roomId !== L.currentRoomId) continue;
                 var _drx = (_dRem._rpx !== undefined ? _dRem._rpx : _dRem.px) - cx;
                 var _dry = (_dRem._rpy !== undefined ? _dRem._rpy : _dRem.py) - cy;
-                var _dScale = (ts * 0.75) / 16;
+                var _dScale = ts / 16;
                 var _dTid = _dRem.tid || 'leo';
-                NES.drawTurtleSprite(ctx, _drx, _dry, _dRem.facing || 's', _dRem.frame || 0, _dTid, _dScale);
+                var _dFacing = _dRem.facing || 's';
+                var _dAtkPhase = _dRem.atkPhase || 'IDLE';
+                var _dAtkFrame = (_dAtkPhase === 'ACTIVE' && (_dRem.atkTimer || 0) < ATK_ACTIVE * 0.5) ? 1 : 0;
+                var _dWepBehind = (_dTid === 'donnie' && _dFacing === 'up');
+                ctx.globalAlpha = 0.85;
+                if (_dWepBehind) NES.drawWeaponOverlay(ctx, _drx, _dry, _dFacing, _dTid, _dScale, _dAtkPhase, _dAtkFrame);
+                NES.drawTurtleSprite(ctx, _drx, _dry, _dFacing, _dRem.frame || 0, _dTid, _dScale);
+                if (!_dWepBehind) NES.drawWeaponOverlay(ctx, _drx, _dry, _dFacing, _dTid, _dScale, _dAtkPhase, _dAtkFrame);
+                ctx.globalAlpha = 1;
                 if (_dRem.displayName) {
                     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.font = 'bold 7px monospace';
                     var _dNW = ctx.measureText(_dRem.displayName).width + 4;
@@ -14684,7 +14751,7 @@ function drawLevel() {
     var psx = p.x - cx, psy = p.y - cy;
     var blink = (p.invTimer > 0 && Math.floor(p.invTimer * 10) % 2 === 0);
     if (!blink) {
-        var turtleScale = p.w / 16;
+        var turtleScale = ts / 16;
         var turtleId = p.turtleId || 'leo';
         // atkFrame 0 = first half of active phase, 1 = second half
         var atkFrame = (p.atkPhase === 'ACTIVE' && p.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
@@ -14706,7 +14773,7 @@ function drawLevel() {
             var _rly = (_rLvl._rpy !== undefined ? _rLvl._rpy : _rLvl.py) - cy;
             // Only draw if within viewport
             if (_rlx > -ts * 2 && _rlx < CANVAS_WIDTH + ts * 2 && _rly > -ts * 2 && _rly < CANVAS_HEIGHT + ts * 2) {
-                var _rTurtleScale = (ts * 0.75) / 16;  // match p.w = lts * 0.75
+                var _rTurtleScale = ts / 16;
                 var _rTid = _rLvl.tid || 'leo';
                 var _rAtkFrame = (_rLvl.atkPhase === 'ACTIVE' && _rLvl.atkTimer < ATK_ACTIVE * 0.5) ? 1 : 0;
                 var _rWeaponBehind = (_rTid === 'donnie' && _rLvl.facing === 'up');
