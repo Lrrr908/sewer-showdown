@@ -4846,6 +4846,29 @@ const SPRITE_MANIFEST = {
     dungCarpetGallery: 'sprites/dungeon/carpet_gallery_int_a.png',
     dungCarpetGalleryB:'sprites/dungeon/carpet_gallery_int_b.png',
     dungUrn:           'sprites/dungeon/urn_sewer.png',
+    // Cloud Tops (gallery theme) tiles — cobblestone floor + golden brick walls + mint carpet
+    ctFloorA0:'sprites/dungeon/floor_ct_a0.png', ctFloorA1:'sprites/dungeon/floor_ct_a1.png',
+    ctFloorA2:'sprites/dungeon/floor_ct_a2.png', ctFloorA3:'sprites/dungeon/floor_ct_a3.png',
+    ctFloorA4:'sprites/dungeon/floor_ct_a4.png', ctFloorA5:'sprites/dungeon/floor_ct_a5.png',
+    ctFloorA6:'sprites/dungeon/floor_ct_a6.png', ctFloorA7:'sprites/dungeon/floor_ct_a7.png',
+    ctFloorB0:'sprites/dungeon/floor_ct_b0.png', ctFloorB1:'sprites/dungeon/floor_ct_b1.png',
+    ctFloorB2:'sprites/dungeon/floor_ct_b2.png', ctFloorB3:'sprites/dungeon/floor_ct_b3.png',
+    ctFloorB4:'sprites/dungeon/floor_ct_b4.png', ctFloorB5:'sprites/dungeon/floor_ct_b5.png',
+    ctFloorB6:'sprites/dungeon/floor_ct_b6.png', ctFloorB7:'sprites/dungeon/floor_ct_b7.png',
+    ctHWallA0:'sprites/dungeon/hwall_ct_a0.png', ctHWallA1:'sprites/dungeon/hwall_ct_a1.png',
+    ctHWallA2:'sprites/dungeon/hwall_ct_a2.png', ctHWallA3:'sprites/dungeon/hwall_ct_a3.png',
+    ctCornerTL:          'sprites/dungeon/corner_ct_tl.png',
+    ctCarpetInt0:        'sprites/dungeon/carpet_ct_int0.png',
+    ctCarpetInt1:        'sprites/dungeon/carpet_ct_int1.png',
+    ctCarpetInt2:        'sprites/dungeon/carpet_ct_int2.png',
+    ctCarpetEdgeL:       'sprites/dungeon/carpet_ct_edge_l.png',
+    ctCarpetEdgeR:       'sprites/dungeon/carpet_ct_edge_r.png',
+    ctCarpetEdgeT:       'sprites/dungeon/carpet_ct_edge_t.png',
+    ctCarpetEdgeB:       'sprites/dungeon/carpet_ct_edge_b.png',
+    ctCarpetCornerTL:    'sprites/dungeon/carpet_ct_corner_tl.png',
+    ctCarpetCornerTR:    'sprites/dungeon/carpet_ct_corner_tr.png',
+    ctCarpetCornerBL:    'sprites/dungeon/carpet_ct_corner_bl.png',
+    ctCarpetCornerBR:    'sprites/dungeon/carpet_ct_corner_br.png',
 
     // World map (optional — fallback to colored rects)
     worldLand:         'sprites/world/land.png',
@@ -4896,7 +4919,15 @@ const OPTIONAL_SPRITE_KEYS = [
     'dungCarpetSewer','dungCarpetSewerB','dungCarpetSewerC',
     'dungCarpetEdgeL','dungCarpetEdgeR',
     'dungCarpetGallery','dungCarpetGalleryB',
-    'dungUrn'
+    'dungUrn',
+    // Cloud Tops gallery tiles
+    'ctFloorA0','ctFloorA1','ctFloorA2','ctFloorA3','ctFloorA4','ctFloorA5','ctFloorA6','ctFloorA7',
+    'ctFloorB0','ctFloorB1','ctFloorB2','ctFloorB3','ctFloorB4','ctFloorB5','ctFloorB6','ctFloorB7',
+    'ctHWallA0','ctHWallA1','ctHWallA2','ctHWallA3',
+    'ctCornerTL',
+    'ctCarpetInt0','ctCarpetInt1','ctCarpetInt2',
+    'ctCarpetEdgeL','ctCarpetEdgeR','ctCarpetEdgeT','ctCarpetEdgeB',
+    'ctCarpetCornerTL','ctCarpetCornerTR','ctCarpetCornerBL','ctCarpetCornerBR'
 ];
 
 const SPRITE_ALIASES = {
@@ -13866,12 +13897,19 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
 
     // ── Per-theme sprite sets (all fall back to procedural if sprites missing) ─
     var isGallery = (theme === 'gallery' || theme === 'dock' || theme === 'street');
+    var isCT = isGallery && sp.ctFloorA0; // Cloud Tops high-fidelity gallery tileset
     var floorSprites = [
         sp.dungFloorA, sp.dungFloorB, sp.dungFloorC, sp.dungFloorD,
         sp.dungFloorE, sp.dungFloorF, sp.dungFloorG, sp.dungFloorH,
         sp.dungFloor0, sp.dungFloor1, sp.dungFloor2, sp.dungFloor3,
         sp.dungFloor4, sp.dungFloor5, sp.dungFloor6, sp.dungFloor7
     ].filter(Boolean);
+    // Cloud Tops floor rows (alternating for brick-bond pattern)
+    var ctFloorRowA = [sp.ctFloorA0,sp.ctFloorA1,sp.ctFloorA2,sp.ctFloorA3,
+                       sp.ctFloorA4,sp.ctFloorA5,sp.ctFloorA6,sp.ctFloorA7].filter(Boolean);
+    var ctFloorRowB = [sp.ctFloorB0,sp.ctFloorB1,sp.ctFloorB2,sp.ctFloorB3,
+                       sp.ctFloorB4,sp.ctFloorB5,sp.ctFloorB6,sp.ctFloorB7].filter(Boolean);
+    var ctHWall = [sp.ctHWallA0,sp.ctHWallA1,sp.ctHWallA2,sp.ctHWallA3].filter(Boolean);
     // Vertical border sprites (left/right walls)
     var wallSprites = isGallery
         ? [sp.dungWallGallery, sp.dungWallGalleryB, sp.dungWallGalleryC]
@@ -13979,19 +14017,19 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                     var isCorner2 = (tx === 0 || tx === RW-1) && (ty === 0 || ty === RH-1);
                     var isTopBot  = (ty === 0 || ty === RH-1) && !isCorner2;
 
-                    if (isCorner2 && hasCorner) {
+                    if (isCorner2 && (isCT ? sp.ctCornerTL : hasCorner)) {
                         // Corner tile — flip to match the corner direction
+                        var cSprC = isCT ? sp.ctCornerTL : cornerSprite;
                         ctx.save();
                         ctx.translate(px + (tx === RW-1 ? ts : 0), py + (ty === RH-1 ? ts : 0));
                         ctx.scale(tx === RW-1 ? -1 : 1, ty === RH-1 ? -1 : 1);
-                        ctx.drawImage(cornerSprite, 0, 0, ts, ts);
+                        ctx.drawImage(cSprC, 0, 0, ts, ts);
                         ctx.restore();
-                    } else if (isTopBot && hasHWall) {
-                        // Top/bottom: horizontal scrollwork tiles
-                        var hSpr = hWallSprites[tx % hWallSprites.length];
-                        if (!hSpr) hSpr = hWallSprites[0];
+                    } else if (isTopBot && (isCT ? ctHWall.length > 0 : hasHWall)) {
+                        // Top/bottom: horizontal brick/scrollwork tiles
+                        var hSpr = isCT ? ctHWall[tx % ctHWall.length] : hWallSprites[tx % hWallSprites.length];
+                        if (!hSpr) hSpr = isCT ? ctHWall[0] : hWallSprites[0];
                         if (ty === RH-1) {
-                            // Flip vertically for bottom border
                             ctx.save();
                             ctx.translate(px, py + ts);
                             ctx.scale(1, -1);
@@ -14000,18 +14038,27 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                         } else {
                             ctx.drawImage(hSpr, px, py, ts, ts);
                         }
-                    } else if (!isTopBot && hasWall) {
-                        // Left/right: vertical stripe tiles, flip right side
-                        var wSpr = wallSprites[ty % wallSprites.length];
-                        if (!wSpr) wSpr = wallSprites[0];
-                        if (tx === RW-1) {
+                    } else if (!isTopBot && (isCT ? ctHWall.length > 0 : hasWall)) {
+                        // Left/right: for Cloud Tops use same golden brick rotated 90°
+                        if (isCT) {
+                            var wSprCT = ctHWall[ty % ctHWall.length] || ctHWall[0];
                             ctx.save();
-                            ctx.translate(px + ts, py);
-                            ctx.scale(-1, 1);
-                            ctx.drawImage(wSpr, 0, 0, ts, ts);
+                            ctx.translate(px + ts/2, py + ts/2);
+                            ctx.rotate(tx === RW-1 ? -Math.PI/2 : Math.PI/2);
+                            ctx.drawImage(wSprCT, -ts/2, -ts/2, ts, ts);
                             ctx.restore();
                         } else {
-                            ctx.drawImage(wSpr, px, py, ts, ts);
+                            var wSpr = wallSprites[ty % wallSprites.length];
+                            if (!wSpr) wSpr = wallSprites[0];
+                            if (tx === RW-1) {
+                                ctx.save();
+                                ctx.translate(px + ts, py);
+                                ctx.scale(-1, 1);
+                                ctx.drawImage(wSpr, 0, 0, ts, ts);
+                                ctx.restore();
+                            } else {
+                                ctx.drawImage(wSpr, px, py, ts, ts);
+                            }
                         }
                     } else {
                         // Procedural fallback for any missing sprites
@@ -14044,7 +14091,13 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
 
             } else {
                 // ── FLOOR BASE ──────────────────────────────────────────────────
-                if (hasFloor) {
+                if (isCT && ctFloorRowA.length > 0) {
+                    // Cloud Tops: authentic brick-bond cobblestone (alternate row A / row B)
+                    var ctRow = (ty % 2 === 0) ? ctFloorRowA : ctFloorRowB;
+                    var fSprCT = ctRow[tx % ctRow.length];
+                    if (!fSprCT) fSprCT = ctFloorRowA[0];
+                    ctx.drawImage(fSprCT, px, py, ts, ts);
+                } else if (hasFloor) {
                     var fSpr = floorSprites[h % floorSprites.length];
                     if (!fSpr) fSpr = floorSprites[0];
                     ctx.drawImage(fSpr, px, py, ts, ts);
@@ -14115,8 +14168,23 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                     var nE = tx < RW - 1 ? (tilemap[ty][tx+1] || 0) : -1;
                     var isLeftEdge  = (nW !== DT_CARPET);
                     var isRightEdge = (nE !== DT_CARPET);
+                    var isTopEdge   = (nN !== DT_CARPET);
+                    var isBotEdge   = (nS !== DT_CARPET);
 
-                    if (hasCarpetEdge && isLeftEdge && carpetEdgeLSprite) {
+                    if (isCT && sp.ctCarpetInt0) {
+                        // Cloud Tops carpet: full edge/corner sprites
+                        var ctCInts = [sp.ctCarpetInt0, sp.ctCarpetInt1, sp.ctCarpetInt2].filter(Boolean);
+                        var ctCDrawn = false;
+                        if (isTopEdge && isLeftEdge && sp.ctCarpetCornerTL)  { ctx.drawImage(sp.ctCarpetCornerTL, px,py,ts,ts); ctCDrawn=true; }
+                        else if (isTopEdge && isRightEdge && sp.ctCarpetCornerTR) { ctx.drawImage(sp.ctCarpetCornerTR,px,py,ts,ts); ctCDrawn=true; }
+                        else if (isBotEdge && isLeftEdge && sp.ctCarpetCornerBL)  { ctx.drawImage(sp.ctCarpetCornerBL, px,py,ts,ts); ctCDrawn=true; }
+                        else if (isBotEdge && isRightEdge && sp.ctCarpetCornerBR) { ctx.drawImage(sp.ctCarpetCornerBR,px,py,ts,ts); ctCDrawn=true; }
+                        else if (isLeftEdge && sp.ctCarpetEdgeL)  { ctx.drawImage(sp.ctCarpetEdgeL, px,py,ts,ts); ctCDrawn=true; }
+                        else if (isRightEdge && sp.ctCarpetEdgeR) { ctx.drawImage(sp.ctCarpetEdgeR, px,py,ts,ts); ctCDrawn=true; }
+                        else if (isTopEdge && sp.ctCarpetEdgeT)   { ctx.drawImage(sp.ctCarpetEdgeT, px,py,ts,ts); ctCDrawn=true; }
+                        else if (isBotEdge && sp.ctCarpetEdgeB)   { ctx.drawImage(sp.ctCarpetEdgeB, px,py,ts,ts); ctCDrawn=true; }
+                        if (!ctCDrawn) { ctx.drawImage(ctCInts[h % ctCInts.length], px,py,ts,ts); }
+                    } else if (hasCarpetEdge && isLeftEdge && carpetEdgeLSprite) {
                         // Left edge carpet with authentic rope border
                         ctx.drawImage(carpetEdgeLSprite, px, py, ts, ts);
                     } else if (hasCarpetEdge && isRightEdge && carpetEdgeRSprite) {
@@ -14132,7 +14200,7 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                         ctx.fillRect(px, py, ts, ts);
                     }
                     // Top/bottom gold strip (sprite doesn't cover these edges)
-                    if (!hasCarpet) {
+                    if (!hasCarpet && !isCT) {
                         var cbw = Math.max(3, Math.round(ts * 0.12));
                         ctx.fillStyle = pal.carpetBorder;
                         if (nN !== DT_CARPET) ctx.fillRect(px, py, ts, cbw);
