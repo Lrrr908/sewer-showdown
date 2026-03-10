@@ -4811,6 +4811,14 @@ const SPRITE_MANIFEST = {
     dungFloorF:        'sprites/dungeon/floor_sewer_f.png',
     dungFloorG:        'sprites/dungeon/floor_sewer_g.png',
     dungFloorH:        'sprites/dungeon/floor_sewer_h.png',
+    dungFloor0:        'sprites/dungeon/floor_sewer_0.png',
+    dungFloor1:        'sprites/dungeon/floor_sewer_1.png',
+    dungFloor2:        'sprites/dungeon/floor_sewer_2.png',
+    dungFloor3:        'sprites/dungeon/floor_sewer_3.png',
+    dungFloor4:        'sprites/dungeon/floor_sewer_4.png',
+    dungFloor5:        'sprites/dungeon/floor_sewer_5.png',
+    dungFloor6:        'sprites/dungeon/floor_sewer_6.png',
+    dungFloor7:        'sprites/dungeon/floor_sewer_7.png',
     dungWallSewer:     'sprites/dungeon/wall_sewer_a.png',
     dungWallSewerB:    'sprites/dungeon/wall_sewer_b.png',
     dungWallSewerC:    'sprites/dungeon/wall_sewer_c.png',
@@ -4878,6 +4886,8 @@ const OPTIONAL_SPRITE_KEYS = [
     // Dungeon tiles (13.x)
     'dungFloorA','dungFloorB','dungFloorC','dungFloorD',
     'dungFloorE','dungFloorF','dungFloorG','dungFloorH',
+    'dungFloor0','dungFloor1','dungFloor2','dungFloor3',
+    'dungFloor4','dungFloor5','dungFloor6','dungFloor7',
     'dungWallSewer','dungWallSewerB','dungWallSewerC',
     'dungWallGallery','dungWallGalleryB','dungWallGalleryC',
     'dungHWallSewerA','dungHWallSewerB','dungHWallSewerC','dungHWallSewerD',
@@ -13846,6 +13856,7 @@ function _drawDungeonMiniMap(L, ts) {
 
 // Helper: draw one room's tilemap with an x/y pixel offset
 function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
+    ctx.imageSmoothingEnabled = false;
     var ts = L.tileSize;
     var cx = L.camera.x - offsetX, cy = L.camera.y - offsetY;
     var RW = L.dungeon.roomW, RH = L.dungeon.roomH;
@@ -13857,8 +13868,10 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
     var isGallery = (theme === 'gallery' || theme === 'dock' || theme === 'street');
     var floorSprites = [
         sp.dungFloorA, sp.dungFloorB, sp.dungFloorC, sp.dungFloorD,
-        sp.dungFloorE, sp.dungFloorF, sp.dungFloorG, sp.dungFloorH
-    ];
+        sp.dungFloorE, sp.dungFloorF, sp.dungFloorG, sp.dungFloorH,
+        sp.dungFloor0, sp.dungFloor1, sp.dungFloor2, sp.dungFloor3,
+        sp.dungFloor4, sp.dungFloor5, sp.dungFloor6, sp.dungFloor7
+    ].filter(Boolean);
     // Vertical border sprites (left/right walls)
     var wallSprites = isGallery
         ? [sp.dungWallGallery, sp.dungWallGalleryB, sp.dungWallGalleryC]
@@ -14035,6 +14048,14 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                     var fSpr = floorSprites[h % floorSprites.length];
                     if (!fSpr) fSpr = floorSprites[0];
                     ctx.drawImage(fSpr, px, py, ts, ts);
+                    // Subtle inner-wall shadow so floor tiles next to border feel recessed
+                    var wallShadow = 0;
+                    if (tx === 1 || tx === RW-2) wallShadow = 0.16;
+                    if (ty === 1 || ty === RH-2) wallShadow = Math.max(wallShadow, 0.14);
+                    if (wallShadow > 0) {
+                        ctx.fillStyle = 'rgba(0,0,0,' + wallShadow + ')';
+                        ctx.fillRect(px, py, ts, ts);
+                    }
                 } else {
                     var floorVariant = (h % 8 < 2) ? pal.floorSh : pal.floor;
                     drawSlab(px, py, floorVariant, pal.floorHi, pal.floorSh);
