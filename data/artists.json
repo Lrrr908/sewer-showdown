@@ -118,19 +118,6 @@
       "country": "JP"
     },
     {
-      "id": "attempts_were_made1",
-      "name": "ATTEMPTS WERE MADE1",
-      "bio": "",
-      "instagram": "https://www.instagram.com/attempts_were_made1/",
-      "images": [],
-      "regionId": "na",
-      "regionIdOverride": null,
-      "lat": 45.5,
-      "lon": -73.57,
-      "city": "Montreal",
-      "country": "CA"
-    },
-    {
       "id": "artebotetano",
       "name": "ARTEBOTETANO",
       "bio": "",
@@ -168,6 +155,19 @@
       "lon": 3.09,
       "city": "Clermont-Ferrand",
       "country": "FR"
+    },
+    {
+      "id": "attempts_were_made1",
+      "name": "ATTEMPTS WERE MADE1",
+      "bio": "",
+      "instagram": "https://www.instagram.com/attempts_were_made1/",
+      "images": [],
+      "regionId": "na",
+      "regionIdOverride": null,
+      "lat": 45.5,
+      "lon": -73.57,
+      "city": "Montreal",
+      "country": "CA"
     },
     {
       "id": "aurelio_mazzara",
@@ -255,9 +255,9 @@
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
-      "lat": 37.69,
-      "lon": -97.34,
-      "city": "Wichita",
+      "lat": 37.68,
+      "lon": -97.24,
+      "city": "Witchita",
       "country": "US"
     },
     {
@@ -292,12 +292,12 @@
       "bio": "",
       "instagram": "https://www.instagram.com/castle_clayskull/",
       "images": [],
-      "regionId": "na",
+      "regionId": "eu",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
+      "lat": 53.86,
+      "lon": -2.57,
+      "city": "Lancashire",
+      "country": "GB"
     },
     {
       "id": "cavedwellertoys",
@@ -323,6 +323,19 @@
       "lat": 40.71,
       "lon": -74.01,
       "city": "New York",
+      "country": "US"
+    },
+    {
+      "id": "claygrahamart",
+      "name": "CLAYGRAHAMART",
+      "bio": "",
+      "instagram": "https://www.instagram.com/claygrahamart/",
+      "images": [],
+      "regionId": "na",
+      "regionIdOverride": null,
+      "lat": 37.08,
+      "lon": -94.51,
+      "city": "Joplin",
       "country": "US"
     },
     {
@@ -370,11 +383,24 @@
       "bio": "",
       "instagram": "https://www.instagram.com/digitalhorseplay/",
       "images": [],
+      "regionId": "eu",
+      "regionIdOverride": null,
+      "lat": 52.7,
+      "lon": -2.0,
+      "city": "Staffordshire",
+      "country": "GB"
+    },
+    {
+      "id": "dimensionxtoys",
+      "name": "DIMENSIONXTOYS",
+      "bio": "",
+      "instagram": "https://www.instagram.com/dimensionxtoys/",
+      "images": [],
       "regionId": "na",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
+      "lat": 29.95,
+      "lon": -90.07,
+      "city": "New Orleans",
       "country": "US"
     },
     {
@@ -391,6 +417,19 @@
       "country": "US"
     },
     {
+      "id": "donatellos_lair",
+      "name": "DONATELLOS LAIR",
+      "bio": "",
+      "instagram": "https://www.instagram.com/donatellos_lair/",
+      "images": [],
+      "regionId": "na",
+      "regionIdOverride": null,
+      "lat": 38.99,
+      "lon": -80.23,
+      "city": "Buckhannon",
+      "country": "US"
+    },
+    {
       "id": "dresease",
       "name": "DRESEASE",
       "bio": "",
@@ -402,19 +441,6 @@
       "lon": -79.8,
       "city": "Burlington",
       "country": "CA"
-    },
-    {
-      "id": "donatellos_lair",
-      "name": "DONATELLOS LAIR",
-      "bio": "",
-      "instagram": "https://www.instagram.com/Donatellos lair/",
-      "images": [],
-      "regionId": "na",
-      "regionIdOverride": null,
-      "lat": 38.99,
-      "lon": -80.23,
-      "city": "Buckhannon",
-      "country": "US"
     },
     {
       "id": "dungeon_sweeper",
@@ -437,14 +463,14 @@
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
+      "lat": 36.74,
+      "lon": -119.78,
+      "city": "Fresno",
       "country": "US"
     },
     {
-      "id": "eddieanaya",
-      "name": "EDDIEANAYA ",
+      "id": "eddieanaya_",
+      "name": "EDDIEANAYA",
       "bio": "",
       "instagram": "https://www.instagram.com/eddieanaya_/",
       "images": [],
@@ -454,6 +480,19 @@
       "lon": -118.08,
       "city": "Norwalk",
       "country": "US"
+    },
+    {
+      "id": "ehimo_adventures",
+      "name": "EHIMO ADVENTURES",
+      "bio": "",
+      "instagram": "https://www.instagram.com/ehimo_adventures/",
+      "images": [],
+      "regionId": "eu",
+      "regionIdOverride": null,
+      "lat": 39.33,
+      "lon": -4.84,
+      "city": "Spain",
+      "country": "ES"
     },
     {
       "id": "elcustomweno",
@@ -476,9 +515,9 @@
       "images": [],
       "regionId": "eu",
       "regionIdOverride": null,
-      "lat": 59.33,
-      "lon": 18.07,
-      "city": "Stockholm",
+      "lat": 59.67,
+      "lon": 14.52,
+      "city": "Sweden",
       "country": "SE"
     },
     {
@@ -539,12 +578,12 @@
       "bio": "",
       "instagram": "https://www.instagram.com/flellotoys/",
       "images": [],
-      "regionId": "na",
+      "regionId": "eu",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
+      "lat": 53.65,
+      "lon": -3.01,
+      "city": "Southport",
+      "country": "GB"
     },
     {
       "id": "frans_labyrinth85",
@@ -608,8 +647,8 @@
       "regionIdOverride": null,
       "lat": 33.66,
       "lon": -117.9,
-      "city": "Costa Mesa",
-      "country": "US"
+      "city": "Costa",
+      "country": "XX"
     },
     {
       "id": "graznador",
@@ -658,9 +697,9 @@
       "images": [],
       "regionId": "eu",
       "regionIdOverride": null,
-      "lat": 49.24,
-      "lon": 6.99,
-      "city": "Saarbrücken",
+      "lat": 49.23,
+      "lon": 7,
+      "city": "Saarbrucken",
       "country": "DE"
     },
     {
@@ -686,7 +725,7 @@
       "regionIdOverride": null,
       "lat": 50.69,
       "lon": -1.31,
-      "city": "Isle of Wight",
+      "city": "Isle Of Wight",
       "country": "GB"
     },
     {
@@ -736,9 +775,9 @@
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
+      "lat": 40.52,
+      "lon": -104.99,
+      "city": "Timnath",
       "country": "US"
     },
     {
@@ -764,7 +803,7 @@
       "regionIdOverride": null,
       "lat": 39.97,
       "lon": -75.35,
-      "city": "Marple Township",
+      "city": "Broomall",
       "country": "US"
     },
     {
@@ -803,7 +842,7 @@
       "regionIdOverride": null,
       "lat": 48.49,
       "lon": -81.21,
-      "city": "Timmins",
+      "city": "South Porcupine",
       "country": "CA"
     },
     {
@@ -812,12 +851,12 @@
       "bio": "",
       "instagram": "https://www.instagram.com/kriptorrata/",
       "images": [],
-      "regionId": "na",
+      "regionId": "sa",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
+      "lat": 4.71,
+      "lon": -74.07,
+      "city": "Bogota",
+      "country": "CO"
     },
     {
       "id": "labmonkeynumber9",
@@ -838,12 +877,12 @@
       "bio": "",
       "instagram": "https://www.instagram.com/lamatitamuscaria/",
       "images": [],
-      "regionId": "na",
+      "regionId": "sa",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
+      "lat": -34.61,
+      "lon": -58.37,
+      "city": "Buenos Aires",
+      "country": "AR"
     },
     {
       "id": "left_hand_freak",
@@ -890,12 +929,12 @@
       "bio": "",
       "instagram": "https://www.instagram.com/markocomix/",
       "images": [],
-      "regionId": "na",
+      "regionId": "eu",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
+      "lat": 45.81,
+      "lon": 15.97,
+      "city": "Zagreb",
+      "country": "HR"
     },
     {
       "id": "morehorrific",
@@ -931,22 +970,22 @@
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
+      "lat": 41.88,
+      "lon": -87.62,
+      "city": "Chicago",
+      "country": "XX"
     },
     {
-      "id": "nix_lee",
-      "name": "NIX LEE ",
+      "id": "nix_lee_",
+      "name": "NIX LEE",
       "bio": "",
       "instagram": "https://www.instagram.com/nix_lee_/",
       "images": [],
       "regionId": "asia",
       "regionIdOverride": null,
-      "lat": 31.23,
-      "lon": 121.47,
-      "city": "Shanghai",
+      "lat": 35,
+      "lon": 105,
+      "city": "China",
       "country": "CN"
     },
     {
@@ -959,7 +998,7 @@
       "regionIdOverride": null,
       "lat": 47.37,
       "lon": 8.54,
-      "city": "Zürich",
+      "city": "Zurich",
       "country": "CH"
     },
     {
@@ -979,7 +1018,7 @@
       "id": "oneiromancytoywork",
       "name": "ONEIROMANCYTOYWORK",
       "bio": "",
-      "instagram": "https://www.instagram.com/Oneiromancytoywork/",
+      "instagram": "https://www.instagram.com/oneiromancytoywork/",
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
@@ -1048,9 +1087,9 @@
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
+      "lat": 33.9,
+      "lon": -81.28,
+      "city": "Lexington",
       "country": "US"
     },
     {
@@ -1078,19 +1117,6 @@
       "lon": -5.94,
       "city": "Asturias",
       "country": "ES"
-    },
-    {
-      "id": "reelghostbusters",
-      "name": "REELGHOSTBUSTERS",
-      "bio": "",
-      "instagram": "https://www.instagram.com/reelghostbusters/",
-      "images": [],
-      "regionId": "na",
-      "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
     },
     {
       "id": "recyclegalaxy",
@@ -1141,7 +1167,7 @@
       "regionIdOverride": null,
       "lat": 33.19,
       "lon": -95.22,
-      "city": "Mount Vernon",
+      "city": "Mt. Vernon",
       "country": "US"
     },
     {
@@ -1165,16 +1191,16 @@
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
+      "lat": 39.1,
+      "lon": -84.51,
+      "city": "Cincinnati",
       "country": "US"
     },
     {
-      "id": "shadow_bay",
-      "name": " SHADOW BAY",
+      "id": "_shadow_bay",
+      "name": "SHADOW BAY",
       "bio": "",
-      "instagram": "https://www.instagram.com/_Shadow_bay/",
+      "instagram": "https://www.instagram.com/_shadow_bay/",
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
@@ -1189,12 +1215,12 @@
       "bio": "",
       "instagram": "https://www.instagram.com/shellshockedstudio/",
       "images": [],
-      "regionId": "na",
+      "regionId": "oce",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
+      "lat": -33.87,
+      "lon": 151.21,
+      "city": "Sydney",
+      "country": "AU"
     },
     {
       "id": "sickemil",
@@ -1230,9 +1256,9 @@
       "images": [],
       "regionId": "na",
       "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
+      "lat": 41.77,
+      "lon": -72.52,
+      "city": "Manchester",
       "country": "US"
     },
     {
@@ -1260,6 +1286,19 @@
       "lon": 1.44,
       "city": "Toulouse",
       "country": "FR"
+    },
+    {
+      "id": "speekygeekyofficial",
+      "name": "SPEEKYGEEKYOFFICIAL",
+      "bio": "",
+      "instagram": "https://www.instagram.com/speekygeekyofficial/",
+      "images": [],
+      "regionId": "na",
+      "regionIdOverride": null,
+      "lat": 44.98,
+      "lon": -93.27,
+      "city": "Minneapolis",
+      "country": "US"
     },
     {
       "id": "stilarts",
@@ -1314,19 +1353,6 @@
       "country": "GB"
     },
     {
-      "id": "theadultnerd",
-      "name": "THEADULTNERD",
-      "bio": "",
-      "instagram": "https://www.instagram.com/theadultnerd/",
-      "images": [],
-      "regionId": "na",
-      "regionIdOverride": null,
-      "lat": 40.71,
-      "lon": -74.01,
-      "city": "New York",
-      "country": "US"
-    },
-    {
       "id": "the_forgotten_sewer",
       "name": "THE FORGOTTEN SEWER",
       "bio": "",
@@ -1338,6 +1364,19 @@
       "lon": 7.25,
       "city": "Vollmersbach",
       "country": "DE"
+    },
+    {
+      "id": "theadultnerd",
+      "name": "THEADULTNERD",
+      "bio": "",
+      "instagram": "https://www.instagram.com/theadultnerd/",
+      "images": [],
+      "regionId": "na",
+      "regionIdOverride": null,
+      "lat": 41.27,
+      "lon": -73.94,
+      "city": "Buchanan",
+      "country": "US"
     },
     {
       "id": "theoriginalcashbrand",
@@ -1454,19 +1493,6 @@
       "lat": 33.42,
       "lon": -111.83,
       "city": "Mesa",
-      "country": "US"
-    },
-    {
-      "id": "dimensionxtoys",
-      "name": "DIMENSIONXTOYS",
-      "bio": "",
-      "instagram": "https://www.instagram.com/dimensionxtoys/",
-      "images": [],
-      "regionId": "na",
-      "regionIdOverride": null,
-      "lat": 29.95,
-      "lon": -90.07,
-      "city": "New Orleans",
       "country": "US"
     }
   ]

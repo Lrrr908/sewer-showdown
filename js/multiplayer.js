@@ -488,10 +488,14 @@ var MP = (function () {
             if (_srp._lastUpdate && _srp._lastUpdate < staleThreshold) {
                 // Save last known position so the arrow keeps showing
                 if (_srp.px != null || _srp.x != null) {
+                    var _staleRid = (_lastSeenPos[sid] && _lastSeenPos[sid].rid != null)
+                        ? _lastSeenPos[sid].rid
+                        : (_srp.rid || null);
                     _lastSeenPos[sid] = {
                         px: _srp.px != null ? _srp.px : _srp.x * 64,
                         py: _srp.py != null ? _srp.py : _srp.y * 64,
                         displayName: _srp.displayName || sid,
+                        rid: _staleRid,
                         _lastSeen: _srp._lastUpdate || Date.now()
                     };
                 }
@@ -761,10 +765,15 @@ var MP = (function () {
                         var _rmId = msg.removes[r];
                         var _rmRp = remotePlayers[_rmId];
                         if (_rmRp && (_rmRp.px != null || _rmRp.x != null)) {
+                            // Preserve rid from prior zone_players broadcast if available
+                            var _rmRid = (_lastSeenPos[_rmId] && _lastSeenPos[_rmId].rid != null)
+                                ? _lastSeenPos[_rmId].rid
+                                : (_rmRp.rid || null);
                             _lastSeenPos[_rmId] = {
                                 px: _rmRp.px != null ? _rmRp.px : _rmRp.x * 64,
                                 py: _rmRp.py != null ? _rmRp.py : _rmRp.y * 64,
                                 displayName: _rmRp.displayName || _rmId,
+                                rid: _rmRid,
                                 _lastSeen: Date.now()
                             };
                         }
@@ -948,12 +957,15 @@ var MP = (function () {
 
             case 'level_pos':
                 if (msg.entityId && msg.entityId !== entityId) {
+                    // Carry through displayName if already known (e.g. pre-seeded from level_joined)
+                    var _lpDn = (_levelRemotes[msg.entityId] && _levelRemotes[msg.entityId].displayName) || null;
                     _inLevelPos.push({
                         entityId: msg.entityId,
                         px: msg.px, py: msg.py,
                         facing: msg.facing,
                         atkPhase: msg.atkPhase,
                         tid: msg.tid,
+                        displayName: _lpDn,
                         _posReceived: true
                     });
                 }
@@ -994,24 +1006,13 @@ var MP = (function () {
                     for (var _zpi = 0; _zpi < msg.players.length; _zpi++) {
                         var _zpp = msg.players[_zpi];
                         if (!_zpp || !_zpp.id) continue;
-                        if (remotePlayers[_zpp.id]) {
-                            // Already tracked by AOI — update its last-seen ghost too so
-                            // the arrow persists if they exit AOI before the next broadcast.
-                            _lastSeenPos[_zpp.id] = {
-                                px: _zpp.px,
-                                py: _zpp.py,
-                                displayName: _zpp.dn || _zpp.id,
-                                _lastSeen: _now_zp
-                            };
-                        } else {
-                            // Not in AOI range yet — put/update in ghost list so arrow appears.
-                            _lastSeenPos[_zpp.id] = {
-                                px: _zpp.px,
-                                py: _zpp.py,
-                                displayName: _zpp.dn || _zpp.id,
-                                _lastSeen: _now_zp
-                            };
-                        }
+                        _lastSeenPos[_zpp.id] = {
+                            px: _zpp.px,
+                            py: _zpp.py,
+                            displayName: _zpp.dn || _zpp.id,
+                            rid: _zpp.rid || null,
+                            _lastSeen: _now_zp
+                        };
                     }
                 }
                 break;
@@ -1267,6 +1268,11 @@ var MP = (function () {
 
         getRemotePlayers: getRemotePlayers,
         getLastSeenPlayers: getLastSeenPlayers,
+        sendRegion: function(rid) {
+            if (ws && ws.readyState === 1) {
+                try { ws.send(JSON.stringify({ t: 'set_region', rid: rid || null })); } catch (_) {}
+            }
+        },
         drawRemotePlayers: drawRemotePlayers,
         getSelfPlayer: function () { return selfPlayer; },
         getSelfRenderPos: function () { return { x: localRenderPx.x, y: localRenderPx.y }; },

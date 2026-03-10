@@ -55,12 +55,6 @@
       "priority": 0
     },
     {
-      "id": "b_attempts_were_made1",
-      "artistId": "attempts_were_made1",
-      "buildingType": "gallery",
-      "priority": 0
-    },
-    {
       "id": "b_artebotetano",
       "artistId": "artebotetano",
       "buildingType": "gallery",
@@ -75,6 +69,12 @@
     {
       "id": "b_arthurgreem",
       "artistId": "arthurgreem",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_attempts_were_made1",
+      "artistId": "attempts_were_made1",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -151,6 +151,12 @@
       "priority": 0
     },
     {
+      "id": "b_claygrahamart",
+      "artistId": "claygrahamart",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_cronest_customs",
       "artistId": "cronest_customs",
       "buildingType": "gallery",
@@ -175,20 +181,26 @@
       "priority": 0
     },
     {
+      "id": "b_dimensionxtoys",
+      "artistId": "dimensionxtoys",
+      "buildingType": "dimension_x",
+      "priority": 0
+    },
+    {
       "id": "b_dirtyyetti",
       "artistId": "dirtyyetti",
       "buildingType": "gallery",
       "priority": 0
     },
     {
-      "id": "b_dresease",
-      "artistId": "dresease",
+      "id": "b_donatellos_lair",
+      "artistId": "donatellos_lair",
       "buildingType": "gallery",
       "priority": 0
     },
     {
-      "id": "b_donatellos_lair",
-      "artistId": "donatellos_lair",
+      "id": "b_dresease",
+      "artistId": "dresease",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -205,8 +217,14 @@
       "priority": 0
     },
     {
-      "id": "b_eddieanaya",
-      "artistId": "eddieanaya",
+      "id": "b_eddieanaya_",
+      "artistId": "eddieanaya_",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_ehimo_adventures",
+      "artistId": "ehimo_adventures",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -433,8 +451,8 @@
       "priority": 0
     },
     {
-      "id": "b_nix_lee",
-      "artistId": "nix_lee",
+      "id": "b_nix_lee_",
+      "artistId": "nix_lee_",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -499,12 +517,6 @@
       "priority": 0
     },
     {
-      "id": "b_reelghostbusters",
-      "artistId": "reelghostbusters",
-      "buildingType": "gallery",
-      "priority": 0
-    },
-    {
       "id": "b_recyclegalaxy",
       "artistId": "recyclegalaxy",
       "buildingType": "gallery",
@@ -541,8 +553,8 @@
       "priority": 0
     },
     {
-      "id": "b_shadow_bay",
-      "artistId": "shadow_bay",
+      "id": "b__shadow_bay",
+      "artistId": "_shadow_bay",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -583,6 +595,12 @@
       "priority": 0
     },
     {
+      "id": "b_speekygeekyofficial",
+      "artistId": "speekygeekyofficial",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
       "id": "b_stilarts",
       "artistId": "stilarts",
       "buildingType": "gallery",
@@ -607,14 +625,14 @@
       "priority": 0
     },
     {
-      "id": "b_theadultnerd",
-      "artistId": "theadultnerd",
+      "id": "b_the_forgotten_sewer",
+      "artistId": "the_forgotten_sewer",
       "buildingType": "gallery",
       "priority": 0
     },
     {
-      "id": "b_the_forgotten_sewer",
-      "artistId": "the_forgotten_sewer",
+      "id": "b_theadultnerd",
+      "artistId": "theadultnerd",
       "buildingType": "gallery",
       "priority": 0
     },
@@ -671,32 +689,6 @@
       "artistId": "whothefugawe",
       "buildingType": "gallery",
       "priority": 0
-    },
-    {
-      "id": "b_dimensionxtoys",
-      "artistId": "dimensionxtoys",
-      "buildingType": "dimension_x",
-      "priority": 0
     }
-  ],
-  "defaults": {
-    "collisionRect": {
-      "ox": -32,
-      "oy": -64,
-      "w": 128,
-      "h": 128
-    },
-    "enterRect": {
-      "ox": -56,
-      "oy": -88,
-      "w": 176,
-      "h": 176
-    },
-    "exitRect": {
-      "ox": -88,
-      "oy": -120,
-      "w": 240,
-      "h": 240
-    }
-  }
+  ]
 }

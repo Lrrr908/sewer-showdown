@@ -135,10 +135,10 @@
     },
     {
       "handle": "bootlegtoyco",
-      "city": "Wichita",
+      "city": "Witchita",
       "country": "US",
-      "lat": 37.69,
-      "lon": -97.34
+      "lat": 37.68,
+      "lon": -97.24
     },
     {
       "handle": "bygabozeta",
@@ -156,10 +156,10 @@
     },
     {
       "handle": "castle_clayskull",
-      "city": "New York",
-      "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "city": "Lancashire",
+      "country": "GB",
+      "lat": 53.86,
+      "lon": -2.57
     },
     {
       "handle": "cavedwellertoys",
@@ -174,6 +174,13 @@
       "country": "US",
       "lat": 40.71,
       "lon": -74.01
+    },
+    {
+      "handle": "claygrahamart",
+      "city": "Joplin",
+      "country": "US",
+      "lat": 37.08,
+      "lon": -94.51
     },
     {
       "handle": "cronest_customs",
@@ -233,10 +240,10 @@
     },
     {
       "handle": "duzmachines84",
-      "city": "New York",
+      "city": "Fresno",
       "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "lat": 36.74,
+      "lon": -119.78
     },
     {
       "handle": "eddieanaya_",
@@ -244,6 +251,13 @@
       "country": "US",
       "lat": 33.9,
       "lon": -118.08
+    },
+    {
+      "handle": "ehimo_adventures",
+      "city": "Spain",
+      "country": "ES",
+      "lat": 39.33,
+      "lon": -4.84
     },
     {
       "handle": "elcustomweno",
@@ -254,10 +268,10 @@
     },
     {
       "handle": "emberswist",
-      "city": "Stockholm",
+      "city": "Sweden",
       "country": "SE",
-      "lat": 59.33,
-      "lon": 18.07
+      "lat": 59.67,
+      "lon": 14.52
     },
     {
       "handle": "epoxy_crusader",
@@ -289,10 +303,10 @@
     },
     {
       "handle": "flellotoys",
-      "city": "New York",
-      "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "city": "Southport",
+      "country": "GB",
+      "lat": 53.65,
+      "lon": -3.01
     },
     {
       "handle": "frans_labyrinth85",
@@ -324,8 +338,8 @@
     },
     {
       "handle": "gorehoundztoys",
-      "city": "Costa Mesa",
-      "country": "US",
+      "city": "Costa",
+      "country": "XX",
       "lat": 33.66,
       "lon": -117.9
     },
@@ -352,10 +366,10 @@
     },
     {
       "handle": "hey_mo_86",
-      "city": "Saarbrücken",
+      "city": "Saarbrucken",
       "country": "DE",
-      "lat": 49.24,
-      "lon": 6.99
+      "lat": 49.23,
+      "lon": 7
     },
     {
       "handle": "hobotoyz",
@@ -366,7 +380,7 @@
     },
     {
       "handle": "idol.mind",
-      "city": "Isle of Wight",
+      "city": "Isle Of Wight",
       "country": "GB",
       "lat": 50.69,
       "lon": -1.31
@@ -394,10 +408,10 @@
     },
     {
       "handle": "james_overstreet_imagery",
-      "city": "New York",
+      "city": "Timnath",
       "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "lat": 40.52,
+      "lon": -104.99
     },
     {
       "handle": "jevahocreations",
@@ -408,7 +422,7 @@
     },
     {
       "handle": "jimmyfolklore",
-      "city": "Marple Township",
+      "city": "Broomall",
       "country": "US",
       "lat": 39.97,
       "lon": -75.35
@@ -429,7 +443,7 @@
     },
     {
       "handle": "kevycoldcuts",
-      "city": "Timmins",
+      "city": "South Porcupine",
       "country": "CA",
       "lat": 48.49,
       "lon": -81.21
@@ -478,10 +492,10 @@
     },
     {
       "handle": "markocomix",
-      "city": "New York",
-      "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "city": "Zagreb",
+      "country": "HR",
+      "lat": 45.81,
+      "lon": 15.97
     },
     {
       "handle": "morehorrific",
@@ -499,21 +513,21 @@
     },
     {
       "handle": "ninjatoitles",
-      "city": "New York",
-      "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "city": "Chicago",
+      "country": "XX",
+      "lat": 41.88,
+      "lon": -87.62
     },
     {
       "handle": "nix_lee_",
-      "city": "Shanghai",
+      "city": "China",
       "country": "CN",
-      "lat": 31.23,
-      "lon": 121.47
+      "lat": 35,
+      "lon": 105
     },
     {
       "handle": "nuke.tan",
-      "city": "Zürich",
+      "city": "Zurich",
       "country": "CH",
       "lat": 47.37,
       "lon": 8.54
@@ -562,10 +576,10 @@
     },
     {
       "handle": "powderghg",
-      "city": "New York",
+      "city": "Lexington",
       "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "lat": 33.9,
+      "lon": -81.28
     },
     {
       "handle": "poy_son",
@@ -580,13 +594,6 @@
       "country": "ES",
       "lat": 43.31,
       "lon": -5.94
-    },
-    {
-      "handle": "reelghostbusters",
-      "city": "New York",
-      "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
     },
     {
       "handle": "recyclegalaxy",
@@ -611,7 +618,7 @@
     },
     {
       "handle": "rusty_bucket_ink",
-      "city": "Mount Vernon",
+      "city": "Mt. Vernon",
       "country": "US",
       "lat": 33.19,
       "lon": -95.22
@@ -625,10 +632,10 @@
     },
     {
       "handle": "sebastiangomeztoys",
-      "city": "New York",
+      "city": "Cincinnati",
       "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "lat": 39.1,
+      "lon": -84.51
     },
     {
       "handle": "_Shadow_bay",
@@ -639,10 +646,10 @@
     },
     {
       "handle": "shellshockedstudio",
-      "city": "New York",
-      "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "city": "Sydney",
+      "country": "AU",
+      "lat": -33.87,
+      "lon": 151.21
     },
     {
       "handle": "sickemil",
@@ -660,10 +667,10 @@
     },
     {
       "handle": "sir.one.collectibles",
-      "city": "New York",
+      "city": "Manchester",
       "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "lat": 41.77,
+      "lon": -72.52
     },
     {
       "handle": "slimecitytoys",
@@ -678,6 +685,13 @@
       "country": "FR",
       "lat": 43.6,
       "lon": 1.44
+    },
+    {
+      "handle": "speekygeekyofficial",
+      "city": "Minneapolis",
+      "country": "US",
+      "lat": 44.98,
+      "lon": -93.27
     },
     {
       "handle": "stilarts",
@@ -709,10 +723,10 @@
     },
     {
       "handle": "theadultnerd",
-      "city": "New York",
+      "city": "Buchanan",
       "country": "US",
-      "lat": 40.71,
-      "lon": -74.01
+      "lat": 41.27,
+      "lon": -73.94
     },
     {
       "handle": "the_forgotten_sewer",
@@ -783,6 +797,27 @@
       "country": "US",
       "lat": 33.42,
       "lon": -111.83
+    },
+    {
+      "handle": "donatellos_lair",
+      "city": "Buckhannon",
+      "country": "US",
+      "lat": 38.99,
+      "lon": -80.23
+    },
+    {
+      "handle": "oneiromancytoywork",
+      "city": "Omaha",
+      "country": "US",
+      "lat": 41.26,
+      "lon": -95.94
+    },
+    {
+      "handle": "_shadow_bay",
+      "city": "Auburn",
+      "country": "US",
+      "lat": 38.9,
+      "lon": -121.08
     },
     {
       "handle": "dimensionxtoys",

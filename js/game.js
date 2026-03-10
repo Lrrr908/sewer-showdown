@@ -6222,8 +6222,9 @@ function drawWaypointPips() {
         drawWaypointPip(vx, vy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#00ff00', 'VAN');
     }
 
-    if (typeof MP !== 'undefined' && MP.isConnected()) {
-        // Active (in-AOI) players
+    if (typeof MP !== 'undefined' && MP.isConnected() && game.mode === 'REGION') {
+        var _myRid = game.currentRegionId || null;
+        // Active (in-AOI) players — always same region since they're physically nearby
         var _rpAll = MP.getRemotePlayers();
         var _rpIds = {};
         for (var _rpi = 0; _rpi < _rpAll.length; _rpi++) {
@@ -6234,11 +6235,12 @@ function drawWaypointPips() {
             var _rpLabel = (_rpP.displayName || _rpP.id || '?').substring(0, 8);
             drawWaypointPip(_rpWx + TILE_SIZE / 2, _rpWy + TILE_SIZE / 2, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#ff3333', _rpLabel);
         }
-        // Ghost players (exited AOI — show arrow at last known position)
+        // Ghost players — only show if same region (or region unknown, e.g. brief window after blimp)
         var _ghosts = MP.getLastSeenPlayers();
         for (var _gi = 0; _gi < _ghosts.length; _gi++) {
             var _g = _ghosts[_gi];
             if (_rpIds[_g.id]) continue; // already shown above (re-entered AOI)
+            if (_g.rid != null && _g.rid !== _myRid) continue; // known different region — skip
             var _gLabel = (_g.displayName || '?').substring(0, 8);
             drawWaypointPip(_g.px + TILE_SIZE / 2, _g.py + TILE_SIZE / 2, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#ff6666', _gLabel);
         }
@@ -7254,6 +7256,12 @@ function checkTurtleCollision(newX, newY) {
 function update(dt) {
     // Re-entry grace timer
     if (game.levelReentryGrace > 0) game.levelReentryGrace -= dt;
+
+    // Technodrome locked message — tick in all modes so it always fades out
+    if (game.technodromeMsgTimer > 0) {
+        game.technodromeMsgTimer -= dt;
+        if (game.technodromeMsgTimer <= 0) game.technodromeMsg = null;
+    }
 
     // Level mode: separate update loop
     if (game.mode === 'LEVEL') {
@@ -8513,11 +8521,12 @@ function _tickEnemyArray(arr, dt) {
                 e.dirChangeTimer = 2 + rng() * 4;
             }
 
-        } else { // walker — free roaming, no road constraint
+        } else { // walker — land roaming (no road constraint, but must stay on land)
             var wndx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
             var wndy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
             var wnx  = e.x + wndx * e.speed * dt;
             var wny  = e.y + wndy * e.speed * dt;
+            // Bounce off world edges
             if (wnx < 0 || wnx + REGION_ENEMY_WALK_W > worldPxW) {
                 e.direction = (e.direction === 'left') ? 'right' : 'left';
                 wnx = Math.max(0, Math.min(worldPxW - REGION_ENEMY_WALK_W, wnx));
@@ -8525,6 +8534,21 @@ function _tickEnemyArray(arr, dt) {
             if (wny < 0 || wny + REGION_ENEMY_WALK_H > worldPxH) {
                 e.direction = (e.direction === 'up') ? 'down' : 'up';
                 wny = Math.max(0, Math.min(worldPxH - REGION_ENEMY_WALK_H, wny));
+            }
+            // Bounce off water/coast/river tiles
+            if (TERRAIN_GRID) {
+                var _wcx = Math.floor((wnx + REGION_ENEMY_WALK_W / 2) / TILE_SIZE);
+                var _wcy = Math.floor((wny + REGION_ENEMY_WALK_H / 2) / TILE_SIZE);
+                if (_wcy >= 0 && _wcy < TERRAIN_GRID.length && TERRAIN_GRID[_wcy]) {
+                    var _wtt = TERRAIN_GRID[_wcy][_wcx] || 0;
+                    if (_wtt === 0 || _wtt === 1 || _wtt === 4) {
+                        // Water — reverse direction and stay put
+                        e.direction = (wndx !== 0)
+                            ? (e.direction === 'left' ? 'right' : 'left')
+                            : (e.direction === 'up'   ? 'down'  : 'up');
+                        wnx = e.x; wny = e.y;
+                    }
+                }
             }
             e.x = wnx; e.y = wny;
             e.wanderTimer -= dt;
@@ -11271,6 +11295,7 @@ async function completeEnterRegion(regionId) {
     game.controllerEntity = 'van';
     game.activeBuildingId = null;
     game.activeNodeId = null;
+    if (typeof MP !== 'undefined' && MP.sendRegion) MP.sendRegion(regionId);
     updateMobileActionVisibility();
     spawnRegionEnemies();
     console.log('Region loaded:', regionId, 'spawn at', spawnPos.x, spawnPos.y);
@@ -11339,6 +11364,7 @@ async function completeReturnToWorld() {
     game.controllerEntity = 'van';
     game.activeBuildingId = null;
     game.activeNodeId = null;
+    if (typeof MP !== 'undefined' && MP.sendRegion) MP.sendRegion(null);
     updateMobileActionVisibility();
     console.log('World map loaded:', WORLD_NODES.length, 'region nodes');
 }
@@ -12335,11 +12361,7 @@ function updateLevel(dt) {
         if (L.pointPopups[ppi].life <= 0) L.pointPopups.splice(ppi, 1);
     }
 
-    // Technodrome message timer
-    if (game.technodromeMsgTimer > 0) {
-        game.technodromeMsgTimer -= dt;
-        if (game.technodromeMsgTimer <= 0) game.technodromeMsg = null;
-    }
+    // (technodromeMsgTimer ticked in main update loop)
 
     // Special item collision
     if (L.specialItemPos && !L.specialItemCollected) {
@@ -12809,8 +12831,9 @@ function updateLevel(dt) {
                 var _lpu = _lvlPosUpdates[_lpi];
                 if (!_lvlR[_lpu.entityId]) {
                     console.log('[level] new remote player appeared:', _lpu.entityId, 'at', _lpu.px, _lpu.py);
-                    _lvlR[_lpu.entityId] = { px: _lpu.px, py: _lpu.py, facing: _lpu.facing || 's',
-                        atkPhase: 'IDLE', atkTimer: 0, frame: 0, tid: _lpu.tid || 'leo', _posReceived: true };
+                    _lvlR[_lpu.entityId] = { px: _lpu.px, py: _lpu.py, _rpx: _lpu.px, _rpy: _lpu.py,
+                        facing: _lpu.facing || 's', atkPhase: 'IDLE', atkTimer: 0, frame: 0, tid: _lpu.tid || 'leo',
+                        displayName: _lpu.displayName || null, _posReceived: true };
                 } else {
                     var _lr = _lvlR[_lpu.entityId];
                     if (!_lr._posReceived) console.log('[level] remote player first pos:', _lpu.entityId, 'at', _lpu.px, _lpu.py);
@@ -12827,8 +12850,9 @@ function updateLevel(dt) {
             }
         }
 
-        // Tick remote player attack timers locally
+        // Tick remote player attack timers + smooth render positions
         var _lvlR2 = MP.getLevelRemotes();
+        var _lvlSnapDist = (typeof MP !== 'undefined' && MP.SNAP_DIST_PX) || 64;
         for (var _lrId in _lvlR2) {
             var _lrState = _lvlR2[_lrId];
             if (_lrState.atkPhase !== 'IDLE') {
@@ -12839,10 +12863,22 @@ function updateLevel(dt) {
                     else if (_lrState.atkPhase === 'RECOVERY') { _lrState.atkPhase = 'IDLE'; _lrState.atkTimer = 0; }
                 }
             }
-            // Walk animation — only advance when position is actually changing
-            var _lrMoving = (_lrState._lastDrawPx !== _lrState.px || _lrState._lastDrawPy !== _lrState.py);
-            _lrState._lastDrawPx = _lrState.px;
-            _lrState._lastDrawPy = _lrState.py;
+            // Smooth render position — lerp toward the network target each frame
+            if (_lrState._rpx === undefined) { _lrState._rpx = _lrState.px; _lrState._rpy = _lrState.py; }
+            var _lrDx = _lrState.px - _lrState._rpx;
+            var _lrDy = _lrState.py - _lrState._rpy;
+            var _lrDist = Math.max(Math.abs(_lrDx), Math.abs(_lrDy));
+            if (_lrDist >= _lvlSnapDist) {
+                _lrState._rpx = _lrState.px; _lrState._rpy = _lrState.py;
+            } else if (_lrDist > 0.5) {
+                var _lrF = 1 - Math.exp(-20 * dt); // ~96% closed in 150ms, frame-rate independent
+                _lrState._rpx += _lrDx * _lrF;
+                _lrState._rpy += _lrDy * _lrF;
+            }
+            // Walk animation — driven by target position so it starts immediately
+            var _lrMoving = (_lrState._lastTargetPx !== _lrState.px || _lrState._lastTargetPy !== _lrState.py);
+            _lrState._lastTargetPx = _lrState.px;
+            _lrState._lastTargetPy = _lrState.py;
             if (_lrMoving) {
                 _lrState._animTimer = (_lrState._animTimer || 0) + dt;
                 if (_lrState._animTimer > 0.15) { _lrState.frame = ((_lrState.frame || 0) + 1) % 4; _lrState._animTimer = 0; }
@@ -12859,7 +12895,10 @@ function updateLevel(dt) {
                 var _jEntry = _lvlJoins[_ji];
                 var _lvlR3 = MP.getLevelRemotes();
                 if (!_lvlR3[_jEntry.entityId]) {
-                    _lvlR3[_jEntry.entityId] = { px: p.x, py: p.y, facing: 's', atkPhase: 'IDLE', atkTimer: 0, frame: 0, tid: 'leo', displayName: _jEntry.displayName };
+                    _lvlR3[_jEntry.entityId] = { px: p.x, py: p.y, _rpx: p.x, _rpy: p.y, facing: 's', atkPhase: 'IDLE', atkTimer: 0, frame: 0, tid: 'leo', displayName: _jEntry.displayName };
+                } else if (_jEntry.displayName) {
+                    // Entry may have been created by level_pos before this join event was drained
+                    _lvlR3[_jEntry.entityId].displayName = _jEntry.displayName;
                 }
             }
         }
@@ -13308,8 +13347,8 @@ function drawLevel() {
             var _rLvl = _rLvlMap[_rLvlId];
             // Skip placeholder entries that haven't received a real position yet
             if (!_rLvl._posReceived) continue;
-            var _rlx = _rLvl.px - cx;
-            var _rly = _rLvl.py - cy;
+            var _rlx = (_rLvl._rpx !== undefined ? _rLvl._rpx : _rLvl.px) - cx;
+            var _rly = (_rLvl._rpy !== undefined ? _rLvl._rpy : _rLvl.py) - cy;
             // Only draw if within viewport
             if (_rlx > -ts * 2 && _rlx < CANVAS_WIDTH + ts * 2 && _rly > -ts * 2 && _rly < CANVAS_HEIGHT + ts * 2) {
                 var _rTurtleScale = (ts * 0.75) / 16;  // match p.w = lts * 0.75
@@ -13612,8 +13651,8 @@ function drawLevel() {
             if (!_lvlBubbles[_lrBk]) continue;
             var _lrB = _lvlRems[_lrBk];
             if (!_lrB._posReceived) continue;
-            var _lrBx = _lrB.px - L.camera.x;
-            var _lrBy = _lrB.py - L.camera.y;
+            var _lrBx = (_lrB._rpx !== undefined ? _lrB._rpx : _lrB.px) - L.camera.x;
+            var _lrBy = (_lrB._rpy !== undefined ? _lrB._rpy : _lrB.py) - L.camera.y;
             var _lrBw = L.player ? L.player.w : 24;
             drawSpeechBubble(ctx, _lvlBubbles[_lrBk].text, _lrBx, _lrBy, _lrBw, '#80ff80');
         }

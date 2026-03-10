@@ -275,6 +275,12 @@ function initWsServer(wss) {
           break;
         }
 
+        case 'set_region': {
+          // Client reports which region map they're currently in (e.g. 'na', 'eu', null for world)
+          if (entity) entity.rid = (typeof msg.rid === 'string' && msg.rid) ? msg.rid : null;
+          break;
+        }
+
         case 'ow_enemy_sync': {
           // Relay enemy positions to nearby players via AOI
           if (!Array.isArray(msg.enemies) || msg.enemies.length === 0) break;
@@ -656,7 +662,8 @@ setInterval(() => {
       id: entity.id,
       px: entity.px,
       py: entity.py,
-      dn: entity.displayName || ''
+      dn: entity.displayName || '',
+      rid: entity.rid || null
     });
   }
   // Send each client the list of everyone else in their zone

@@ -10,13 +10,15 @@ const HANDLES = `
 2ndtimearoundtoysandcomics
 3dsorcery
 9to5warriors
+acid9toys
 al.tres.de
 ale_jediknigth
 andy_makes_stuff
 andrare_official
-attempts_were_made1
 artebotetano
+artofcorinwatson
 arthurgreem
+attempts_were_made1
 aurelio_mazzara
 bad_chad
 bastardsofthemultiverse
@@ -27,36 +29,51 @@ bootlegtoyco
 bygabozeta
 captaincozmic84
 castle_clayskull
+cavedwellertoys
 charliescustomtoyshop
+claygrahamart
 cronest_customs
 dafoot_toys
-dano_brown
+deathbytoys
 digitalhorseplay
+dimensionxtoys
+dirtyyetti
+donatellos_lair
 dresease
 dungeon_sweeper
 duzmachines84
 eddieanaya_
+ehimo_adventures
 elcustomweno
 emberswist
 epoxy_crusader
+erickmaterial
 erinfist
 fanguygrams
 flellotoys
 frans_labyrinth85
 gabrieleduardoart
+generalporpoise
 goingturtlecrazy83
 gorehoundztoys
+graznador
+gustavoprofeta
+hencedameat
+hey_mo_86
 hobotoyz
+idol.mind
 ikin_619
 inmortal.studio
 invisiblemike89
 james_overstreet_imagery
+jevahocreations
 jimmyfolklore
 joshuahfx
+k.huntdraws
 kevycoldcuts
 kriptorrata
+labmonkeynumber9
 lamatitamuscaria
-lazyrobots
 left_hand_freak
 lrh_bootlegs
 mannycartoonstudio
@@ -64,9 +81,12 @@ markocomix
 morehorrific
 nick_nightmare_studios
 ninjatoitles
+nix_lee_
 nuke.tan
 nxtsndyad
-oneiromancytoyworks
+oneiromancytoywork
+pabloperra
+pizzaplazm
 plastic_flashback
 polyboxcg
 powderghg
@@ -76,25 +96,31 @@ recyclegalaxy
 remy1353
 rultron
 rusty_bucket_ink
-sanfordarts_bad_chad
+sanfordarts
 sebastiangomeztoys
+_shadow_bay
 shellshockedstudio
 sickemil
 sincitycustomcreations
 sir.one.collectibles
 slimecitytoys
 snztoys
+speekygeekyofficial
 stilarts
+tacoboydesigns
 tarcacreations
 the.retro.saint
+the_forgotten_sewer
 theadultnerd
 theoriginalcashbrand
 thetmntcollector
+tmntplus
 tndtoybox
-tmnt_tcg
 tomski_figures
+turt_ferguson
 vileconsumption
 whackonaut
+whothefugawe
 `.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
 function makeId(handle) {
@@ -115,46 +141,52 @@ function makeDisplayName(handle) {
 // Key: na=North America, sa=South/Central America+Mexico, eu=Europe, asia=Asia, oce=Oceania
 const REGION_OVERRIDES = {
   // ── South America / Latin America / Mexico ──
-  'al.tres.de':            'sa',    // Latin America (Spanish-language handle/content)
-  'ale_jediknigth':        'sa',    // Latin America (Spanish name + content context)
-  'artebotetano':          'sa',    // South America
-  'bygabozeta':            'sa',    // South America
-  'elcustomweno':          'sa',    // Latin America (Spanish handle)
-  'gabrieleduardoart':     'sa',    // South America
-  'inmortal.studio':       'sa',    // Latin America (Spanish handle)
-  'kriptorrata':           'sa',    // Latin America (Spanish handle)
-  'lamatitamuscaria':      'sa',    // South America
-  'rultron':               'sa',    // South America
-  'sebastiangomeztoys':    'sa',    // South America (Spanish name)
-  'tarcacreations':        'sa',    // South America
-  'sickemil':              'sa',    // Emilio Subirá — Mexico City, Mexico
+  'al.tres.de':            'sa',    // Chaco, Argentina
+  'ale_jediknigth':        'sa',    // Santiago, Chile
+  'artebotetano':          'sa',    // Lima, Peru
+  'blood.empire':          'sa',    // Medellin, Colombia
+  'bygabozeta':            'sa',    // Quito, Ecuador
+  'elcustomweno':          'sa',    // Santiago, Chile
+  'gustavoprofeta':        'sa',    // Indaiatuba, Sao Paulo, Brazil
+  'kriptorrata':           'sa',    // Bogota, Colombia
+  'lamatitamuscaria':      'sa',    // Buenos Aires, Argentina
 
   // ── Europe ──
-  'aurelio_mazzara':       'eu',    // Italian name — Europe
-  'cronest_customs':       'eu',    // Europe
-  'markocomix':            'eu',    // Europe
-  'stilarts':              'eu',    // Europe
-  'flellotoys':            'eu',    // Southport, England, UK
-  'the.retro.saint':       'eu',    // UK (prices in GBP, .co.uk domain)
-  'digitalhorseplay':      'eu',    // Josh Williams — England, UK
-  'lazyrobots':            'eu',    // Austria
-  // 'frans_labyrinth85':   'eu',    // (unconfirmed — needs manual check)
+  'arthurgreem':           'eu',    // Clermont-Ferrand, France
+  'aurelio_mazzara':       'eu',    // Palermo, Italy
+  'castle_clayskull':      'eu',    // Lancashire, England, UK
+  'dafoot_toys':           'eu',    // Santo Tirso, Portugal
+  'digitalhorseplay':      'eu',    // Staffordshire, England, UK
+  'dungeon_sweeper':       'eu',    // Barnstaple, England, UK
+  'ehimo_adventures':      'eu',    // Spain
+  'emberswist':            'eu',    // Sweden
+  'flellotoys':            'eu',    // Southport, Merseyside, England
+  'hey_mo_86':             'eu',    // Saarbrücken, Germany
+  'idol.mind':             'eu',    // Isle of Wight, UK
+  'invisiblemike89':       'eu',    // Staffordshire, England
+  'jevahocreations':       'eu',    // Dendermonde, Belgium
+  'lrh_bootlegs':          'eu',    // Glasgow, Scotland
+  'markocomix':            'eu',    // Zagreb, Croatia
+  'nuke.tan':              'eu',    // Zürich, Switzerland
+  'pabloperra':            'eu',    // Berlin, Germany
+  'rbl3d':                 'eu',    // Asturias, Spain
+  'rultron':               'eu',    // Madrid, Spain
+  'sickemil':              'eu',    // Sevilla, Spain
+  'snztoys':               'eu',    // Toulouse, France
+  'tarcacreations':        'eu',    // Barcelona, Spain
+  'the.retro.saint':       'eu',    // Coventry, UK
+  'the_forgotten_sewer':   'eu',    // Vollmersbach, Germany
+  'tomski_figures':        'eu',    // Munich, Germany
 
   // ── Asia ──
-  'nuke.tan':              'asia',  // Asia
+  'andrare_official':      'asia',  // Tokyo, Japan
+  'ikin_619':              'asia',  // Tasikmalaya, Indonesia
+  'nix_lee_':              'asia',  // China
 
   // ── Oceania ──
-  // (none confirmed yet — use regionIdOverride in artists.json for manual fixes)
+  'shellshockedstudio':    'oce',   // Sydney, Australia
 
-  // ── North America (confirmed, not just default) ──
-  // bootlegtoyco:         Covington, Kentucky (stays na by default)
-  // sir.one.collectibles: Boston, Massachusetts (stays na by default)
-  // dano_brown:           Chicago, Illinois (stays na by default)
-  // slimecitytoys:        Quebec, Canada (stays na by default)
-  // oneiromancytoyworks:  Chicago, Illinois (stays na by default)
-  // joshuahfx:            Halifax, Canada (stays na by default)
-  // ikin_619:             San Diego area (619 area code) (stays na by default)
-  // sincitycustomcreations: Las Vegas (stays na by default)
+  // ── North America (all others default to 'na') ──
 };
 
 const VALID_REGIONS = new Set(['na', 'sa', 'eu', 'asia', 'oce']);
