@@ -11949,42 +11949,60 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
     var MID_X = Math.floor(ROOM_W / 2);
     var MID_Y = Math.floor(ROOM_H / 2);
 
-    var numRooms = 2 + Math.min(3, diff); // 3 (diff1) to 5 (diff3+)
-
     // ── Build connection graph ──────────────────────────────────
-    // Rooms 0…N-1 in a vertical chain; optional east branch at room 1
-    // Room 0 = entry (south door = world exit), rooms go northward
-    // Final room in the main chain = item/boss room
+    var numRooms, doorConfigs, itemRoomId;
 
-    var hasBranch = numRooms >= 4 && diff >= 3;
-
-    // Each room: doors object { n: roomId|null, s: roomId|null, e: roomId|null, w: roomId|null }
-    // Build connections then construct rooms
-
-    var mainChainLen = hasBranch ? numRooms - 1 : numRooms;
-    var branchRoomId = hasBranch ? numRooms - 1 : -1;
-
-    var doorConfigs = [];
-    for (var ri = 0; ri < numRooms; ri++) {
-        doorConfigs.push({ n: null, s: null, e: null, w: null });
+    if (peaceful) {
+        // Hub layout: 3x3 grid (9 rooms)
+        //   [7]--[6]--[8]
+        //    |    |    |
+        //   [4]--[3]--[5]
+        //    |    |    |
+        //   [1]--[0]--[2]
+        // Room 0 = entry (bottom-center), south exit to world
+        numRooms = 9;
+        doorConfigs = [];
+        for (var ri = 0; ri < numRooms; ri++) {
+            doorConfigs.push({ n: null, s: null, e: null, w: null });
+        }
+        // Grid positions: [col, row] for each room id
+        var gridPos = [
+            [1,0], [0,0], [2,0],  // bottom row: 0=center, 1=left, 2=right
+            [1,1], [0,1], [2,1],  // middle row: 3=center, 4=left, 5=right
+            [1,2], [0,2], [2,2]   // top row:    6=center, 7=left, 8=right
+        ];
+        // Build adjacency from grid positions
+        for (var gi = 0; gi < numRooms; gi++) {
+            for (var gj = gi + 1; gj < numRooms; gj++) {
+                var dx = gridPos[gj][0] - gridPos[gi][0];
+                var dy = gridPos[gj][1] - gridPos[gi][1];
+                if (dx === 1 && dy === 0) { doorConfigs[gi].e = gj; doorConfigs[gj].w = gi; }
+                if (dx === -1 && dy === 0) { doorConfigs[gi].w = gj; doorConfigs[gj].e = gi; }
+                if (dy === 1 && dx === 0) { doorConfigs[gi].n = gj; doorConfigs[gj].s = gi; }
+                if (dy === -1 && dx === 0) { doorConfigs[gi].s = gj; doorConfigs[gj].n = gi; }
+            }
+        }
+        doorConfigs[0].s = -1;
+        itemRoomId = 6; // top-center room
+    } else {
+        // Normal dungeon: hub layout with east/west branches
+        numRooms = Math.max(4, 2 + Math.min(3, diff));
+        doorConfigs = [];
+        for (var ri2 = 0; ri2 < numRooms; ri2++) {
+            doorConfigs.push({ n: null, s: null, e: null, w: null });
+        }
+        doorConfigs[0].n = 1;
+        doorConfigs[1].s = 0;
+        var branchDirs = ['e', 'w', 'n'];
+        var oppDirMap  = { e: 'w', w: 'e', n: 's', s: 'n' };
+        for (var bi = 2; bi < numRooms; bi++) {
+            var bdir = branchDirs[(bi - 2) % branchDirs.length];
+            doorConfigs[1][bdir] = bi;
+            doorConfigs[bi][oppDirMap[bdir]] = 1;
+        }
+        doorConfigs[0].s = -1;
+        itemRoomId = numRooms - 1;
     }
-
-    // Main vertical chain: 0→1→2→...→mainChainLen-1
-    for (var ci = 0; ci < mainChainLen - 1; ci++) {
-        doorConfigs[ci].n     = ci + 1;  // room ci connects north to ci+1
-        doorConfigs[ci + 1].s = ci;      // room ci+1 connects south back to ci
-    }
-
-    // East branch: room 1 connects east to branchRoom
-    if (hasBranch) {
-        doorConfigs[1].e = branchRoomId;
-        doorConfigs[branchRoomId].w = 1;
-    }
-
-    // Entry room always has a south exit door back to the world
-    doorConfigs[0].s = -1;  // -1 = world exit (not a room id)
-
-    var itemRoomId = mainChainLen - 1; // last room in main chain
 
     // ── Construct each room ─────────────────────────────────────
     function buildTilemap(isEntry, isBoss, doors) {
@@ -13949,9 +13967,10 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
     var ctHWall = [sp.ctHWallA0,sp.ctHWallA1,sp.ctHWallA2,sp.ctHWallA3].filter(Boolean);
     var ctVWall = [sp.ctVWallA0,sp.ctVWallA1,sp.ctVWallA2,sp.ctVWallA3].filter(Boolean);
     // Vertical border sprites (left/right walls)
+    // Sewer order: wall, arch-left, arch-right (3-tile cycle)
     var wallSprites = isGallery
         ? [sp.dungWallGallery, sp.dungWallGalleryB, sp.dungWallGalleryC]
-        : [sp.dungWallSewer,   sp.dungWallSewerB,   sp.dungWallSewerC];
+        : [sp.dungWallSewerB,  sp.dungWallSewer,     sp.dungWallSewerC];
     // Horizontal border sprites (top/bottom walls — the scrollwork row)
     var hWallSprites = isGallery
         ? [sp.dungHWallGalleryA, sp.dungHWallGalleryB]
@@ -14092,7 +14111,7 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                                 ctx.drawImage(wSprCT, px, py, ts, ts);
                             }
                         } else {
-                            var wSpr = wallSprites[ty % wallSprites.length];
+                            var wSpr = wallSprites[(ty - 1) % wallSprites.length];
                             if (!wSpr) wSpr = wallSprites[0];
                             if (tx === RW-1) {
                                 ctx.save();
@@ -14270,55 +14289,10 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                     ctx.arc(px + ts / 2, py + ts / 2, ts * 0.22, 0, Math.PI * 2);
                     ctx.fill();
 
-                } else if (tileId === DT_DOOR) {
-                    // Door opening — wall sprite with open gap
-                    if (hasWall) {
-                        var dSpr = wallSprites[h % wallSprites.length] || wallSprites[0];
-                        ctx.drawImage(dSpr, px, py, ts, ts);
-                    } else {
-                        ctx.fillStyle = pal.borderBase;
-                        ctx.fillRect(px, py, ts, ts);
-                    }
-                    var dj = Math.max(3, Math.round(ts * 0.28));
-                    // Floor visible through opening
-                    if (hasFloor) {
-                        ctx.drawImage(floorSprites[h % floorSprites.length] || floorSprites[0], px + dj, py + dj, ts - dj*2, ts - dj*2);
-                    } else {
-                        ctx.fillStyle = pal.floorMortar; ctx.fillRect(px + dj, py + dj, ts - dj*2, ts - dj*2);
-                        drawSlab(px + dj - 1, py + dj - 1, pal.floor, pal.floorHi, pal.floorSh);
-                    }
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    if (ty === 0 || ty === RH-1) {
-                        ctx.fillRect(px, py, dj, ts); ctx.fillRect(px + ts - dj, py, dj, ts);
-                    } else {
-                        ctx.fillRect(px, py, ts, dj); ctx.fillRect(px, py + ts - dj, ts, dj);
-                    }
-
-                } else if (tileId === DT_EXIT) {
-                    // Back-to-building door: green pulsing with down arrow
-                    var ea = 0.6 + Math.sin(now / 200) * 0.25;
-                    ctx.fillStyle = 'rgba(30,200,80,' + (ea * 0.5) + ')';
-                    ctx.fillRect(px + 2, py + 2, ts - 4, ts - 4);
-                    ctx.fillStyle = 'rgba(100,255,120,' + ea + ')';
-                    ctx.fillRect(px + 5, py + 5, ts - 10, ts - 10);
-                    ctx.fillStyle = '#22ff44';
-                    ctx.font = 'bold ' + Math.floor(ts * 0.44) + 'px monospace';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('▼', px + ts / 2, py + ts * 0.72);
-                    ctx.textAlign = 'left';
-
-                } else if (tileId === DT_VICTORY) {
-                    // Victory door: gold pulsing portal with star
-                    var va = 0.7 + Math.sin(now / 180) * 0.3;
-                    ctx.fillStyle = 'rgba(255,200,0,' + (va * 0.45) + ')';
+                } else if (tileId === DT_DOOR || tileId === DT_EXIT || tileId === DT_VICTORY) {
+                    // All doors: simple black open space
+                    ctx.fillStyle = '#000000';
                     ctx.fillRect(px, py, ts, ts);
-                    ctx.fillStyle = 'rgba(255,240,80,' + va + ')';
-                    ctx.fillRect(px + 4, py + 4, ts - 8, ts - 8);
-                    ctx.fillStyle = '#fff';
-                    ctx.font = 'bold ' + Math.floor(ts * 0.52) + 'px monospace';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('★', px + ts / 2, py + ts * 0.72);
-                    ctx.textAlign = 'left';
                 }
             }
         }
@@ -14494,6 +14468,30 @@ function drawLevel() {
         _drawDungeonPlayer(L, cx, cy, ts);
         _drawDungeonHUD(L, ts);
         _drawDungeonMiniMap(L, ts);
+
+        // Chat bubbles in dungeon
+        if (typeof MP !== 'undefined') {
+            var _dBubbles = MP.getChatBubbles();
+            var _dBNow = Date.now();
+            for (var _dbk in _dBubbles) {
+                if (_dBNow >= _dBubbles[_dbk].expire) { delete _dBubbles[_dbk]; }
+            }
+            if (_dBubbles['__self__']) {
+                var _dbSelf = L.player;
+                var _dbSx = _dbSelf.x - cx + _dbSelf.w / 2;
+                var _dbSy = _dbSelf.y - cy;
+                drawSpeechBubble(ctx, _dBubbles['__self__'].text, _dbSx - _dbSelf.w / 2, _dbSy, _dbSelf.w, '#58d8f8');
+            }
+            var _dBRems = MP.getLevelRemotes();
+            for (var _dBrk in _dBRems) {
+                if (!_dBubbles[_dBrk]) continue;
+                var _dBr = _dBRems[_dBrk];
+                if (!_dBr._posReceived) continue;
+                var _dBrx = (_dBr._rpx !== undefined ? _dBr._rpx : _dBr.px) - cx;
+                var _dBry = (_dBr._rpy !== undefined ? _dBr._rpy : _dBr.py) - cy;
+                drawSpeechBubble(ctx, _dBubbles[_dBrk].text, _dBrx, _dBry, ts, '#80ff80');
+            }
+        }
         return;
     }
 
