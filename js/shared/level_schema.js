@@ -68,7 +68,8 @@ var LEVEL_SIZES = Object.freeze({
 
 var LEVEL_ROUTES = Object.freeze({
     landmark: {
-        'lm_sewer': { kind: 'static', levelId: 'level_sewer' }
+        'lm_sewer':   { kind: 'hub', theme: 'sewer', seed: 'sewer_hub_v1' },
+        'lm_manhole': { kind: 'hub', theme: 'sewer', seed: 'sewer_hub_v1' }
     },
     buildingType: {
         'arcade':      { kind: 'generated', theme: 'street' },

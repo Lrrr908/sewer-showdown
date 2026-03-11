@@ -1340,24 +1340,24 @@ var NES = (function () {
         'KKKKKKKKKKKKKKKK'
     ];
 
-    // ── Manhole (small dark circle on cobblestone) ──
+    // ── Manhole (dark circular cover with metallic rim) ──
     PATTERNS.manhole = [
-        '______KKKK______',
-        '____KKGGGGKK____',
-        '___KGGGGGGGGK___',
-        '__KGGGLGGGLGGK__',
-        '_KGGGGGGGGGGGK__',
-        '_KGGGLGGGLGGGK__',
-        'KGGGGGGGGGGGGGK_',
-        'KGGKKKKKKKKGGK__',
-        'KGGKKKKKKKKGGK__',
-        'KGGGGGGGGGGGGGK_',
-        '_KGGGLGGGLGGGK__',
-        '_KGGGGGGGGGGGK__',
-        '__KGGGLGGGLGGK__',
-        '___KGGGGGGGGK___',
-        '____KKGGGGKK____',
-        '______KKKK______'
+        'aaaaaGGGGaaaaaa_',
+        'aaaaGLLLLGaaaaa_',
+        'aaaGLGGGGLGaaaa_',
+        'aaGLGKKKKGLGaaa_',
+        'aGLGKKKKKKGLGaa_',
+        'GLGKKKKKKKKGLG__',
+        'GLGKKKKKKKKGLG__',
+        'GLGKKKGGKKKGLG__',
+        'GLGKKKGGKKKGLG__',
+        'GLGKKKKKKKKGLG__',
+        'GLGKKKKKKKKGLG__',
+        'aGLGKKKKKKGLGaa_',
+        'aaGLGKKKKGLGaaa_',
+        'aaaGLGGGGLGaaaa_',
+        'aaaaGLLLLGaaaaa_',
+        'aaaaaGGGGaaaaaa_'
     ];
 
     // ── Area 3 Red brick ──
@@ -4730,6 +4730,7 @@ const SPRITE_MANIFEST = {
     road2:             'sprites/extracted/road_2.png',
     sewerTile:         'sprites/extracted/sewer_tile.png',
     sewerTile2:        'sprites/extracted/sewer_tile_2.png',
+    manholeCover:      'sprites/extracted/manhole_cover.png',
 
     // Midtown ground (real tile — Area 3 red brick)
     midGround:         'sprites/extracted/mid_ground.png',
@@ -4819,9 +4820,9 @@ const SPRITE_MANIFEST = {
     dungFloor5:        'sprites/dungeon/floor_sewer_5.png',
     dungFloor6:        'sprites/dungeon/floor_sewer_6.png',
     dungFloor7:        'sprites/dungeon/floor_sewer_7.png',
-    dungWallSewer:     'sprites/dungeon/wall_sewer_a.png',
-    dungWallSewerB:    'sprites/dungeon/wall_sewer_b.png',
-    dungWallSewerC:    'sprites/dungeon/wall_sewer_c.png',
+    dungWallSewer:     'sprites/dungeon/wall_sewer_a.png?v=4',
+    dungWallSewerB:    'sprites/dungeon/wall_sewer_b.png?v=4',
+    dungWallSewerC:    'sprites/dungeon/wall_sewer_c.png?v=4',
     dungWallSewerTop:  'sprites/dungeon/wall_sewer_top.png',
     dungWallGallery:   'sprites/dungeon/wall_gallery_a.png',
     dungWallGalleryB:  'sprites/dungeon/wall_gallery_b.png',
@@ -4835,7 +4836,7 @@ const SPRITE_MANIFEST = {
     dungHWallGalleryA: 'sprites/dungeon/hwall_gallery_row2_a.png',
     dungHWallGalleryB: 'sprites/dungeon/hwall_gallery_row2_b.png',
     // Corner tiles
-    dungCornerSewer:   'sprites/dungeon/corner_sewer_tl.png',
+    dungCornerSewer:   'sprites/dungeon/corner_sewer_tl.png?v=4',
     dungCornerGallery: 'sprites/dungeon/corner_gallery_tl.png',
     // Carpet tiles
     dungCarpetSewer:   'sprites/dungeon/carpet_sewer_pure_b.png',
@@ -4930,7 +4931,8 @@ const OPTIONAL_SPRITE_KEYS = [
     'ctCornerTL',
     'ctCarpetInt0','ctCarpetInt1','ctCarpetInt2',
     'ctCarpetEdgeL','ctCarpetEdgeR','ctCarpetEdgeT','ctCarpetEdgeB',
-    'ctCarpetCornerTL','ctCarpetCornerTR','ctCarpetCornerBL','ctCarpetCornerBR'
+    'ctCarpetCornerTL','ctCarpetCornerTR','ctCarpetCornerBL','ctCarpetCornerBR',
+    'manholeCover'
 ];
 
 const SPRITE_ALIASES = {
@@ -10042,26 +10044,15 @@ function drawBlimpPortMarker(sx, sy, label) {
 }
 
 function drawSewerEntrance(sx, sy) {
-    var bobY = Math.sin(Date.now() / 600) * 2;
     var cx = sx + (TILE_SIZE >> 1);
-    var cy = sy + (TILE_SIZE >> 1) + bobY;
-    var cleared = game.progress.levelWins['level_sewer'];
-    NES.drawTileStretched(ctx, cx - 16, cy - 16, 32, 32, 'manhole');
-    if (!cleared) {
-        var pulse = Math.sin(Date.now() / 400) * 0.3 + 0.4;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 18, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(60,188,252,' + pulse.toFixed(2) + ')';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+    var cy = sy + (TILE_SIZE >> 1);
+    var size = Math.round(TILE_SIZE * 0.6);
+    var mhSprite = game.sprites['manholeCover'];
+    if (mhSprite) {
+        ctx.drawImage(mhSprite, cx - size / 2, cy - size / 2, size, size);
+    } else {
+        NES.drawTileStretched(ctx, cx - size / 2, cy - size / 2, size, size, 'manhole');
     }
-    ctx.fillStyle = NES.PAL.K;
-    ctx.fillRect(cx - 20, sy - 2, 40, 10);
-    ctx.fillStyle = cleared ? NES.PAL.L : NES.PAL.C;
-    ctx.font = 'bold 7px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(cleared ? 'CLEARED' : 'SEWER', cx, sy + 6);
-    ctx.textAlign = 'left';
 }
 
 function drawOsmLandmark(sx, sy, spriteType, label) {
@@ -10118,6 +10109,8 @@ function drawLandmark(lm) {
     } else if (lm.id.indexOf('lm_blimp_') === 0) {
         drawBlimpPortMarker(sx, sy, lm.label);
     } else if (lm.id === 'lm_sewer') {
+        drawSewerEntrance(sx, sy);
+    } else if (lm.id.indexOf('lm_manhole_') === 0) {
         drawSewerEntrance(sx, sy);
     } else if (lm.id.indexOf('lm_osm_') === 0 && lm.sprite) {
         drawOsmLandmark(sx, sy, lm.sprite, lm.label);
@@ -11581,6 +11574,7 @@ function getLevelForContext() {
             var ly = lm.y * TILE_SIZE + TILE_SIZE / 2;
             if (Math.abs(px - lx) < TILE_SIZE * 1.5 && Math.abs(py - ly) < TILE_SIZE * 1.5) {
                 var route = LEVEL_ROUTES.landmark[lm.id];
+                if (!route && lm.id.indexOf('lm_manhole_') === 0) route = LEVEL_ROUTES.landmark['lm_manhole'];
                 if (route) return resolveRoute(route, lm.id);
             }
         }
@@ -11625,6 +11619,10 @@ function resolveRoute(route, contextId) {
         var instanceId = 'daily:' + contextId + ':' + _dateKey;
         return { type: 'generated', theme: route.theme, seed: seed, contextId: contextId,
                  artistId: artistId, instanceId: instanceId };
+    }
+    if (route.kind === 'hub') {
+        return { type: 'hub', theme: route.theme, seed: route.seed,
+                 instanceId: 'hub:' + route.seed };
     }
     console.error('Unknown route kind:', route.kind);
     return null;
@@ -11936,7 +11934,7 @@ var DUNGEON_TILE_TYPES = {
 var DUNGEON_OPPOSITE = { n: 's', s: 'n', e: 'w', w: 'e' };
 var DUNGEON_TRANS_DURATION = 0.38; // seconds
 
-function generateDungeon(theme, seed, diff, artistId, artistName) {
+function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
     var rng    = mulberry32RT(seedHashRT(seed));
     var enemyHp = DIFF_HP_RT[diff] || 1;
 
@@ -12151,7 +12149,7 @@ function generateDungeon(theme, seed, diff, artistId, artistName) {
         var isEntry = (ri === 0);
         var isBoss  = (ri === itemRoomId);
         var tm = buildTilemap(isEntry, isBoss, doors);
-        var enemies = buildEnemies(ri, isEntry, isBoss, tm);
+        var enemies = peaceful ? [] : buildEnemies(ri, isEntry, isBoss, tm);
         var artFrames = isBoss || isEntry ? buildArtFrames(tm) : [];
         rooms.push({
             id:             ri,
@@ -12321,13 +12319,16 @@ function getDifficultyForEntrance() {
 async function startEnterLevelFromContext(ctx) {
     if (ctx.type === 'static') {
         await startEnterLevel(ctx.levelId, ctx.instanceId);
+    } else if (ctx.type === 'hub') {
+        console.log('Generating hub dungeon: theme=' + ctx.theme + ' seed=' + ctx.seed);
+        var levelData = generateDungeon(ctx.theme, ctx.seed, 1, null, null, true);
+        levelData.instanceId = ctx.instanceId;
+        await startEnterLevelWithData(levelData);
     } else if (ctx.type === 'generated') {
         var diff = getDifficultyForEntrance();
-        // Gallery levels are easier
         if (ctx.theme === 'gallery') diff = Math.max(1, diff - 1);
         console.log('Generating dungeon: theme=' + ctx.theme + ' seed=' + ctx.seed + ' diff=' + diff);
 
-        // Build artist name for gallery levels
         var artistId   = ctx.artistId || null;
         var artistName = null;
         if (artistId && ARTISTS[artistId]) {
@@ -13502,13 +13503,11 @@ function updateLevel(dt) {
                 _lrState._rpx += _lrDx * _lrF;
                 _lrState._rpy += _lrDy * _lrF;
             }
-            // Walk animation — driven by target position so it starts immediately
-            var _lrMoving = (_lrState._lastTargetPx !== _lrState.px || _lrState._lastTargetPy !== _lrState.py);
-            _lrState._lastTargetPx = _lrState.px;
-            _lrState._lastTargetPy = _lrState.py;
+            // Walk animation — driven by render position delta so it animates during lerp
+            var _lrMoving = (_lrDist > 1);
             if (_lrMoving) {
                 _lrState._animTimer = (_lrState._animTimer || 0) + dt;
-                if (_lrState._animTimer > 0.15) { _lrState.frame = ((_lrState.frame || 0) + 1) % 4; _lrState._animTimer = 0; }
+                if (_lrState._animTimer > 0.15) { _lrState.frame = ((_lrState.frame || 0) + 1) % 2; _lrState._animTimer = 0; }
             } else {
                 _lrState.frame = 0;
                 _lrState._animTimer = 0;

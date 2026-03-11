@@ -956,7 +956,7 @@ function computeDistrictXBands() {
 }
 
 // ── Landmarks ──────────────────────────────────────────────────
-function genLandmarks(towns, terrain, highwayKeySet) {
+function genLandmarks(towns, terrain, highwayKeySet, ROAD_GRID, occupied) {
     const landmarks = [];
     const W = CFG.gridW, H = CFG.gridH;
 
@@ -1104,7 +1104,41 @@ function genLandmarks(towns, terrain, highwayKeySet) {
         usedPos.add(bx + ',' + by);
     }
 
-    console.log('  Landmarks: ' + landmarks.length + ' (towns: ' + towns.filter(t => t.tier === 'A').length + ', welcome: ' + landmarks.filter(l => l.id.indexOf('lm_welcome_') === 0).length + ', highway: ' + hwIdx + ', blimp: ' + blimpTowns.length + ')');
+    // ── Manholes on sidewalk tiles (Phase 9.1) ──
+    const MIN_MANHOLE_SPACING = 8;
+    const N = W * H;
+    const sidewalkTiles = [];
+    if (ROAD_GRID) {
+        for (let y = 1; y < H - 1; y++) {
+            for (let x = 1; x < W - 1; x++) {
+                const k = y * W + x;
+                if (ROAD_GRID[k]) continue;
+                if (terrain[y][x] !== LAND && terrain[y][x] !== MOUNTAIN) continue;
+                if (usedPos.has(x + ',' + y)) continue;
+                const adjRoad = (ROAD_GRID[k - 1] || ROAD_GRID[k + 1] ||
+                                 ROAD_GRID[k - W] || ROAD_GRID[k + W]);
+                if (adjRoad) sidewalkTiles.push({ x, y });
+            }
+        }
+    }
+    let manholeIdx = 0;
+    for (let i = 0; i < sidewalkTiles.length; i++) {
+        const st = sidewalkTiles[i];
+        let tooClose = false;
+        for (let j = landmarks.length - 1; j >= 0 && !tooClose; j--) {
+            const lm = landmarks[j];
+            if (lm.id.indexOf('lm_manhole_') !== 0 && lm.id !== 'lm_sewer') continue;
+            if (Math.abs(lm.x - st.x) + Math.abs(lm.y - st.y) < MIN_MANHOLE_SPACING) tooClose = true;
+        }
+        if (tooClose) continue;
+        const posKey = st.x + ',' + st.y;
+        if (usedPos.has(posKey)) continue;
+        landmarks.push({ id: 'lm_manhole_' + manholeIdx, x: st.x, y: st.y, label: 'MANHOLE', sprite: null });
+        usedPos.add(posKey);
+        manholeIdx++;
+    }
+
+    console.log('  Landmarks: ' + landmarks.length + ' (towns: ' + towns.filter(t => t.tier === 'A').length + ', welcome: ' + landmarks.filter(l => l.id.indexOf('lm_welcome_') === 0).length + ', highway: ' + hwIdx + ', blimp: ' + blimpTowns.length + ', manholes: ' + manholeIdx + ')');
     return landmarks;
 }
 
@@ -1390,7 +1424,7 @@ function main() {
     const districts = computeDistrictXBands();
 
     // Landmarks
-    const landmarks = genLandmarks(towns, terrain, highwayKeySet);
+    const landmarks = genLandmarks(towns, terrain, highwayKeySet, ROAD_GRID, occupied);
 
     // River tiles (for backward compat)
     const riverTiles = [];
