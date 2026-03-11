@@ -10941,12 +10941,29 @@ document.addEventListener('keydown', (e) => {
 
     if (e.code === 'Enter' || e.code === 'KeyE') {
         e.preventDefault();
+        // Sewer art popup: toggle on E
+        if (game.mode === 'LEVEL' && game.level) {
+            var _L = game.level;
+            if (_L.sewerArtPopup) {
+                _L.sewerArtPopup = null;
+                return;
+            }
+            if (_L._nearArtSlot) {
+                _L.sewerArtPopup = _L._nearArtSlot;
+                return;
+            }
+        }
         requestPrimaryAction();
         return;
     }
 
     if (e.code === 'Escape' || e.code === 'Backspace' || e.code === 'KeyM') {
         e.preventDefault();
+        // Close sewer art popup if open
+        if (game.mode === 'LEVEL' && game.level && game.level.sewerArtPopup) {
+            game.level.sewerArtPopup = null;
+            return;
+        }
         requestBackAction();
         return;
     }
@@ -11118,9 +11135,19 @@ if (buildingOverlayEl) {
 }
 
 // Clicking the canvas while the scoreboard is open closes it
-canvas.addEventListener('click', function() {
+canvas.addEventListener('click', function(e) {
     if (game.showScoreBoard) {
         game.showScoreBoard = false;
+    }
+    // Sewer art popup: click "View on Instagram" button
+    if (game.level && game.level.sewerArtPopup && game.level._sewerArtBtn) {
+        var btn = game.level._sewerArtBtn;
+        var rect = canvas.getBoundingClientRect();
+        var sx = (e.clientX - rect.left) * (canvas.width / rect.width);
+        var sy = (e.clientY - rect.top) * (canvas.height / rect.height);
+        if (sx >= btn.x && sx <= btn.x + btn.w && sy >= btn.y && sy <= btn.y + btn.h) {
+            if (btn.url) window.open(btn.url, '_blank');
+        }
     }
 });
 
@@ -12328,6 +12355,63 @@ function getDifficultyForEntrance() {
     return 2;
 }
 
+function _buildSewerArtSlots(L) {
+    var d = L.dungeon;
+    if (!d || !d.rooms) return;
+    var RW = d.roomW, RH = d.roomH;
+    var MX = Math.floor(RW / 2), MY = Math.floor(RH / 2);
+    var allSlots = {};
+
+    for (var ri = 0; ri < d.rooms.length; ri++) {
+        var room = d.rooms[ri];
+        var doors = room.doors;
+        var roomSlots = [];
+
+        // Vertical side walls: place on C tiles only — wallSprites[(ty-1)%3]: 0=B, 1=A, 2=C
+        for (var ty = 1; ty < RH - 1; ty++) {
+            if ((ty - 1) % 3 !== 2) continue;
+            // Left wall (tx=0) — skip if door there
+            if (!(doors.w !== null && ty >= MY - 1 && ty <= MY + 1)) {
+                roomSlots.push({ tx: 0, ty: ty, side: 'left' });
+            }
+            // Right wall (tx=RW-1)
+            if (!(doors.e !== null && ty >= MY - 1 && ty <= MY + 1)) {
+                roomSlots.push({ tx: RW - 1, ty: ty, side: 'right' });
+            }
+        }
+
+        // Horizontal walls: place on C tiles only — hWallSprites[tx%4]: 0=A, 1=B, 2=C, 3=D
+        for (var tx = 1; tx < RW - 1; tx++) {
+            if (tx % 4 !== 2) continue;
+            // Top wall (ty=0)
+            if (!(doors.n !== null && tx >= MX - 1 && tx <= MX + 1)) {
+                roomSlots.push({ tx: tx, ty: 0, side: 'top' });
+            }
+            // Bottom wall (ty=RH-1)
+            if (!(doors.s !== null && tx >= MX - 1 && tx <= MX + 1)) {
+                roomSlots.push({ tx: tx, ty: RH - 1, side: 'bottom' });
+            }
+        }
+
+        allSlots[ri] = roomSlots;
+    }
+
+    // Distribute images round-robin across all rooms
+    var images = L.galleryImages;
+    if (images.length === 0) return;
+    var imgIdx = 0;
+    for (var ri2 = 0; ri2 < d.rooms.length; ri2++) {
+        var slots = allSlots[ri2];
+        for (var si = 0; si < slots.length; si++) {
+            slots[si].img = images[imgIdx % images.length];
+            imgIdx++;
+        }
+    }
+
+    L.sewerArtSlots = allSlots;
+    console.log('[hub] built ' + imgIdx + ' art wall slots across ' + d.rooms.length + ' rooms');
+}
+
 async function startEnterLevelFromContext(ctx) {
     if (ctx.type === 'static') {
         await startEnterLevel(ctx.levelId, ctx.instanceId);
@@ -12335,6 +12419,47 @@ async function startEnterLevelFromContext(ctx) {
         console.log('Generating hub dungeon: theme=' + ctx.theme + ' seed=' + ctx.seed);
         var levelData = generateDungeon(ctx.theme, ctx.seed, 1, null, null, true);
         levelData.instanceId = ctx.instanceId;
+
+        // Fetch newest IG image from every artist for sewer art gallery
+        var _galleryImages = [];
+        var _artistIds = Object.keys(ARTISTS);
+        var _feedPromises = _artistIds.map(function(aid) {
+            return fetch('data/ig/' + aid + '.json')
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(data) {
+                    if (!data) return null;
+                    var posts = data.items || data.posts || [];
+                    for (var pi = 0; pi < posts.length; pi++) {
+                        if (posts[pi].imageUrl) {
+                            return { artistId: aid, artistName: data.artistName || ARTISTS[aid].name,
+                                     imageUrl: posts[pi].imageUrl,
+                                     postUrl: posts[pi].openUrl || posts[pi].postUrl || '#' };
+                        }
+                    }
+                    return null;
+                })
+                .catch(function() { return null; });
+        });
+        var _feedResults = await Promise.all(_feedPromises);
+        for (var _fi = 0; _fi < _feedResults.length; _fi++) {
+            if (_feedResults[_fi]) _galleryImages.push(_feedResults[_fi]);
+        }
+        console.log('[hub] loaded ' + _galleryImages.length + ' gallery images from ' + _artistIds.length + ' artists');
+
+        // Preload image objects
+        var _imgLoadPromises = _galleryImages.map(function(gi) {
+            return new Promise(function(resolve) {
+                var img = new Image();
+                img.onload = function() { gi._img = img; resolve(); };
+                img.onerror = function() { resolve(); };
+                img.src = gi.imageUrl;
+            });
+        });
+        await Promise.all(_imgLoadPromises);
+        _galleryImages = _galleryImages.filter(function(gi) { return gi._img; });
+        console.log('[hub] preloaded ' + _galleryImages.length + ' images');
+
+        levelData.galleryImages = _galleryImages;
         await startEnterLevelWithData(levelData);
     } else if (ctx.type === 'generated') {
         var diff = getDifficultyForEntrance();
@@ -12535,8 +12660,17 @@ async function startEnterLevelWithData(levelData) {
         dungeonDoors:   levelData.type === 'dungeon' ? levelData.rooms[levelData.entryRoomId || 0].doors : null,
         transition:     null,
         dungeonRoomMsg: null,
-        dungeonMsgTimer: 0
+        dungeonMsgTimer: 0,
+        // Sewer art gallery
+        galleryImages:  levelData.galleryImages || [],
+        sewerArtSlots:  null,
+        sewerArtPopup:  null
     };
+
+    // Build sewer art gallery wall slots if we have gallery images
+    if (game.level.dungeon && game.level.galleryImages.length > 0) {
+        _buildSewerArtSlots(game.level);
+    }
 
     game.mode = 'LEVEL';
     game.levelState = 'PLAYING';
@@ -12951,6 +13085,7 @@ function updateLevel(dt) {
     }
 
     // ── Player movement ─────────────────────────────────────────
+    if (L.sewerArtPopup) return; // freeze gameplay while art popup is open
     var moveSpeed = baseSpeed;
     if (p.atkPhase === 'RECOVERY') moveSpeed *= 0.3;
     if (p.atkPhase === 'WINDUP' || p.atkPhase === 'ACTIVE') moveSpeed *= 0.5;
@@ -13079,6 +13214,24 @@ function updateLevel(dt) {
                         playerStartY: p.y
                     };
                 }
+            }
+        }
+    }
+
+    // ── Sewer art gallery: proximity check ─────────────────────
+    L._nearArtSlot = null;
+    if (L.sewerArtSlots && L.sewerArtSlots[L.currentRoomId] && !L.sewerArtPopup) {
+        var _saSlots2 = L.sewerArtSlots[L.currentRoomId];
+        var _ptx = Math.floor((p.x + p.w / 2) / L.tileSize);
+        var _pty = Math.floor((p.y + p.h / 2) / L.tileSize);
+        for (var _sai2 = 0; _sai2 < _saSlots2.length; _sai2++) {
+            var _sa2 = _saSlots2[_sai2];
+            if (!_sa2.img || !_sa2.img._img) continue;
+            var _adx = Math.abs(_ptx - _sa2.tx);
+            var _ady = Math.abs(_pty - _sa2.ty);
+            if (_adx <= 1 && _ady <= 1 && (_adx + _ady) <= 1) {
+                L._nearArtSlot = _sa2;
+                break;
             }
         }
     }
@@ -13934,6 +14087,149 @@ function _drawDungeonMiniMap(L, ts) {
     ctx.fillText('MAP', mmX + mmW/2, mmY - 4); ctx.textAlign = 'left';
 }
 
+// ── Sewer art gallery: hover preview in black margin ────────────
+function _drawSewerArtHover(ctx, L, cx, cy, ts) {
+    var slot = L._nearArtSlot;
+    if (!slot || !slot.img || !slot.img._img) return;
+    var imgObj = slot.img._img;
+
+    // Room pixel bounds on screen
+    var roomW = L.dungeon.roomW * ts;
+    var roomH = L.dungeon.roomH * ts;
+    var roomLeft = -cx;
+    var roomTop  = -cy;
+    var roomRight  = roomLeft + roomW;
+    var roomBottom = roomTop + roomH;
+
+    // Always show preview at the bottom
+    var marginB = CANVAS_HEIGHT - roomBottom;
+
+    var pad = 10;
+    var pvX, pvY, pvMaxW, pvMaxH;
+    pvMaxW = CANVAS_WIDTH - pad * 2;
+    pvMaxH = marginB - pad * 2;
+    pvX = pad;
+    pvY = roomBottom + pad;
+
+    if (pvMaxW < 40 || pvMaxH < 40) return;
+
+    // Scale image to fit the preview area, leaving room for text
+    var textSpace = 36;
+    var aspect = imgObj.width / imgObj.height;
+    var drawW, drawH;
+    var availH = pvMaxH - textSpace;
+    if (availH < 30) availH = pvMaxH;
+    if (aspect > pvMaxW / availH) {
+        drawW = pvMaxW;
+        drawH = pvMaxW / aspect;
+    } else {
+        drawH = availH;
+        drawW = availH * aspect;
+    }
+
+    // Center image within the preview area
+    var imgX = pvX + (pvMaxW - drawW) / 2;
+    var imgY = pvY + (availH - drawH) / 2;
+
+    ctx.save();
+
+    // Subtle background panel
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(pvX - 2, pvY - 2, pvMaxW + 4, pvMaxH + 4);
+
+    // Gold frame border
+    ctx.strokeStyle = '#c8a040';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(imgX - 3, imgY - 3, drawW + 6, drawH + 6);
+
+    // Dark inner border
+    ctx.fillStyle = '#1a1008';
+    ctx.fillRect(imgX - 1, imgY - 1, drawW + 2, drawH + 2);
+
+    // Draw the image
+    ctx.drawImage(imgObj, imgX, imgY, drawW, drawH);
+
+    // Artist name
+    var nameY = imgY + drawH + 16;
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffe080';
+    ctx.fillText(slot.img.artistName || 'Unknown Artist', pvX + pvMaxW / 2, nameY);
+
+    // "Press E" hint
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#888888';
+    ctx.fillText('Press E for Instagram', pvX + pvMaxW / 2, nameY + 14);
+
+    ctx.restore();
+}
+
+// ── Sewer art gallery: popup overlay ────────────────────────────
+function _drawSewerArtPopup(ctx, L) {
+    var slot = L.sewerArtPopup;
+    if (!slot || !slot.img || !slot.img._img) return;
+
+    // Darken background
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    var imgObj = slot.img._img;
+    var maxW = CANVAS_WIDTH * 0.6;
+    var maxH = CANVAS_HEIGHT * 0.6;
+
+    var aspect = imgObj.width / imgObj.height;
+    var drawW, drawH;
+    if (aspect > maxW / maxH) {
+        drawW = maxW;
+        drawH = maxW / aspect;
+    } else {
+        drawH = maxH;
+        drawW = maxH * aspect;
+    }
+
+    var imgX = (CANVAS_WIDTH - drawW) / 2;
+    var imgY = (CANVAS_HEIGHT - drawH) / 2 - 20;
+
+    // Gold frame
+    ctx.fillStyle = '#c8a040';
+    ctx.fillRect(imgX - 4, imgY - 4, drawW + 8, drawH + 8);
+    ctx.fillStyle = '#1a1008';
+    ctx.fillRect(imgX - 2, imgY - 2, drawW + 4, drawH + 4);
+
+    // Draw image
+    ctx.drawImage(imgObj, imgX, imgY, drawW, drawH);
+
+    // Artist name below image
+    var textY = imgY + drawH + 22;
+    ctx.save();
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffe080';
+    ctx.fillText(slot.img.artistName || 'Unknown Artist', CANVAS_WIDTH / 2, textY);
+
+    // "View on Instagram" button
+    var btnY = textY + 14;
+    var btnText = 'View on Instagram';
+    ctx.font = 'bold 11px monospace';
+    var btnW = ctx.measureText(btnText).width + 24;
+    var btnH = 22;
+    var btnX = (CANVAS_WIDTH - btnW) / 2;
+
+    // Store button bounds for click handling
+    L._sewerArtBtn = { x: btnX, y: btnY - 13, w: btnW, h: btnH, url: slot.img.postUrl };
+
+    ctx.fillStyle = '#e1306c';
+    ctx.fillRect(btnX, btnY - 13, btnW, btnH);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(btnText, CANVAS_WIDTH / 2, btnY + 2);
+
+    // Close hint
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#888888';
+    ctx.fillText('Press E or Escape to close', CANVAS_WIDTH / 2, btnY + 24);
+    ctx.restore();
+}
+
 // Helper: draw one room's tilemap with an x/y pixel offset
 function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
     ctx.imageSmoothingEnabled = false;
@@ -14322,6 +14618,72 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
             }
         }
     }
+
+    // ── Sewer art gallery: draw artist images on wall tiles ──────────────
+    if (L.sewerArtSlots && L.sewerArtSlots[L.currentRoomId]) {
+        var _saSlots = L.sewerArtSlots[L.currentRoomId];
+        for (var _sai = 0; _sai < _saSlots.length; _sai++) {
+            var _sa = _saSlots[_sai];
+            if (!_sa.img || !_sa.img._img) continue;
+            var _saPx = _sa.tx * ts - cx;
+            var _saPy = _sa.ty * ts - cy;
+            if (_saPx < -ts * 2 || _saPx > CANVAS_WIDTH + ts || _saPy < -ts * 2 || _saPy > CANVAS_HEIGHT + ts) continue;
+
+            var _saImg = _sa.img._img;
+            var _fw, _fh, _bx, _by;
+
+            ctx.save();
+
+            if (_sa.side === 'left') {
+                // Left wall (tx=0): painting faces right into room
+                // Place on inner (right) face, away from outer wall border
+                _fw = Math.round(ts * 0.48);
+                _fh = Math.round(ts * 0.66);
+                _bx = _saPx + ts - _fw - 3;
+                _by = _saPy + Math.round((ts - _fh) / 2);
+                // Shear: bottom of painting leans right (toward room) like gravity pull
+                ctx.transform(1, 0, 0.10, 0.92, _bx, _by);
+            } else if (_sa.side === 'right') {
+                // Right wall (tx=RW-1): painting faces left into room
+                // Place on inner (left) face
+                _fw = Math.round(ts * 0.48);
+                _fh = Math.round(ts * 0.66);
+                _bx = _saPx + 3;
+                _by = _saPy + Math.round((ts - _fh) / 2);
+                // Mirror: bottom leans left (toward room)
+                ctx.transform(1, 0, -0.10, 0.92, _bx, _by);
+            } else if (_sa.side === 'top') {
+                // Top wall (ty=0): painting faces down into room
+                // Place on inner (bottom) face, away from outer wall border
+                _fw = Math.round(ts * 0.66);
+                _fh = Math.round(ts * 0.48);
+                _bx = _saPx + Math.round((ts - _fw) / 2);
+                _by = _saPy + ts - _fh - 3;
+                // Slight lean: bottom of painting hangs down naturally
+                ctx.transform(1, 0, 0.06, 0.92, _bx, _by);
+            } else {
+                // Bottom wall (ty=RH-1): painting faces up into room
+                // Place on inner (top) face
+                _fw = Math.round(ts * 0.66);
+                _fh = Math.round(ts * 0.48);
+                _bx = _saPx + Math.round((ts - _fw) / 2);
+                _by = _saPy + 3;
+                // Mirror lean
+                ctx.transform(1, 0, -0.06, 0.92, _bx, _by);
+            }
+
+            // Dark frame border
+            ctx.fillStyle = '#1a1008';
+            ctx.fillRect(-1, -1, _fw + 2, _fh + 2);
+            // Gold frame
+            ctx.fillStyle = '#c8a040';
+            ctx.fillRect(0, 0, _fw, _fh);
+            // Draw the image
+            ctx.drawImage(_saImg, 1, 1, _fw - 2, _fh - 2);
+
+            ctx.restore();
+        }
+    }
 }
 
 function drawLevel() {
@@ -14486,6 +14848,17 @@ function drawLevel() {
                 drawSpeechBubble(ctx, _dBubbles[_dBrk].text, _dBrx, _dBry, ts, '#80ff80');
             }
         }
+
+        // ── Sewer art gallery: hover preview in black margin ─────────
+        if (L._nearArtSlot && !L.sewerArtPopup) {
+            _drawSewerArtHover(ctx, L, cx, cy, ts);
+        }
+
+        // ── Sewer art gallery: popup overlay ────────────────────────
+        if (L.sewerArtPopup) {
+            _drawSewerArtPopup(ctx, L);
+        }
+
         return;
     }
 
