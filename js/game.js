@@ -230,153 +230,153 @@ var NES = (function () {
 
     // Down = facing camera (authentic NES ripped sprites, 16x17-18)
     PATTERNS.turtleDown1 = [
-        '________BG______',
-        '_______BG_______',
-        '___GGGGGGG______',
-        '__GVVGVVVVG_____',
-        '__VVGBGGGGBG____',
-        '_BVGGVBBBBVGG___',
-        '_BGGGVVVVVVGVG__',
-        '_VGGGGVVVVGGGV__',
-        '_VVVGBGGGGBGVV__',
-        '__VVGGBGBBGGBB__',
-        '__GGGGGGGGVGVV__',
-        '___GVGBGBGVVVG__',
-        '__GGVVGGGGGGGG__',
-        '__GGBBGGGGVVGG__',
-        '__GGGGGGGGGGGG__',
-        '___GVVGGGGGGG___',
-        '_____GGGGGG_____'
+        '________BK______',
+        '_______BK_______',
+        '___KKKKKKK______',
+        '__KVVKVVVVK_____',
+        '__VVKBKKKKBK____',
+        '_BVKKVBBBBVKK___',
+        '_BKKKVVVVVVKVK__',
+        '_VKKKKVVVVKKKV__',
+        '_VVVKBKKKKBKVV__',
+        '__VVKKBKBBKKBB__',
+        '__KKKKKKKKVKVV__',
+        '___KVKBKBKVVVK__',
+        '__KKVVKKKKKKKK__',
+        '__KKBBKKKKVVKK__',
+        '__KKKKKKKKKKKK__',
+        '___KVVKKKKKKK___',
+        '_____KKKKKK_____'
     ];
     PATTERNS.turtleDown2 = [
-        '________BG______',
-        '_______BG_______',
-        '______GGGG______',
-        '___GGGVVVVGGG___',
-        '__GVGBGGGGBGVG__',
-        '__VVGVBBBBVGVV__',
-        '__VVGVVVVVVGVV__',
-        '__BGGGVVVVGGGB__',
-        '__BVGBGGGGBGVB__',
-        '__VVGGBBBBGGVV__',
-        '__GVVGGGGGGVVG__',
-        '___GGGGBBGGGG___',
-        '___GVVGGGGVVG___',
-        '__GGGBGGGGBGGG__',
-        '__GGGGGGGGGGGG__',
-        '__GGVVGGGGVVGG__',
-        '___GGGGGGGGGG___',
-        '_____GGGGGG_____'
+        '________BK______',
+        '_______BK_______',
+        '______KKKK______',
+        '___KKKVVVVKKK___',
+        '__KVKBKKKKBKVK__',
+        '__VVKVBBBBVKVV__',
+        '__VVKVVVVVVKVV__',
+        '__BKKKVVVVKKKB__',
+        '__BVKBKKKKBKVB__',
+        '__VVKKBBBBKKVV__',
+        '__KVVKKKKKKVVK__',
+        '___KKKKBBKKKK___',
+        '___KVVKKKKVVK___',
+        '__KKKBKKKKBKKK__',
+        '__KKKKKKKKKKKK__',
+        '__KKVVKKKKVVKK__',
+        '___KKKKKKKKKK___',
+        '_____KKKKKK_____'
     ];
     PATTERNS.turtleDown3 = [
-        '________BG______',
-        '_______BG_______',
-        '______GGGGGGG___',
-        '_____GVVVVGVVG__',
-        '____GBGGGGBGVV__',
-        '___GGVBBBBVGGVB_',
-        '__GVGVVVVVVGGGB_',
-        '__VGGGVVVVGGGGV_',
-        '__VVGBGGGGBGVVV_',
-        '__BBGGBBGBGGVV__',
-        '__VVGVGGGGGGGG__',
-        '__GVVVGBGBGVG___',
-        '__GGGGGGGGVVGG__',
-        '__GGVVGGGGBBGG__',
-        '__GGGGGGGGGGGG__',
-        '___GGGGGGGVVG___',
-        '_____GGGGGG_____'
+        '________BK______',
+        '_______BK_______',
+        '______KKKKKKK___',
+        '_____KVVVVKVVK__',
+        '____KBKKKKBKVV__',
+        '___KKVBBBBVKKVB_',
+        '__KVKVVVVVVKKKB_',
+        '__VKKKVVVVKKKKV_',
+        '__VVKBKKKKBKVVV_',
+        '__BBKKBBKBKKVV__',
+        '__VVKVKKKKKKKK__',
+        '__KVVVKBKBKVK___',
+        '__KKKKKKKKVVKK__',
+        '__KKVVKKKKBBKK__',
+        '__KKKKKKKKKKKK__',
+        '___KKKKKKKVVK___',
+        '_____KKKKKK_____'
     ];
 
     // Up = facing away (back view: shell visible)
     PATTERNS.turtleUp1 = [
-        '_____GVVVVG_____',
-        '____GBVVVVBG____',
-        '____GBGVVGBG____',
-        '____GGBBBBGG____',
-        '____GGGGGGGG____',
-        '__GGGVGBBGVGGG__',
-        '__VGVGVVVVGVGV__',
-        '__BGVGVVVVGVGB__',
-        '__GGGGVGVVGVGG__',
-        '___GGGVGGGGVGG__',
-        '___GGGGVVGGGGG__',
-        '__GGGGGVVGGGGGG_',
-        '__GGGVGGGGVGGGG_',
-        '__GGGGGGGGGGGGG_',
-        '___GGGGGGGVVGG__',
-        '_____GGGGGG_____'
+        '_____KVVVVK_____',
+        '____KBVVVVBK____',
+        '____KBKVVKBK____',
+        '____KKBBBBKK____',
+        '____KKKKKKKK____',
+        '__KKKVKBBKVKKK__',
+        '__VKVKVVVVKVKV__',
+        '__BKVKVVVVKVKB__',
+        '__KKKKVKVVKVKK__',
+        '___KKKVKKKKVKK__',
+        '___KKKKVVKKKKK__',
+        '__KKKKKVVKKKKKK_',
+        '__KKKVKKKKVKKKK_',
+        '__KKKKKKKKKKKKK_',
+        '___KKKKKKKVVKK__',
+        '_____KKKKKK_____'
     ];
     PATTERNS.turtleUp2 = [
-        '_____GVVVVG_____',
-        '____GBVVVVBG____',
-        '____GBGVVGBG____',
-        '____GGBBBBGG____',
-        '__GGGGGGGGGG____',
-        '_GBVGVGBBGVGG___',
-        '_GVGVGVVVVGVGG__',
-        '_GVGVGVVVVGVGVG_',
-        '_GVGGVGVVGVGGBG_',
-        '___GGVGGGGVGGG__',
-        '___GGGVGGVGGG___',
-        '__GGGGGVVGVGGG__',
-        '__GGGVGGGGVGGG__',
-        '__GGGGGGGGGGGG__',
-        '___GGGGGGVVGG___',
-        '_____GGGGGG_____'
+        '_____KVVVVK_____',
+        '____KBVVVVBK____',
+        '____KBKVVKBK____',
+        '____KKBBBBKK____',
+        '__KKKKKKKKKK____',
+        '_KBVKVKBBKVKK___',
+        '_KVKVKVVVVKVKK__',
+        '_KVKVKVVVVKVKVK_',
+        '_KVKKVKVVKVKKBK_',
+        '___KKVKKKKVKKK__',
+        '___KKKVKKVKKK___',
+        '__KKKKKVVKVKKK__',
+        '__KKKVKKKKVKKK__',
+        '__KKKKKKKKKKKK__',
+        '___KKKKKKVVKK___',
+        '_____KKKKKK_____'
     ];
     PATTERNS.turtleRight1 = [
-        '_______GVVVG____',
-        '____B_GVVVVBGV__',
-        '_____BGBVVVBGV__',
-        '_____GGGBBBVVV__',
-        '_____GGGGVVVVG__',
-        '____GVVVGGGGG___',
-        '___BVVVVGBGG____',
-        '__GBBGGGBBGGVV__',
-        '__GVVGGGGGG_GG__',
-        '__GVVGGGBGGGG___',
-        '__GGGGGVVGGGGG__',
-        '__GGGVGGGVGGGG__',
-        '__GGGGGGGVVGGG__',
-        '___GGGGGGGGGG___',
-        '_____GGGGGG_____',
+        '_______KVVVK____',
+        '____B_KVVVVBKV__',
+        '_____BKBVVVBKV__',
+        '_____KKKBBBVVV__',
+        '_____KKKKVVVVK__',
+        '____KVVVKKKKK___',
+        '___BVVVVKBKK____',
+        '__KBBKKKBBKKVV__',
+        '__KVVKKKKKK_KK__',
+        '__KVVKKKBKKKK___',
+        '__KKKKKVVKKKKK__',
+        '__KKKVKKKVKKKK__',
+        '__KKKKKKKVVKKK__',
+        '___KKKKKKKKKK___',
+        '_____KKKKKK_____',
         '________________'
     ];
     PATTERNS.turtleRight2 = [
-        '_______GVVVG____',
-        '____B_GVVVVBGV__',
-        '_____BGBVVVBGV__',
-        '_____GGGBBBVVV__',
-        '_____GGGGGVVVG__',
-        '___VGVVGVVGGG___',
-        '__VGVVGVVVG_GG__',
-        '__GGVVGGVVVGVVG_',
-        '___GGVGGGVVBVVG_',
-        '___GGVGGGGBBGG__',
-        '__GGGGGVGGGGGG__',
-        '__GGVVVGGGVGGG__',
-        '__GGVGGGGGGGGG__',
-        '___GGGGGGGGGG___',
-        '_____GGGGGG_____',
+        '_______KVVVK____',
+        '____B_KVVVVBKV__',
+        '_____BKBVVVBKV__',
+        '_____KKKBBBVVV__',
+        '_____KKKKKVVVK__',
+        '___VKVVKVVKKK___',
+        '__VKVVKVVVK_KK__',
+        '__KKVVKKVVVKVVK_',
+        '___KKVKKKVVBVVK_',
+        '___KKVKKKKBBKK__',
+        '__KKKKKVKKKKKK__',
+        '__KKVVVKKKVKKK__',
+        '__KKVKKKKKKKKK__',
+        '___KKKKKKKKKK___',
+        '_____KKKKKK_____',
         '________________'
     ];
     PATTERNS.turtleAttack = [
-        '_______GVVVG____',
-        '____B_GVVVVBGV__',
-        '_____BGBVVVBGV__',
-        '_____GGGBBBVVV__',
-        '_____GGGGGVVVG__',
-        '___VGVVGVVGGG_GG',
-        '__VGVVGVVVVGGGVV',
-        '__GGVVGGVVVBVVVV',
-        '___GGVGGGGBBVVVG',
-        '___GGVGGGGGGGGG_',
-        '__GGGGGVGGGGGG__',
-        '__GGVVVGGGVGGG__',
-        '__GGVGGGGGGGGG__',
-        '___GGGGGGGGGG___',
-        '_____GGGGGG_____',
+        '_______KVVVK____',
+        '____B_KVVVVBKV__',
+        '_____BKBVVVBKV__',
+        '_____KKKBBBVVV__',
+        '_____KKKKKVVVK__',
+        '___VKVVKVVKKK_KK',
+        '__VKVVKVVVVKKKVV',
+        '__KKVVKKVVVBVVVV',
+        '___KKVKKKKBBVVVK',
+        '___KKVKKKKKKKKK_',
+        '__KKKKKVKKKKKK__',
+        '__KKVVVKKKVKKK__',
+        '__KKVKKKKKKKKK__',
+        '___KKKKKKKKKK___',
+        '_____KKKKKK_____',
         '________________'
     ];
 
@@ -12038,52 +12038,46 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         if (doors.e !== null) cutDoor('e', DT_DOOR);
         if (doors.w !== null) cutDoor('w', DT_DOOR);
 
-        // ── Decorations ─────────────────────────────────────────
-        if (isEntry) {
-            // Pillars at inner corners
-            tm[1][1]           = DT_PILLAR;
-            tm[1][ROOM_W - 2]  = DT_PILLAR;
-            tm[ROOM_H - 2][1]  = DT_PILLAR;
-            tm[ROOM_H - 2][ROOM_W - 2] = DT_PILLAR;
-            // Carpet strip (north-south center)
-            for (r = 2; r < ROOM_H - 2; r++) {
-                if (tm[r][MID_X] === DT_FLOOR) tm[r][MID_X] = DT_CARPET;
-                if (tm[r][MID_X - 1] === DT_FLOOR) tm[r][MID_X - 1] = DT_CARPET;
-                if (tm[r][MID_X + 1] === DT_FLOOR) tm[r][MID_X + 1] = DT_CARPET;
-            }
-        } else if (isBoss) {
-            // Checkerboard carpet in center zone
-            for (r = 2; r < ROOM_H - 2; r++) {
-                for (c = 2; c < ROOM_W - 2; c++) {
-                    if (tm[r][c] === DT_FLOOR && (r + c) % 2 === 0) tm[r][c] = DT_CARPET;
+        // ── Decorations (skip for peaceful hubs — plain open rooms) ──
+        if (!peaceful) {
+            if (isEntry) {
+                tm[1][1]           = DT_PILLAR;
+                tm[1][ROOM_W - 2]  = DT_PILLAR;
+                tm[ROOM_H - 2][1]  = DT_PILLAR;
+                tm[ROOM_H - 2][ROOM_W - 2] = DT_PILLAR;
+                for (r = 2; r < ROOM_H - 2; r++) {
+                    if (tm[r][MID_X] === DT_FLOOR) tm[r][MID_X] = DT_CARPET;
+                    if (tm[r][MID_X - 1] === DT_FLOOR) tm[r][MID_X - 1] = DT_CARPET;
+                    if (tm[r][MID_X + 1] === DT_FLOOR) tm[r][MID_X + 1] = DT_CARPET;
                 }
-            }
-            // Item pedestal in center
-            tm[MID_Y][MID_X] = DT_PEDESTAL;
-            // Corner pillars
-            tm[2][2]               = DT_PILLAR;
-            tm[2][ROOM_W - 3]      = DT_PILLAR;
-            tm[ROOM_H - 3][2]      = DT_PILLAR;
-            tm[ROOM_H - 3][ROOM_W - 3] = DT_PILLAR;
-        } else {
-            // Random pillars + small carpet patches
-            var seed2 = seedHashRT(seed + '_rm' + ri);
-            var rng2 = mulberry32RT(seed2);
-            // 1-3 random pillar pairs
-            var numPillars = 1 + Math.floor(rng2() * 3);
-            for (var pi = 0; pi < numPillars; pi++) {
-                var pr = 2 + Math.floor(rng2() * (ROOM_H - 5));
-                var pc = 2 + Math.floor(rng2() * ((ROOM_W - 5) / 2)) * 2; // even column for symmetry
-                if (tm[pr][pc] === DT_FLOOR) tm[pr][pc] = DT_PILLAR;
-                var mirrorC = ROOM_W - 1 - pc;
-                if (mirrorC !== pc && tm[pr][mirrorC] === DT_FLOOR) tm[pr][mirrorC] = DT_PILLAR;
-            }
-            // Small hazard patch (theme-appropriate)
-            var hazardCount = Math.floor(rng2() * 3) + (diff > 2 ? 2 : 0);
-            for (var hz = 0; hz < hazardCount; hz++) {
-                var hr = 2 + Math.floor(rng2() * (ROOM_H - 4));
-                var hc = 2 + Math.floor(rng2() * (ROOM_W - 4));
-                if (tm[hr][hc] === DT_FLOOR) tm[hr][hc] = DT_HAZARD;
+            } else if (isBoss) {
+                for (r = 2; r < ROOM_H - 2; r++) {
+                    for (c = 2; c < ROOM_W - 2; c++) {
+                        if (tm[r][c] === DT_FLOOR && (r + c) % 2 === 0) tm[r][c] = DT_CARPET;
+                    }
+                }
+                tm[MID_Y][MID_X] = DT_PEDESTAL;
+                tm[2][2]               = DT_PILLAR;
+                tm[2][ROOM_W - 3]      = DT_PILLAR;
+                tm[ROOM_H - 3][2]      = DT_PILLAR;
+                tm[ROOM_H - 3][ROOM_W - 3] = DT_PILLAR;
+            } else {
+                var seed2 = seedHashRT(seed + '_rm' + ri);
+                var rng2 = mulberry32RT(seed2);
+                var numPillars = 1 + Math.floor(rng2() * 3);
+                for (var pi = 0; pi < numPillars; pi++) {
+                    var pr = 2 + Math.floor(rng2() * (ROOM_H - 5));
+                    var pc = 2 + Math.floor(rng2() * ((ROOM_W - 5) / 2)) * 2;
+                    if (tm[pr][pc] === DT_FLOOR) tm[pr][pc] = DT_PILLAR;
+                    var mirrorC = ROOM_W - 1 - pc;
+                    if (mirrorC !== pc && tm[pr][mirrorC] === DT_FLOOR) tm[pr][mirrorC] = DT_PILLAR;
+                }
+                var hazardCount = Math.floor(rng2() * 3) + (diff > 2 ? 2 : 0);
+                for (var hz = 0; hz < hazardCount; hz++) {
+                    var hr = 2 + Math.floor(rng2() * (ROOM_H - 4));
+                    var hc = 2 + Math.floor(rng2() * (ROOM_W - 4));
+                    if (tm[hr][hc] === DT_FLOOR) tm[hr][hc] = DT_HAZARD;
+                }
             }
         }
 
@@ -12177,7 +12171,7 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
             doors:          doors,
             entryPositions: buildEntryPositions(doors),
             artFrames:      artFrames,
-            itemSpawn:      isBoss ? { x: MID_X, y: MID_Y } : null,
+            itemSpawn:      (isBoss && !peaceful) ? { x: MID_X, y: MID_Y } : null,
             isEntry:        isEntry,
             isBoss:         isBoss
         });
