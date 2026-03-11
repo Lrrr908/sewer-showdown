@@ -4838,6 +4838,90 @@ const SPRITE_MANIFEST = {
     // Corner tiles
     dungCornerSewer:   'sprites/dungeon/corner_sewer_tl.png?v=4',
     dungCornerGallery: 'sprites/dungeon/corner_gallery_tl.png',
+    // Street theme (industrial loft)
+    dungWallStreet:    'sprites/dungeon/wall_street_a.png',
+    dungWallStreetB:   'sprites/dungeon/wall_street_b.png',
+    dungWallStreetC:   'sprites/dungeon/wall_street_c.png',
+    dungHWallStreetA:  'sprites/dungeon/hwall_street_a.png',
+    dungHWallStreetB:  'sprites/dungeon/hwall_street_b.png',
+    dungHWallStreetC:  'sprites/dungeon/hwall_street_c.png',
+    dungHWallStreetD:  'sprites/dungeon/hwall_street_d.png',
+    dungCornerStreet:  'sprites/dungeon/corner_street_tl.png',
+    dungFloorStreetA:  'sprites/dungeon/floor_street_a.png',
+    dungFloorStreetB:  'sprites/dungeon/floor_street_b.png',
+    dungFloorStreetC:  'sprites/dungeon/floor_street_c.png',
+    dungFloorStreetD:  'sprites/dungeon/floor_street_d.png',
+    dungFloorStreetE:  'sprites/dungeon/floor_street_e.png',
+    dungFloorStreetF:  'sprites/dungeon/floor_street_f.png',
+    dungFloorStreetG:  'sprites/dungeon/floor_street_g.png',
+    dungFloorStreetH:  'sprites/dungeon/floor_street_h.png',
+    dungFloorStreet0:  'sprites/dungeon/floor_street_0.png',
+    dungFloorStreet1:  'sprites/dungeon/floor_street_1.png',
+    dungFloorStreet2:  'sprites/dungeon/floor_street_2.png',
+    dungFloorStreet3:  'sprites/dungeon/floor_street_3.png',
+    dungFloorStreet4:  'sprites/dungeon/floor_street_4.png',
+    dungFloorStreet5:  'sprites/dungeon/floor_street_5.png',
+    dungFloorStreet6:  'sprites/dungeon/floor_street_6.png',
+    dungFloorStreet7:  'sprites/dungeon/floor_street_7.png',
+    dungCarpetStreet:  'sprites/dungeon/carpet_street_int_a.png',
+    dungCarpetStreetB: 'sprites/dungeon/carpet_street_int_b.png',
+    dungCarpetStreetC: 'sprites/dungeon/carpet_street_int_c.png',
+    // Dock theme (heavy industrial)
+    dungWallDock:      'sprites/dungeon/wall_dock_a.png',
+    dungWallDockB:     'sprites/dungeon/wall_dock_b.png',
+    dungWallDockC:     'sprites/dungeon/wall_dock_c.png',
+    dungHWallDockA:    'sprites/dungeon/hwall_dock_a.png',
+    dungHWallDockB:    'sprites/dungeon/hwall_dock_b.png',
+    dungHWallDockC:    'sprites/dungeon/hwall_dock_c.png',
+    dungHWallDockD:    'sprites/dungeon/hwall_dock_d.png',
+    dungCornerDock:    'sprites/dungeon/corner_dock_tl.png',
+    dungFloorDockA:    'sprites/dungeon/floor_dock_a.png',
+    dungFloorDockB:    'sprites/dungeon/floor_dock_b.png',
+    dungFloorDockC:    'sprites/dungeon/floor_dock_c.png',
+    dungFloorDockD:    'sprites/dungeon/floor_dock_d.png',
+    dungFloorDockE:    'sprites/dungeon/floor_dock_e.png',
+    dungFloorDockF:    'sprites/dungeon/floor_dock_f.png',
+    dungFloorDockG:    'sprites/dungeon/floor_dock_g.png',
+    dungFloorDockH:    'sprites/dungeon/floor_dock_h.png',
+    dungFloorDock0:    'sprites/dungeon/floor_dock_0.png',
+    dungFloorDock1:    'sprites/dungeon/floor_dock_1.png',
+    dungFloorDock2:    'sprites/dungeon/floor_dock_2.png',
+    dungFloorDock3:    'sprites/dungeon/floor_dock_3.png',
+    dungFloorDock4:    'sprites/dungeon/floor_dock_4.png',
+    dungFloorDock5:    'sprites/dungeon/floor_dock_5.png',
+    dungFloorDock6:    'sprites/dungeon/floor_dock_6.png',
+    dungFloorDock7:    'sprites/dungeon/floor_dock_7.png',
+    dungCarpetDock:    'sprites/dungeon/carpet_dock_int_a.png',
+    dungCarpetDockB:   'sprites/dungeon/carpet_dock_int_b.png',
+    dungCarpetDockC:   'sprites/dungeon/carpet_dock_int_c.png',
+    // Modern gallery theme (museum)
+    dungWallModern:    'sprites/dungeon/wall_modern_a.png',
+    dungWallModernB:   'sprites/dungeon/wall_modern_b.png',
+    dungWallModernC:   'sprites/dungeon/wall_modern_c.png',
+    dungHWallModernA:  'sprites/dungeon/hwall_modern_a.png',
+    dungHWallModernB:  'sprites/dungeon/hwall_modern_b.png',
+    dungHWallModernC:  'sprites/dungeon/hwall_modern_c.png',
+    dungHWallModernD:  'sprites/dungeon/hwall_modern_d.png',
+    dungCornerModern:  'sprites/dungeon/corner_modern_tl.png',
+    dungFloorModernA:  'sprites/dungeon/floor_modern_a.png',
+    dungFloorModernB:  'sprites/dungeon/floor_modern_b.png',
+    dungFloorModernC:  'sprites/dungeon/floor_modern_c.png',
+    dungFloorModernD:  'sprites/dungeon/floor_modern_d.png',
+    dungFloorModernE:  'sprites/dungeon/floor_modern_e.png',
+    dungFloorModernF:  'sprites/dungeon/floor_modern_f.png',
+    dungFloorModernG:  'sprites/dungeon/floor_modern_g.png',
+    dungFloorModernH:  'sprites/dungeon/floor_modern_h.png',
+    dungFloorModern0:  'sprites/dungeon/floor_modern_0.png',
+    dungFloorModern1:  'sprites/dungeon/floor_modern_1.png',
+    dungFloorModern2:  'sprites/dungeon/floor_modern_2.png',
+    dungFloorModern3:  'sprites/dungeon/floor_modern_3.png',
+    dungFloorModern4:  'sprites/dungeon/floor_modern_4.png',
+    dungFloorModern5:  'sprites/dungeon/floor_modern_5.png',
+    dungFloorModern6:  'sprites/dungeon/floor_modern_6.png',
+    dungFloorModern7:  'sprites/dungeon/floor_modern_7.png',
+    dungCarpetModern:  'sprites/dungeon/carpet_modern_int_a.png',
+    dungCarpetModernB: 'sprites/dungeon/carpet_modern_int_b.png',
+    dungCarpetModernC: 'sprites/dungeon/carpet_modern_int_c.png',
     // Carpet tiles
     dungCarpetSewer:   'sprites/dungeon/carpet_sewer_pure_b.png',
     dungCarpetSewerB:  'sprites/dungeon/carpet_sewer_pure_c.png',
@@ -4923,6 +5007,33 @@ const OPTIONAL_SPRITE_KEYS = [
     'dungCarpetEdgeL','dungCarpetEdgeR',
     'dungCarpetGallery','dungCarpetGalleryB',
     'dungUrn',
+    // Street theme sprites
+    'dungWallStreet','dungWallStreetB','dungWallStreetC',
+    'dungHWallStreetA','dungHWallStreetB','dungHWallStreetC','dungHWallStreetD',
+    'dungCornerStreet',
+    'dungFloorStreetA','dungFloorStreetB','dungFloorStreetC','dungFloorStreetD',
+    'dungFloorStreetE','dungFloorStreetF','dungFloorStreetG','dungFloorStreetH',
+    'dungFloorStreet0','dungFloorStreet1','dungFloorStreet2','dungFloorStreet3',
+    'dungFloorStreet4','dungFloorStreet5','dungFloorStreet6','dungFloorStreet7',
+    'dungCarpetStreet','dungCarpetStreetB','dungCarpetStreetC',
+    // Dock theme sprites
+    'dungWallDock','dungWallDockB','dungWallDockC',
+    'dungHWallDockA','dungHWallDockB','dungHWallDockC','dungHWallDockD',
+    'dungCornerDock',
+    'dungFloorDockA','dungFloorDockB','dungFloorDockC','dungFloorDockD',
+    'dungFloorDockE','dungFloorDockF','dungFloorDockG','dungFloorDockH',
+    'dungFloorDock0','dungFloorDock1','dungFloorDock2','dungFloorDock3',
+    'dungFloorDock4','dungFloorDock5','dungFloorDock6','dungFloorDock7',
+    'dungCarpetDock','dungCarpetDockB','dungCarpetDockC',
+    // Modern gallery theme sprites
+    'dungWallModern','dungWallModernB','dungWallModernC',
+    'dungHWallModernA','dungHWallModernB','dungHWallModernC','dungHWallModernD',
+    'dungCornerModern',
+    'dungFloorModernA','dungFloorModernB','dungFloorModernC','dungFloorModernD',
+    'dungFloorModernE','dungFloorModernF','dungFloorModernG','dungFloorModernH',
+    'dungFloorModern0','dungFloorModern1','dungFloorModern2','dungFloorModern3',
+    'dungFloorModern4','dungFloorModern5','dungFloorModern6','dungFloorModern7',
+    'dungCarpetModern','dungCarpetModernB','dungCarpetModernC',
     // Cloud Tops gallery tiles
     'ctFloorA0','ctFloorA1','ctFloorA2','ctFloorA3','ctFloorA4','ctFloorA5','ctFloorA6','ctFloorA7',
     'ctFloorB0','ctFloorB1','ctFloorB2','ctFloorB3','ctFloorB4','ctFloorB5','ctFloorB6','ctFloorB7',
@@ -6886,6 +6997,8 @@ function requestPrimaryAction() {
     if (game.mode === 'REGION' && game.state === 'OVERWORLD' && game.levelReentryGrace <= 0 && !game.activeBuildingId) {
         var levelCtx = getLevelForContext();
         if (levelCtx) {
+            var _retE = (game.controllerEntity === 'foot') ? game.turtle : game.player;
+            game.levelReturnPos = { x: _retE.x, y: _retE.y };
             startEnterLevelFromContext(levelCtx);
             return;
         }
@@ -12481,9 +12594,10 @@ async function startEnterLevelFromContext(ctx) {
 
 async function startEnterLevel(levelId, instanceId) {
     console.log('Entering level: ' + levelId);
+    var _ent = (game.controllerEntity === 'foot') ? game.turtle : game.player;
     game.levelReturnTile = {
-        x: Math.floor(game.player.x / TILE_SIZE),
-        y: Math.floor(game.player.y / TILE_SIZE)
+        x: Math.floor(_ent.x / TILE_SIZE),
+        y: Math.floor(_ent.y / TILE_SIZE)
     };
 
     var levelData;
@@ -12508,10 +12622,11 @@ async function startEnterLevel(levelId, instanceId) {
 }
 
 async function startEnterLevelWithData(levelData) {
-    if (!game.levelReturnTile) {
+    if (!game.levelReturnTile && !game.levelReturnPos) {
+        var _ent2 = (game.controllerEntity === 'foot') ? game.turtle : game.player;
         game.levelReturnTile = {
-            x: Math.floor(game.player.x / TILE_SIZE),
-            y: Math.floor(game.player.y / TILE_SIZE)
+            x: Math.floor(_ent2.x / TILE_SIZE),
+            y: Math.floor(_ent2.y / TILE_SIZE)
         };
     }
 
@@ -12878,6 +12993,7 @@ function exitLevel() {
             game.player.y = game.levelReturnPos.y;
         }
         game.levelReturnPos = null;
+        game.levelReturnTile = null;
     } else if (game.levelReturnTile) {
         var offX = 0, offY = TILE_SIZE;
         if (game.player.direction === 'up') { offX = 0; offY = TILE_SIZE; }
@@ -12893,6 +13009,7 @@ function exitLevel() {
             game.player.x = retX;
             game.player.y = retY;
         }
+        game.levelReturnTile = null;
     }
     if (game.controllerEntity === 'van') {
         game.van.x = game.player.x;
@@ -14241,36 +14358,64 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
     var sp = game.sprites;
 
     // ── Per-theme sprite sets (all fall back to procedural if sprites missing) ─
-    var isGallery = (theme === 'gallery' || theme === 'dock' || theme === 'street');
-    var isCT = isGallery && sp.ctFloorA0; // Cloud Tops high-fidelity gallery tileset
-    var floorSprites = [
-        sp.dungFloorA, sp.dungFloorB, sp.dungFloorC, sp.dungFloorD,
-        sp.dungFloorE, sp.dungFloorF, sp.dungFloorG, sp.dungFloorH,
-        sp.dungFloor0, sp.dungFloor1, sp.dungFloor2, sp.dungFloor3,
-        sp.dungFloor4, sp.dungFloor5, sp.dungFloor6, sp.dungFloor7
-    ].filter(Boolean);
-    // Cloud Tops floor rows (alternating for brick-bond pattern)
+    var isCT = false; // Disabled — per-theme sprites now used for all themes
+    var floorSprites, wallSprites, hWallSprites, cornerSprite, carpetIntSprites;
+
+    if (theme === 'street') {
+        floorSprites = [
+            sp.dungFloorStreetA, sp.dungFloorStreetB, sp.dungFloorStreetC, sp.dungFloorStreetD,
+            sp.dungFloorStreetE, sp.dungFloorStreetF, sp.dungFloorStreetG, sp.dungFloorStreetH,
+            sp.dungFloorStreet0, sp.dungFloorStreet1, sp.dungFloorStreet2, sp.dungFloorStreet3,
+            sp.dungFloorStreet4, sp.dungFloorStreet5, sp.dungFloorStreet6, sp.dungFloorStreet7
+        ].filter(Boolean);
+        wallSprites  = [sp.dungWallStreetB,  sp.dungWallStreet,   sp.dungWallStreetC];
+        hWallSprites = [sp.dungHWallStreetA, sp.dungHWallStreetB, sp.dungHWallStreetC, sp.dungHWallStreetD];
+        cornerSprite = sp.dungCornerStreet;
+        carpetIntSprites = [sp.dungCarpetStreet, sp.dungCarpetStreetB, sp.dungCarpetStreetC];
+    } else if (theme === 'dock') {
+        floorSprites = [
+            sp.dungFloorDockA, sp.dungFloorDockB, sp.dungFloorDockC, sp.dungFloorDockD,
+            sp.dungFloorDockE, sp.dungFloorDockF, sp.dungFloorDockG, sp.dungFloorDockH,
+            sp.dungFloorDock0, sp.dungFloorDock1, sp.dungFloorDock2, sp.dungFloorDock3,
+            sp.dungFloorDock4, sp.dungFloorDock5, sp.dungFloorDock6, sp.dungFloorDock7
+        ].filter(Boolean);
+        wallSprites  = [sp.dungWallDockB,  sp.dungWallDock,   sp.dungWallDockC];
+        hWallSprites = [sp.dungHWallDockA, sp.dungHWallDockB, sp.dungHWallDockC, sp.dungHWallDockD];
+        cornerSprite = sp.dungCornerDock;
+        carpetIntSprites = [sp.dungCarpetDock, sp.dungCarpetDockB, sp.dungCarpetDockC];
+    } else if (theme === 'gallery') {
+        floorSprites = [
+            sp.dungFloorModernA, sp.dungFloorModernB, sp.dungFloorModernC, sp.dungFloorModernD,
+            sp.dungFloorModernE, sp.dungFloorModernF, sp.dungFloorModernG, sp.dungFloorModernH,
+            sp.dungFloorModern0, sp.dungFloorModern1, sp.dungFloorModern2, sp.dungFloorModern3,
+            sp.dungFloorModern4, sp.dungFloorModern5, sp.dungFloorModern6, sp.dungFloorModern7
+        ].filter(Boolean);
+        wallSprites  = [sp.dungWallModernC,  sp.dungWallModernC,  sp.dungWallModernC];
+        hWallSprites = [sp.dungHWallModernC, sp.dungHWallModernC, sp.dungHWallModernC, sp.dungHWallModernC];
+        cornerSprite = sp.dungCornerModern;
+        carpetIntSprites = [sp.dungCarpetModern, sp.dungCarpetModernB, sp.dungCarpetModernC];
+    } else {
+        // Sewer (unchanged)
+        floorSprites = [
+            sp.dungFloorA, sp.dungFloorB, sp.dungFloorC, sp.dungFloorD,
+            sp.dungFloorE, sp.dungFloorF, sp.dungFloorG, sp.dungFloorH,
+            sp.dungFloor0, sp.dungFloor1, sp.dungFloor2, sp.dungFloor3,
+            sp.dungFloor4, sp.dungFloor5, sp.dungFloor6, sp.dungFloor7
+        ].filter(Boolean);
+        wallSprites  = [sp.dungWallSewerB,  sp.dungWallSewer,   sp.dungWallSewerC];
+        hWallSprites = [sp.dungHWallSewerA, sp.dungHWallSewerB, sp.dungHWallSewerC, sp.dungHWallSewerD];
+        cornerSprite = sp.dungCornerSewer;
+        carpetIntSprites = [sp.dungCarpetSewer, sp.dungCarpetSewerB, sp.dungCarpetSewerC];
+    }
+
+    // Cloud Tops floor rows (alternating for brick-bond pattern) — gallery enhancement
     var ctFloorRowA = [sp.ctFloorA0,sp.ctFloorA1,sp.ctFloorA2,sp.ctFloorA3,
                        sp.ctFloorA4,sp.ctFloorA5,sp.ctFloorA6,sp.ctFloorA7].filter(Boolean);
     var ctFloorRowB = [sp.ctFloorB0,sp.ctFloorB1,sp.ctFloorB2,sp.ctFloorB3,
                        sp.ctFloorB4,sp.ctFloorB5,sp.ctFloorB6,sp.ctFloorB7].filter(Boolean);
     var ctHWall = [sp.ctHWallA0,sp.ctHWallA1,sp.ctHWallA2,sp.ctHWallA3].filter(Boolean);
     var ctVWall = [sp.ctVWallA0,sp.ctVWallA1,sp.ctVWallA2,sp.ctVWallA3].filter(Boolean);
-    // Vertical border sprites (left/right walls)
-    // Sewer order: wall, arch-left, arch-right (3-tile cycle)
-    var wallSprites = isGallery
-        ? [sp.dungWallGallery, sp.dungWallGalleryB, sp.dungWallGalleryC]
-        : [sp.dungWallSewerB,  sp.dungWallSewer,     sp.dungWallSewerC];
-    // Horizontal border sprites (top/bottom walls — the scrollwork row)
-    var hWallSprites = isGallery
-        ? [sp.dungHWallGalleryA, sp.dungHWallGalleryB]
-        : [sp.dungHWallSewerA, sp.dungHWallSewerB, sp.dungHWallSewerC, sp.dungHWallSewerD];
-    // Corner sprite (top-left, flipped for other corners)
-    var cornerSprite = isGallery ? sp.dungCornerGallery : sp.dungCornerSewer;
-    // Carpet sprites
-    var carpetIntSprites = isGallery
-        ? [sp.dungCarpetGallery, sp.dungCarpetGalleryB]
-        : [sp.dungCarpetSewer,   sp.dungCarpetSewerB,  sp.dungCarpetSewerC];
+
     var carpetEdgeLSprite = sp.dungCarpetEdgeL;
     var carpetEdgeRSprite = sp.dungCarpetEdgeR;
     var urnSprite = sp.dungUrn;
@@ -14284,35 +14429,38 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
 
     // ── Fallback palette (used for overlay tints and tiles without sprites) ────
     var pal;
-    if (theme === 'gallery') {
+    if (theme === 'street') {
+        // Industrial loft: warm brick reds, steel grays, concrete
         pal = {
-            floorMortar:'#2a2214', floor:'#c8bc8c', floorHi:'#e0d4a8', floorSh:'#8c7e58',
-            wallMortar:'#1e1408',  wall:'#8c6c20',  wallHi:'#b08a38',  wallSh:'#4a380c',
-            borderBase:'#c88820', borderHi:'#f0cc60', borderSh:'#5a3a00',
-            borderScroll:'#ffee88',
-            carpet:'#44cc44', carpetBorder:'#22aa22', carpetBorder2:'#aaffaa',
-            urnBody:'#ddbb33', urnDark:'#664400', urnHi:'#fff4aa', urnMid:'#bb8822',
+            floorMortar:'#1a0c06', floor:'#b0a898', floorHi:'#c8bca8', floorSh:'#887868',
+            wallMortar:'#1a0c06',  wall:'#6b3a2a',  wallHi:'#a0522d',  wallSh:'#3a1a10',
+            borderBase:'#d4a574', borderHi:'#e8c090', borderSh:'#8a6040',
+            borderScroll:'#c89060',
+            carpet:'#484040', carpetBorder:'#686058', carpetBorder2:'#989088',
+            urnBody:'#887060', urnDark:'#3a2818', urnHi:'#ccc0b0', urnMid:'#5e4e40',
         };
     } else if (theme === 'dock') {
+        // Heavy industrial: steel blues, dark grays, concrete
         pal = {
-            floorMortar:'#0c1010', floor:'#606858', floorHi:'#808e7a', floorSh:'#383c34',
-            wallMortar:'#080c0c', wall:'#243030', wallHi:'#3a4c4c', wallSh:'#101818',
-            borderBase:'#0a2040', borderHi:'#1a5080', borderSh:'#040c1c',
-            borderScroll:'#44aacc',
-            carpet:'#0a3c50', carpetBorder:'#44aaaa', carpetBorder2:'#aadddd',
+            floorMortar:'#0c1018', floor:'#707880', floorHi:'#909aa0', floorSh:'#484e58',
+            wallMortar:'#0c1018',  wall:'#3a4455',  wallHi:'#607085',  wallSh:'#1a2030',
+            borderBase:'#8a9aaa', borderHi:'#a0b0c0', borderSh:'#506070',
+            borderScroll:'#7088a0',
+            carpet:'#8a8020', carpetBorder:'#a0a030', carpetBorder2:'#c0c050',
             urnBody:'#507080', urnDark:'#1e3040', urnHi:'#90b8c8', urnMid:'#3a5868',
         };
-    } else if (theme === 'street') {
+    } else if (theme === 'gallery') {
+        // Red brick building: warm brick reds, mortar tan, concrete floor
         pal = {
-            floorMortar:'#100c0a', floor:'#545050', floorHi:'#706c68', floorSh:'#2c2826',
-            wallMortar:'#0a0806', wall:'#602018', wallHi:'#883028', wallSh:'#300c08',
-            borderBase:'#c88820', borderHi:'#f0cc60', borderSh:'#5a3a00',
-            borderScroll:'#ffee88',
-            carpet:'#994400', carpetBorder:'#eecc22', carpetBorder2:'#ffee88',
+            floorMortar:'#483828', floor:'#b0a090', floorHi:'#c8b8a8', floorSh:'#887868',
+            wallMortar:'#48382c',  wall:'#8b2a1a',  wallHi:'#a83c28',  wallSh:'#5a1810',
+            borderBase:'#c88860', borderHi:'#e0a878', borderSh:'#8a6040',
+            borderScroll:'#c89060',
+            carpet:'#503a2a', carpetBorder:'#6a5040', carpetBorder2:'#8a7060',
             urnBody:'#887060', urnDark:'#3a2818', urnHi:'#ccc0b0', urnMid:'#5e4e40',
         };
     } else {
-        // Sewer / Crypt
+        // Sewer / Crypt (unchanged)
         pal = {
             floorMortar:'#141210', floor:'#8a8278', floorHi:'#aaa090', floorSh:'#585048',
             wallMortar:'#0e0c0a', wall:'#3e3a30', wallHi:'#5e5a4c', wallSh:'#1c1a14',
@@ -14470,7 +14618,7 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                 // ── TILE OVERLAYS ────────────────────────────────────────────────
                 if (tileId === DT_HAZARD) {
                     var hzA = 0.55 + Math.sin(now / 260) * 0.22;
-                    var hzC = theme === 'sewer' ? 'rgba(80,220,50,' : theme === 'dock' ? 'rgba(40,170,220,' : 'rgba(220,60,40,';
+                    var hzC = theme === 'sewer' ? 'rgba(80,220,50,' : theme === 'dock' ? 'rgba(40,170,220,' : theme === 'street' ? 'rgba(220,140,40,' : theme === 'gallery' ? 'rgba(120,80,200,' : 'rgba(220,60,40,';
                     ctx.fillStyle = hzC + hzA + ')';
                     ctx.fillRect(px + 3, py + 3, ts - 6, ts - 6);
                     ctx.fillStyle = '#ffffff';
