@@ -17,7 +17,7 @@ module.exports = {
   TICK_HZ: parseInt(process.env.TICK_HZ, 10) || 20,
   get TICK_MS() { return Math.floor(1000 / this.TICK_HZ); },
 
-  AOI_CELL_SIZE_TILES: parseInt(process.env.AOI_CELL_SIZE_TILES, 10) || 16,
+  AOI_CELL_SIZE_TILES: parseInt(process.env.AOI_CELL_SIZE_TILES, 10) || 32,
 
   UGC_MAX_WIDTH: parseInt(process.env.UGC_MAX_WIDTH, 10) || 64,
   UGC_MAX_HEIGHT: parseInt(process.env.UGC_MAX_HEIGHT, 10) || 64,

@@ -483,6 +483,27 @@ var MP = (function () {
             if (!remotePlayers[rid]) delete remoteRenderPx[rid];
         }
 
+        // Flush players whose removal grace period expired (AOI exit confirmed)
+        var _now = Date.now();
+        for (var _gid in remotePlayers) {
+            var _grp = remotePlayers[_gid];
+            if (_grp._removeAt && _now >= _grp._removeAt) {
+                if (_grp.px != null || _grp.x != null) {
+                    var _gRid = (_lastSeenPos[_gid] && _lastSeenPos[_gid].rid != null)
+                        ? _lastSeenPos[_gid].rid : (_grp.rid || null);
+                    _lastSeenPos[_gid] = {
+                        px: _grp.px != null ? _grp.px : _grp.x * 64,
+                        py: _grp.py != null ? _grp.py : _grp.y * 64,
+                        displayName: _grp.displayName || _gid,
+                        rid: _gRid,
+                        _lastSeen: _now
+                    };
+                }
+                delete remotePlayers[_gid];
+                delete remoteRenderPx[_gid];
+            }
+        }
+
         // Expire stale remote players (no update for 60s = out of AOI or truly gone)
         var staleThreshold = Date.now() - 60000;
         for (var sid in remotePlayers) {
@@ -758,6 +779,7 @@ var MP = (function () {
                             upd._interpBuf.push({ px: tpx, py: tpy, t: now });
                             if (upd._interpBuf.length > 4) upd._interpBuf.shift();
                             upd._lastUpdate = now;
+                            upd._removeAt = null;
                             if (upd.dn) upd.displayName = upd.dn;
                             remotePlayers[upd.id] = upd;
                         }
@@ -767,21 +789,9 @@ var MP = (function () {
                     for (var r = 0; r < msg.removes.length; r++) {
                         var _rmId = msg.removes[r];
                         var _rmRp = remotePlayers[_rmId];
-                        if (_rmRp && (_rmRp.px != null || _rmRp.x != null)) {
-                            // Preserve rid from prior zone_players broadcast if available
-                            var _rmRid = (_lastSeenPos[_rmId] && _lastSeenPos[_rmId].rid != null)
-                                ? _lastSeenPos[_rmId].rid
-                                : (_rmRp.rid || null);
-                            _lastSeenPos[_rmId] = {
-                                px: _rmRp.px != null ? _rmRp.px : _rmRp.x * 64,
-                                py: _rmRp.py != null ? _rmRp.py : _rmRp.y * 64,
-                                displayName: _rmRp.displayName || _rmId,
-                                rid: _rmRid,
-                                _lastSeen: Date.now()
-                            };
+                        if (_rmRp) {
+                            _rmRp._removeAt = Date.now() + 500;
                         }
-                        delete remotePlayers[_rmId];
-                        delete remoteRenderPx[_rmId];
                     }
                 }
                 if (onDelta) onDelta(msg);
@@ -834,6 +844,7 @@ var MP = (function () {
                             rp._interpBuf.push({ px: bpx, py: bpy, t: now });
                             if (rp._interpBuf.length > 4) rp._interpBuf.shift();
                             rp._lastUpdate = now;
+                            rp._removeAt = null;
                         } else {
                             remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, vpx: bvpx, vpy: bvpy, vf: bvf, displayName: bdn, atk: batk, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }], _lastUpdate: now };
                         }
