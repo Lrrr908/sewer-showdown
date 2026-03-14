@@ -521,6 +521,17 @@
                 <input id="loginUsername" type="text" placeholder="Display Name (register only)" autocomplete="username" style="width:100%;padding:10px;margin-bottom:12px;font-family:inherit;font-size:16px;background:#222;color:#fff;border:1px solid #333;border-radius:4px;box-sizing:border-box;">
                 <button id="loginBtn" style="width:48%;padding:8px;font-family:inherit;font-size:10px;background:#4ade80;color:#000;border:none;border-radius:4px;cursor:pointer;margin-right:2%;">LOGIN</button>
                 <button id="registerBtn" style="width:48%;padding:8px;font-family:inherit;font-size:10px;background:#3cbcfc;color:#000;border:none;border-radius:4px;cursor:pointer;">REGISTER</button>
+                <div style="margin-top:10px;"><a href="#" id="forgotLink" style="color:#888;font-size:8px;text-decoration:underline;cursor:pointer;">Forgot Password?</a></div>
+            </div>
+            <div id="forgotForm" style="display:none;">
+                <input id="forgotEmail" type="email" placeholder="Email" autocomplete="email" style="width:100%;padding:10px;margin-bottom:12px;font-family:inherit;font-size:16px;background:#222;color:#fff;border:1px solid #444;border-radius:4px;box-sizing:border-box;">
+                <button id="forgotBtn" style="width:100%;padding:8px;font-family:inherit;font-size:10px;background:#f97316;color:#000;border:none;border-radius:4px;cursor:pointer;">SEND RESET LINK</button>
+                <div style="margin-top:10px;"><a href="#" id="forgotBackLink" style="color:#888;font-size:8px;text-decoration:underline;cursor:pointer;">Back to Login</a></div>
+            </div>
+            <div id="resetForm" style="display:none;">
+                <input id="resetPassword" type="password" placeholder="New Password" autocomplete="new-password" style="width:100%;padding:10px;margin-bottom:8px;font-family:inherit;font-size:16px;background:#222;color:#fff;border:1px solid #444;border-radius:4px;box-sizing:border-box;">
+                <input id="resetPasswordConfirm" type="password" placeholder="Confirm Password" autocomplete="new-password" style="width:100%;padding:10px;margin-bottom:12px;font-family:inherit;font-size:16px;background:#222;color:#fff;border:1px solid #444;border-radius:4px;box-sizing:border-box;">
+                <button id="resetBtn" style="width:100%;padding:8px;font-family:inherit;font-size:10px;background:#4ade80;color:#000;border:none;border-radius:4px;cursor:pointer;">RESET PASSWORD</button>
             </div>
             <button id="guestBtn" style="margin-top:12px;padding:8px 16px;font-family:inherit;font-size:10px;background:#fcfc00;color:#000;border:none;border-radius:4px;cursor:pointer;width:100%;">PLAY AS GUEST</button>
             <button id="playOfflineBtn" style="margin-top:8px;padding:8px 16px;font-family:inherit;font-size:9px;background:none;color:#666;border:1px solid #333;border-radius:4px;cursor:pointer;">PLAY OFFLINE (NO SERVER)</button>
@@ -597,15 +608,125 @@
         var guestBtn = document.getElementById('guestBtn');
         var offlineBtn = document.getElementById('playOfflineBtn');
 
+        var loginForm = document.getElementById('loginForm');
+        var forgotForm = document.getElementById('forgotForm');
+        var resetForm = document.getElementById('resetForm');
+        var forgotLink = document.getElementById('forgotLink');
+        var forgotBackLink = document.getElementById('forgotBackLink');
+        var forgotEmail = document.getElementById('forgotEmail');
+        var forgotBtn = document.getElementById('forgotBtn');
+        var resetPassword = document.getElementById('resetPassword');
+        var resetPasswordConfirm = document.getElementById('resetPasswordConfirm');
+        var resetBtn = document.getElementById('resetBtn');
+
         function showOverlay() { overlay.style.display = 'flex'; }
         function hideOverlay() { overlay.style.display = 'none'; }
 
-        if (MP.isLoggedIn()) {
+        function showView(view) {
+            loginForm.style.display = view === 'login' ? 'block' : 'none';
+            forgotForm.style.display = view === 'forgot' ? 'block' : 'none';
+            resetForm.style.display = view === 'reset' ? 'block' : 'none';
+            guestBtn.style.display = view === 'login' ? 'block' : 'none';
+            offlineBtn.style.display = view === 'login' ? 'block' : 'none';
+        }
+
+        // Check for reset token in URL
+        var urlParams = new URLSearchParams(window.location.search);
+        var resetToken = urlParams.get('resetToken');
+
+        if (resetToken) {
+            showOverlay();
+            showView('reset');
+            status.style.color = '#58d8f8';
+            status.textContent = 'Enter your new password';
+            window.history.replaceState({}, '', window.location.pathname);
+        } else if (MP.isLoggedIn()) {
             MP.connect();
         } else {
             showOverlay();
         }
 
+        // ── Forgot password link ──
+        forgotLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            showView('forgot');
+            status.style.color = '#58d8f8';
+            status.textContent = 'Enter your email to get a reset link';
+            forgotEmail.value = emailInput.value;
+        });
+
+        forgotBackLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            showView('login');
+            status.style.color = '#58d8f8';
+            status.textContent = 'Enter credentials to go online';
+        });
+
+        // ── Send reset link ──
+        forgotBtn.addEventListener('click', async function() {
+            var email = forgotEmail.value.trim();
+            if (!email) {
+                status.style.color = '#ff6b6b';
+                status.textContent = 'Please enter your email';
+                return;
+            }
+            status.style.color = '#58d8f8';
+            status.textContent = 'Sending reset link...';
+            forgotBtn.disabled = true;
+            try {
+                var resp = await fetch(MP.API_URL + '/auth/forgot-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email })
+                });
+                var data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Request failed');
+                status.style.color = '#4ade80';
+                status.textContent = 'Check your email for a reset link!';
+            } catch(e) {
+                status.style.color = '#ff6b6b';
+                status.textContent = e.message;
+            }
+            forgotBtn.disabled = false;
+        });
+
+        // ── Reset password (from email link) ──
+        resetBtn.addEventListener('click', async function() {
+            var pw = resetPassword.value;
+            var pw2 = resetPasswordConfirm.value;
+            if (!pw || pw.length < 8) {
+                status.style.color = '#ff6b6b';
+                status.textContent = 'Password must be at least 8 characters';
+                return;
+            }
+            if (pw !== pw2) {
+                status.style.color = '#ff6b6b';
+                status.textContent = 'Passwords do not match';
+                return;
+            }
+            status.style.color = '#58d8f8';
+            status.textContent = 'Resetting password...';
+            resetBtn.disabled = true;
+            try {
+                var resp = await fetch(MP.API_URL + '/auth/reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: resetToken, newPassword: pw })
+                });
+                var data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Reset failed');
+                status.style.color = '#4ade80';
+                status.textContent = 'Password updated! You can now log in.';
+                resetToken = null;
+                showView('login');
+            } catch(e) {
+                status.style.color = '#ff6b6b';
+                status.textContent = e.message;
+            }
+            resetBtn.disabled = false;
+        });
+
+        // ── Existing auth handlers ──
         guestBtn.addEventListener('click', async function() {
             status.style.color = '#58d8f8';
             status.textContent = 'Joining as guest...';

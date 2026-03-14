@@ -31,6 +31,11 @@ module.exports = {
   GUEST_RATE_LIMIT_PER_MIN: parseInt(process.env.GUEST_RATE_LIMIT_PER_MIN, 10) || 10,
   LOGIN_RATE_LIMIT_PER_MIN: parseInt(process.env.LOGIN_RATE_LIMIT_PER_MIN, 10) || 10,
   REGISTER_RATE_LIMIT_PER_MIN: parseInt(process.env.REGISTER_RATE_LIMIT_PER_MIN, 10) || 5,
+  RESET_RATE_LIMIT_PER_MIN: parseInt(process.env.RESET_RATE_LIMIT_PER_MIN, 10) || 3,
+
+  SENDGRID_API_KEY:    process.env.SENDGRID_API_KEY     || '',
+  SENDGRID_FROM_EMAIL: process.env.SENDGRID_FROM_EMAIL || 'noreply@sewershowdown.com',
+  APP_URL:             process.env.APP_URL             || 'http://localhost:8080',
 
   IG_ADMIN_KEY:        process.env.IG_ADMIN_KEY        || 'dev-ig-admin-key',
   IG_OEMBED_TOKEN:     process.env.IG_OEMBED_TOKEN     || null,

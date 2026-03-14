@@ -8,6 +8,7 @@ const RULES = {
   'ip:guest:':  { max: config.GUEST_RATE_LIMIT_PER_MIN,    refillMs: 60000 },
   'ip:login:':  { max: config.LOGIN_RATE_LIMIT_PER_MIN,    refillMs: 60000 },
   'ip:reg:':    { max: config.REGISTER_RATE_LIMIT_PER_MIN, refillMs: 60000 },
+  'ip:reset:':  { max: config.RESET_RATE_LIMIT_PER_MIN,   refillMs: 60000 },
   'acct:ugc:':  { max: config.UGC_SUBMIT_RATE_LIMIT_PER_MIN, refillMs: config.UGC_SUBMIT_RATE_WINDOW_MS },
 };
 
