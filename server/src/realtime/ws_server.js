@@ -277,7 +277,9 @@ function initWsServer(wss) {
 
         case 'set_region': {
           // Client reports which region map they're currently in (e.g. 'na', 'eu', null for world)
-          if (entity) entity.rid = (typeof msg.rid === 'string' && msg.rid) ? msg.rid : null;
+          const srZone = sim.getZoneForAccount(accountId);
+          const srEntity = srZone ? srZone.entities.get(entityId) : null;
+          if (srEntity) srEntity.rid = (typeof msg.rid === 'string' && msg.rid) ? msg.rid : null;
           break;
         }
 
