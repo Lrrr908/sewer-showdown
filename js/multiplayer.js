@@ -63,7 +63,7 @@ var MP = (function () {
     var collisionHash = null;
     var pendingSpawnPos = null;
     var _lastPosSyncTime = 0;
-    var POS_SYNC_INTERVAL_MS = 100;
+    var POS_SYNC_INTERVAL_MS = 50;
     var _lastSentPx = -9999;
     var _lastSentPy = -9999;
     var _lastSentFacing = '';
@@ -449,6 +449,7 @@ var MP = (function () {
             var rp = remotePlayers[id];
             var tpx = rp.px != null ? rp.px : rp.x * TILE_SIZE;
             var tpy = rp.py != null ? rp.py : rp.y * TILE_SIZE;
+            var interpHit = false;
 
             if (!remoteRenderPx[id]) {
                 remoteRenderPx[id] = { x: tpx, y: tpy };
@@ -469,14 +470,34 @@ var MP = (function () {
                     var frac = dt > 0 ? Math.min(1, (renderTime - a.t) / dt) : 1;
                     tpx = a.px + (b.px - a.px) * frac;
                     tpy = a.py + (b.py - a.py) * frac;
-                } else if (buf && buf.length > 0) {
-                    var last = buf[buf.length - 1];
-                    tpx = last.px;
-                    tpy = last.py;
+                    interpHit = true;
+                } else {
+                    var la = buf[buf.length - 2];
+                    var lb = buf[buf.length - 1];
+                    var ldt = lb.t - la.t;
+                    if (ldt > 0) {
+                        var elapsed = renderTime - lb.t;
+                        var maxExtrap = Math.min(elapsed, 150);
+                        var efrac = maxExtrap / ldt;
+                        tpx = lb.px + (lb.px - la.px) * efrac;
+                        tpy = lb.py + (lb.py - la.py) * efrac;
+                    } else {
+                        tpx = lb.px;
+                        tpy = lb.py;
+                    }
+                    interpHit = true;
                 }
+            } else if (buf && buf.length > 0) {
+                tpx = buf[buf.length - 1].px;
+                tpy = buf[buf.length - 1].py;
             }
 
-            interpolateToward(remoteRenderPx[id], tpx, tpy);
+            if (interpHit) {
+                remoteRenderPx[id].x = tpx;
+                remoteRenderPx[id].y = tpy;
+            } else {
+                interpolateToward(remoteRenderPx[id], tpx, tpy);
+            }
         }
 
         for (var rid in remoteRenderPx) {
@@ -777,7 +798,7 @@ var MP = (function () {
                             var tpx = upd.px != null ? upd.px : upd.x * TILE_SIZE;
                             var tpy = upd.py != null ? upd.py : upd.y * TILE_SIZE;
                             upd._interpBuf.push({ px: tpx, py: tpy, t: now });
-                            if (upd._interpBuf.length > 4) upd._interpBuf.shift();
+                            if (upd._interpBuf.length > 6) upd._interpBuf.shift();
                             upd._lastUpdate = now;
                             upd._removeAt = null;
                             if (upd.dn) upd.displayName = upd.dn;
@@ -842,7 +863,7 @@ var MP = (function () {
                             rp.atk = batk;
                             if (!rp._interpBuf) rp._interpBuf = [];
                             rp._interpBuf.push({ px: bpx, py: bpy, t: now });
-                            if (rp._interpBuf.length > 4) rp._interpBuf.shift();
+                            if (rp._interpBuf.length > 6) rp._interpBuf.shift();
                             rp._lastUpdate = now;
                             rp._removeAt = null;
                         } else {

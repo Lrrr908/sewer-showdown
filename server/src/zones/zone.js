@@ -12,7 +12,7 @@ const presence = require('./presence');
 
 const MOVE_SPEED = 1;
 const VALID_FACING = { n: true, e: true, s: true, w: true };
-const POS_DIRTY_THRESHOLD_PX = 4;
+const POS_DIRTY_THRESHOLD_PX = 2;
 const TILE_PX = 64;
 
 class Zone {

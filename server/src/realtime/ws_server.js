@@ -16,7 +16,7 @@ const levelRoom = require('../level_room');
 
 const AUTH_TIMEOUT_MS = 5000;
 const TRANSFER_IGNORE_NOTIFY_MS = 1000;
-const POS_SYNC_MIN_MS = 40;
+const POS_SYNC_MIN_MS = 25;
 const CHAT_MAX_LEN = 60;
 const CHAT_COOLDOWN_MS = 1000;
 
