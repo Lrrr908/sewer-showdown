@@ -41,7 +41,7 @@ module.exports = {
   IG_OEMBED_TOKEN:     process.env.IG_OEMBED_TOKEN     || null,
   META_GRAPH_VERSION:  process.env.META_GRAPH_VERSION  || 'v21.0',
 
-  TECHNODROME_ALLOWED_EMAILS: (process.env.TECHNODROME_ALLOWED_EMAILS || 'dimensionxtoys@gmail.com,digitalagony@gmail.com').split(',').map(e => e.trim().toLowerCase()),
+  TECHNODROME_ALLOWED_EMAILS: (process.env.TECHNODROME_ALLOWED_EMAILS || 'test@test.com,digitalagony@gmail.com,dimensionxtoys@gmail.com,razorsharp128@gmail.com').split(',').map(e => e.trim().toLowerCase()),
 };
 
 // Build identifier for deploy verification

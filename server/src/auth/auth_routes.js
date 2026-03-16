@@ -166,12 +166,16 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const token = signToken({ sub: account.account_id, is_guest: false, dn: account.display_name });
+    const normEmail = email.trim().toLowerCase();
+    const token = signToken({ sub: account.account_id, is_guest: false, dn: account.display_name, email: normEmail });
     await createSession(account.account_id, token, req);
+
+    const allowedVehicles = [];
+    if (config.TECHNODROME_ALLOWED_EMAILS.includes(normEmail)) allowedVehicles.push('technodrone');
 
     res.json({
       token,
-      user: { id: account.account_id, displayName: account.display_name, isGuest: false },
+      user: { id: account.account_id, displayName: account.display_name, isGuest: false, allowedVehicles },
     });
   } catch (e) {
     console.error('[auth] login error:', e.message);
@@ -310,4 +314,19 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+async function resolveEmailByAccountId(accountId) {
+  for (const [email, acct] of Object.entries(_testAccounts)) {
+    if (acct.account_id === accountId) return email;
+  }
+  const dbOk = await checkDb();
+  if (dbOk) {
+    try {
+      const r = await pool.query('SELECT email FROM accounts WHERE account_id = $1', [accountId]);
+      if (r.rows.length > 0) return r.rows[0].email;
+    } catch {}
+  }
+  return null;
+}
+
 module.exports = router;
+module.exports.resolveEmailByAccountId = resolveEmailByAccountId;

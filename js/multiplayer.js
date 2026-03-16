@@ -104,6 +104,10 @@ var MP = (function () {
     var _inOwDeadEnemies  = null;   // [enemyId] received from server after ow_join
     var _inOwEnemySyncs   = [];     // [{id,x,y,s}] positions from nearby players
 
+    // --- Technodrone vehicle-building state ---
+    var _allowedVehicles = [];
+    var _technodroneCallbacks = [];  // queued callbacks for technodrone_ok/denied
+
     var onHelloOk = null;
     var onSnapshot = null;
     var onDelta = null;
@@ -113,6 +117,7 @@ var MP = (function () {
     var onTransferBegin = null;
     var onTransferCommit = null;
     var onChatReceived = null;
+    var onTechnodroneState = null;
 
     var chatBubbles = {};
     var CHAT_MAX_LEN = 60;
@@ -620,6 +625,7 @@ var MP = (function () {
         if (!resp.ok) throw new Error(data.error || 'Login failed');
         setToken(data.token);
         displayName = data.user.displayName;
+        if (data.user.allowedVehicles) _allowedVehicles = data.user.allowedVehicles;
         return data;
     }
 
@@ -726,6 +732,10 @@ var MP = (function () {
                     _flushSpawnPos(pendingSpawnPos.x, pendingSpawnPos.y);
                 }
                 if (onHelloOk) onHelloOk(msg);
+                break;
+
+            case 'vehicles_allowed':
+                if (msg.vehicles) _allowedVehicles = msg.vehicles;
                 break;
 
             case 'snapshot':
@@ -1034,8 +1044,6 @@ var MP = (function () {
                 break;
 
             case 'zone_players':
-                // Zone-wide directory: seed _lastSeenPos for every player we don't
-                // already have in remotePlayers so arrows show from the very start.
                 if (Array.isArray(msg.players)) {
                     var _now_zp = Date.now();
                     for (var _zpi = 0; _zpi < msg.players.length; _zpi++) {
@@ -1049,6 +1057,27 @@ var MP = (function () {
                             _lastSeen: _now_zp
                         };
                     }
+                }
+                if (msg.technodrone && onTechnodroneState) {
+                    onTechnodroneState(msg.technodrone);
+                }
+                break;
+
+            case 'technodrone_state':
+                if (onTechnodroneState) onTechnodroneState(msg);
+                break;
+
+            case 'technodrone_ok':
+                if (_technodroneCallbacks.length > 0) {
+                    var _tcb = _technodroneCallbacks.shift();
+                    _tcb({ ok: true, x: msg.x, y: msg.y, dir: msg.dir });
+                }
+                break;
+
+            case 'technodrone_denied':
+                if (_technodroneCallbacks.length > 0) {
+                    var _tcd = _technodroneCallbacks.shift();
+                    _tcd({ ok: false, reason: msg.reason });
                 }
                 break;
 
@@ -1183,6 +1212,28 @@ var MP = (function () {
     }
 
     function getChatBubbles() { return chatBubbles; }
+
+    // --- Technodrone vehicle API ---
+
+    function canDriveVehicle(vehicleType) {
+        return _allowedVehicles.indexOf(vehicleType) !== -1;
+    }
+
+    function getAllowedVehicles() { return _allowedVehicles.slice(); }
+
+    function requestTechnodroneEnter(x, y, dir, callback) {
+        if (!ws || ws.readyState !== 1 || !authenticated) {
+            callback({ ok: false, reason: 'not_connected' });
+            return;
+        }
+        _technodroneCallbacks.push(callback);
+        ws.send(JSON.stringify({ t: 'technodrone_enter', x: x, y: y, dir: dir || 'right' }));
+    }
+
+    function sendTechnodronePark(x, y, dir) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        ws.send(JSON.stringify({ t: 'technodrone_park', x: x, y: y, dir: dir || 'right' }));
+    }
     // --- UGC cache ---
 
     function fetchUgcSprite(ugcId, spriteRef) {
@@ -1299,6 +1350,12 @@ var MP = (function () {
         sendChat: sendChat,
         getChatBubbles: getChatBubbles,
 
+        // Technodrone vehicle-building
+        canDriveVehicle: canDriveVehicle,
+        getAllowedVehicles: getAllowedVehicles,
+        requestTechnodroneEnter: requestTechnodroneEnter,
+        sendTechnodronePark: sendTechnodronePark,
+
         updateRender: updateRender,
 
         getRemotePlayers: getRemotePlayers,
@@ -1336,6 +1393,7 @@ var MP = (function () {
         set onTransferBegin(fn) { onTransferBegin = fn; },
         set onTransferCommit(fn) { onTransferCommit = fn; },
         set onChatReceived(fn) { onChatReceived = fn; },
+        set onTechnodroneState(fn) { onTechnodroneState = fn; },
 
         setTileSize: function(s) { TILE_SIZE = s; },
         getTileSize: function() { return TILE_SIZE; },

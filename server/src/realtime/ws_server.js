@@ -13,6 +13,7 @@ const sim = require('./sim_tick');
 const { wireSnapshot } = require('../zones/zone');
 const ugcValidate = require('../ugc/ugc_validate');
 const levelRoom = require('../level_room');
+const { resolveEmailByAccountId } = require('../auth/auth_routes');
 
 const AUTH_TIMEOUT_MS = 5000;
 const TRANSFER_IGNORE_NOTIFY_MS = 1000;
@@ -50,10 +51,43 @@ function owGetDeadEnemies(regionId) {
 // accountId -> ws. Enforces single active connection per account.
 const connByAccount = new Map();
 
+// ── Technodrone vehicle-building state (server-authoritative) ────────────────
+const technodroneState = {
+  x: null, y: null, direction: 'right',
+  driverId: null,           // entityId of the current driver
+  driverAccountId: null,    // accountId of the current driver
+};
+
+function broadcastTechnodroneState(excludeWs) {
+  const payload = JSON.stringify({
+    t: 'technodrone_state',
+    x: technodroneState.x,
+    y: technodroneState.y,
+    dir: technodroneState.direction,
+    active: technodroneState.driverId !== null,
+    driverId: technodroneState.driverId
+  });
+  for (const [, pws] of connByAccount) {
+    if (pws !== excludeWs && pws.readyState === 1) {
+      try { pws.send(payload); } catch {}
+    }
+  }
+}
+
+function autoParktechnodrone(lastEntityId) {
+  if (technodroneState.driverId === lastEntityId) {
+    technodroneState.driverId = null;
+    technodroneState.driverAccountId = null;
+    console.log(`[technodrone] auto-parked at (${technodroneState.x}, ${technodroneState.y})`);
+    broadcastTechnodroneState(null);
+  }
+}
+
 function initWsServer(wss) {
   wss.on('connection', (ws) => {
     let authenticated = false;
     let accountId = null;
+    let accountEmail = null;
     let entityId = null;
     let zoneId = null;
     let alive = true;
@@ -114,6 +148,10 @@ function initWsServer(wss) {
         }
 
         accountId = decoded.sub;
+        accountEmail = decoded.email || null;
+        if (!accountEmail) {
+          try { accountEmail = await resolveEmailByAccountId(accountId); } catch {}
+        }
         clearTimeout(authTimer);
 
         // Single connection per account: close old if exists.
@@ -141,6 +179,12 @@ function initWsServer(wss) {
 
         ws.send(makeHelloOk(entityId, accountId, zoneId, resumeResult));
 
+        const allowedVehicles = [];
+        if (accountEmail && config.TECHNODROME_ALLOWED_EMAILS.includes(accountEmail.toLowerCase())) {
+          allowedVehicles.push('technodrone');
+        }
+        try { ws.send(JSON.stringify({ t: 'vehicles_allowed', vehicles: allowedVehicles })); } catch {}
+
         const allPlayers = [wireSnapshot(entity), ...visiblePlayers];
         const bounds = zone ? { w: zone.boundsW, h: zone.boundsH } : null;
         const collision = zone ? zone.collisionDescriptor : null;
@@ -155,6 +199,19 @@ function initWsServer(wss) {
             const ack = recipEntity ? recipEntity.lastSeq : 0;
             try { pws.send(makeDelta(sim.tickCount, zoneId, [snap], [], ack)); } catch {}
           }
+        }
+
+        // Send current technodrone state so client knows where the building is
+        if (technodroneState.x != null) {
+          try {
+            ws.send(JSON.stringify({
+              t: 'technodrone_state',
+              x: technodroneState.x, y: technodroneState.y,
+              dir: technodroneState.direction,
+              active: technodroneState.driverId !== null,
+              driverId: technodroneState.driverId
+            }));
+          } catch {}
         }
 
         console.log(`[ws] ${entityId} (${accountId}) joined ${zoneId} (resume: ${resumeResult.reason}) instance=${require('../config').INSTANCE_ID}`);
@@ -193,6 +250,15 @@ function initWsServer(wss) {
           if (typeof msg.px === 'number' && typeof msg.py === 'number') {
             const zone = sim.getZoneForAccount(accountId);
             if (zone) zone.posSync(accountId, msg.px, msg.py, msg.facing, msg.mode, msg.tid, msg.vpx, msg.vpy, msg.vf, msg.atk);
+            // Track technodrone position while being driven
+            if (msg.mode === 'technodrone' && technodroneState.driverId === entityId) {
+              technodroneState.x = msg.px;
+              technodroneState.y = msg.py;
+              if (msg.facing) {
+                const fMap = { n: 'up', s: 'down', e: 'right', w: 'left' };
+                technodroneState.direction = fMap[msg.facing] || msg.facing;
+              }
+            }
           }
           break;
         }
@@ -437,6 +503,49 @@ function initWsServer(wss) {
           break;
         }
 
+        case 'technodrone_enter': {
+          // Client requests to drive the technodrone
+          if (technodroneState.driverId) {
+            try { ws.send(JSON.stringify({ t: 'technodrone_denied', reason: 'already_driven' })); } catch {}
+            break;
+          }
+          const emailNorm = (accountEmail || '').toLowerCase();
+          if (!config.TECHNODROME_ALLOWED_EMAILS.includes(emailNorm)) {
+            try { ws.send(JSON.stringify({ t: 'technodrone_denied', reason: 'not_allowed' })); } catch {}
+            break;
+          }
+          // First time: use position from client (building's current world position)
+          if (technodroneState.x == null && typeof msg.x === 'number') {
+            technodroneState.x = msg.x;
+            technodroneState.y = msg.y;
+          }
+          technodroneState.driverId = entityId;
+          technodroneState.driverAccountId = accountId;
+          if (typeof msg.dir === 'string') technodroneState.direction = msg.dir;
+          try {
+            ws.send(JSON.stringify({
+              t: 'technodrone_ok',
+              x: technodroneState.x, y: technodroneState.y,
+              dir: technodroneState.direction
+            }));
+          } catch {}
+          broadcastTechnodroneState(ws);
+          console.log(`[technodrone] ${entityId} entered at (${technodroneState.x}, ${technodroneState.y})`);
+          break;
+        }
+
+        case 'technodrone_park': {
+          if (technodroneState.driverId && technodroneState.driverId !== entityId) break;
+          if (typeof msg.x === 'number') technodroneState.x = msg.x;
+          if (typeof msg.y === 'number') technodroneState.y = msg.y;
+          if (typeof msg.dir === 'string') technodroneState.direction = msg.dir;
+          technodroneState.driverId = null;
+          technodroneState.driverAccountId = null;
+          broadcastTechnodroneState(null);
+          console.log(`[technodrone] parked at (${technodroneState.x}, ${technodroneState.y})`);
+          break;
+        }
+
         case 'ping':
           alive = true;
           try { ws.send(JSON.stringify({ t: 'pong' })); } catch {}
@@ -602,6 +711,9 @@ function initWsServer(wss) {
           }
         }
 
+        // Auto-park technodrone if this was the driver
+        if (entityId) autoParktechnodrone(entityId);
+
         // Clean up any level room memberships on disconnect
         if (entityId && currentLevelInstanceId) {
           const newHostId = levelRoom.leaveRoom(currentLevelInstanceId, entityId);
@@ -680,7 +792,16 @@ setInterval(() => {
     const others = all.filter(p => p.id !== entity.id);
     if (others.length === 0) continue;
     try {
-      ws.send(JSON.stringify({ t: 'zone_players', players: others }));
+      const zpMsg = { t: 'zone_players', players: others };
+      if (technodroneState.x != null) {
+        zpMsg.technodrone = {
+          x: technodroneState.x, y: technodroneState.y,
+          dir: technodroneState.direction,
+          active: technodroneState.driverId !== null,
+          driverId: technodroneState.driverId
+        };
+      }
+      ws.send(JSON.stringify(zpMsg));
     } catch (_) {}
   }
 }, 5000);

@@ -3460,6 +3460,9 @@ function applyPlacements(buildingDefs, placements, defaults) {
             cr = { ox: -80, oy: -96, w: 224, h: 224 };
             er = { ox: -128, oy: -160, w: 320, h: 320 };
             xr = { ox: -160, oy: -192, w: 384, h: 384 };
+            entry._dimxCR = cr;
+            entry._dimxER = er;
+            entry._dimxXR = xr;
         }
 
         entry.collisionWorld = { x: entry.worldX + cr.ox, y: entry.worldY + cr.oy, w: cr.w, h: cr.h };
@@ -4428,7 +4431,8 @@ const game = {
     expandedCluster: null,
     blimpFade: { active: false, t: 0, duration: 0.35, targetPort: null, phase: null },
     activeTurtle: 'leo',
-    controllerEntity: 'van',  // 'van' = driving party wagon, 'foot' = turtle on foot
+    controllerEntity: 'van',  // 'van' | 'foot' | 'technodrone'
+    allowedVehicles: [],       // populated from server login response, e.g. ['technodrone']
     van: {
         x: 0, y: 0,           // parked position (world pixels)
         direction: 'right',    // last direction van was facing
@@ -4436,6 +4440,16 @@ const game = {
         shotCooldown: 0       // seconds until next shot is allowed
     },
     vanProjectiles: [],        // active cannonball shots from the van
+    technodrone: {
+        x: null, y: null,      // null until first driven or server sends state
+        direction: 'right',
+        frame: 0,
+        shotCooldown: 0,
+        active: false,         // true when being driven (by anyone)
+        driverId: null,        // entity ID of the driver (null = parked)
+        width: 256,
+        height: 256
+    },
     turtle: {
         x: 0, y: 0,
         width: 32, height: 32,
@@ -4610,12 +4624,15 @@ var HIRES_BUILDING_DEFS = [
     { key: 'mall',              src: 'sprites/buildings/mall.png',        w: 128, h: 64 },
     { key: 'fastfood',          src: 'sprites/buildings/fastfood.png',    w: 128, h: 72 },
     { key: 'pizza',             src: 'sprites/buildings/pizza.png',       w: 108, h: 72 },
-    { key: 'technodrome_bldg', src: 'sprites/technodrome/base.png',     w: 217, h: 164 },
-    { key: 'techno_eye1',     src: 'sprites/technodrome/eye1.png',     w: 48,  h: 41 },
-    { key: 'techno_eye2',     src: 'sprites/technodrome/eye2.png',     w: 48,  h: 41 },
-    { key: 'techno_eye3',     src: 'sprites/technodrome/eye3.png',     w: 48,  h: 41 },
-    { key: 'techno_track1',   src: 'sprites/technodrome/track1.png',   w: 162, h: 32 },
-    { key: 'techno_track2',   src: 'sprites/technodrome/track2.png',   w: 162, h: 32 }
+    { key: 'technodrome_bldg', src: 'sprites/technodrome/side.png',  w: 160, h: 160 },
+    { key: 'techno_eye1',     src: 'sprites/technodrome/eye1.png', w: 44,  h: 24 },
+    { key: 'techno_eye2',     src: 'sprites/technodrome/eye2.png', w: 44,  h: 24 },
+    { key: 'techno_eye3',     src: 'sprites/technodrome/eye3.png', w: 44,  h: 24 },
+    { key: 'techno_track1',   src: 'sprites/technodrome/track1.png', w: 96, h: 16 },
+    { key: 'techno_track2',   src: 'sprites/technodrome/track2.png', w: 96, h: 16 },
+    { key: 'techno_veh_front', src: 'sprites/technodrome/front.png', w: 256, h: 256 },
+    { key: 'techno_veh_back',  src: 'sprites/technodrome/back.png',  w: 256, h: 256 },
+    { key: 'techno_veh_side',  src: 'sprites/technodrome/side.png',  w: 256, h: 256 }
 ];
 
 (function preloadHiresBuildings() {
@@ -4627,7 +4644,7 @@ var HIRES_BUILDING_DEFS = [
         img.onerror = function() {
             console.warn('[hires] Failed to load ' + def.src);
         };
-        img.src = def.src + '?v=1';
+        img.src = def.src + '?v=6';
     });
 })();
 
@@ -5678,50 +5695,32 @@ const BUILDING_TYPE_DRAWERS = {
 
 function drawBuildingDimensionX(x, y, bw, bh) {
     var unlocked = Object.keys(game.progress.collectedItems).length >= 10;
-    var hires = HIRES_BUILDINGS['technodrome_bldg'];
-    if (!hires) {
-        drawBldgSprite(x, y, bw, bh, 'bldgRedBlue', 'DIM-X', NES.PAL.N, unlocked);
-        return;
-    }
-
-    var now = Date.now();
-    var t = now / 1000;
-
-    var sway = Math.sin(t * 0.8) * 2;
-
-    var scale = Math.min(bw / hires.w, (bh * 0.85) / hires.h);
-    var sw = hires.w * scale;
-    var sh = hires.h * scale;
-    var dx = x + (bw - sw) / 2 + sway;
-    var dy = y + bh - sh;
+    var td = game.technodrone;
+    var dir = td.direction || 'down';
+    var spr = _getTechnodroneSprite(dir);
+    var dims = _getTechnodroneDims();
+    var flipX = (dir === 'right');
 
     if (!unlocked) ctx.globalAlpha = 0.55;
 
-    ctx.drawImage(hires.img, dx, dy, sw, sh);
-
-    var eyeFrames = ['techno_eye1', 'techno_eye2', 'techno_eye3', 'techno_eye2'];
-    var eyeIdx = Math.floor(t * 1.5) % eyeFrames.length;
-    var eyeImg = HIRES_BUILDINGS[eyeFrames[eyeIdx]];
-    if (eyeImg) {
-        var eyeScale = scale * 1.1;
-        var ew = eyeImg.w * eyeScale;
-        var eh = eyeImg.h * eyeScale;
-        var ex = dx + sw * 0.52 - ew / 2;
-        var ey = dy + sh * 0.02;
-        ctx.drawImage(eyeImg.img, ex, ey, ew, eh);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    var cx = x + bw / 2;
+    var cy = y + bh / 2;
+    ctx.translate(cx, cy);
+    if (flipX) ctx.scale(-1, 1);
+    if (spr) {
+        ctx.drawImage(spr.img, -dims.w / 2, -dims.h / 2, dims.w, dims.h);
+    } else {
+        ctx.fillStyle = 'rgba(128, 0, 255, 0.6)';
+        ctx.fillRect(-dims.w / 2, -dims.h / 2, dims.w, dims.h);
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('TECHNODRONE', 0, 0);
+        ctx.textAlign = 'left';
     }
-
-    var trackIdx = Math.floor(t * 3) % 2;
-    var trackKey = trackIdx === 0 ? 'techno_track1' : 'techno_track2';
-    var trackImg = HIRES_BUILDINGS[trackKey];
-    if (trackImg) {
-        var tw = sw * 0.82;
-        var th = tw * (trackImg.h / trackImg.w);
-        var tx = dx + (sw - tw) / 2;
-        var ty = dy + sh - th - sh * 0.02;
-        ctx.drawImage(trackImg.img, tx, ty, tw, th);
-    }
-
+    ctx.restore();
     ctx.globalAlpha = 1.0;
 
     if (!unlocked) {
@@ -5739,11 +5738,14 @@ function drawBuildingDimensionX(x, y, bw, bh) {
 }
 
 function drawBuilding(b, index) {
-    const sx = b.worldX - game.camera.x;
-    const sy = b.worldY - game.camera.y;
-
     const bt = b.buildingType;
     const isDimX = bt === 'dimension_x';
+    if (isDimX) {
+        // Skip building drawing when LOCAL player is driving (drawTechnodrone handles it)
+        if (game.controllerEntity === 'technodrone') return;
+    }
+    const sx = b.worldX - game.camera.x;
+    const sy = b.worldY - game.camera.y;
     const cullSize = isDimX ? 384 : 128;
     if (sx < -cullSize || sx > CANVAS_WIDTH + cullSize || sy < -cullSize || sy > CANVAS_HEIGHT + cullSize) return;
 
@@ -5902,13 +5904,12 @@ function drawPartyWagon() {
 
 function drawParkedVan() {
     var v = game.van;
-    var p = game.player;
     var screenX = v.x - game.camera.x;
     var screenY = v.y - game.camera.y;
 
     var flipX = (v.direction === 'left');
-    var drawW = p.width || 128;
-    var drawH = p.height || 128;
+    var drawW = 128;
+    var drawH = 128;
 
     var patKey;
     if (v.direction === 'left' || v.direction === 'right') {
@@ -5931,7 +5932,7 @@ function drawParkedVan() {
     ctx.restore();
 
     // "Press T" hint near van when turtle is far
-    if (getVanReenterDist() > p.width * 2) {
+    if (getVanReenterDist() > 256) {
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.fillRect(screenX + drawW / 2 - 20, screenY - 14, 40, 12);
         ctx.fillStyle = '#aaa';
@@ -5942,6 +5943,7 @@ function drawParkedVan() {
     }
 
     // Van HP bar above the sprite (only when not at full HP)
+    var p = game.player;
     if (p.hp < p.maxHp) {
         var vBarW = 36, vBarH = 4;
         var vBarX = screenX + drawW / 2 - vBarW / 2;
@@ -5959,6 +5961,41 @@ function drawParkedVan() {
         ctx.fillText(p.hp + '/' + p.maxHp, screenX + drawW / 2, vBarY - 2);
         ctx.textAlign = 'left';
     }
+}
+
+function _getTechnodroneSprite(direction) {
+    var key;
+    if (direction === 'up') key = 'techno_veh_back';
+    else if (direction === 'down') key = 'techno_veh_front';
+    else key = 'techno_veh_side';
+    return HIRES_BUILDINGS[key] || null;
+}
+
+function _getTechnodroneDims() {
+    return { w: 256, h: 256 };
+}
+
+function drawTechnodrone() {
+    var p = game.player;
+    var entW = game.technodrone.width;
+    var entH = game.technodrone.height;
+    var screenX = p.x - game.camera.x;
+    var screenY = p.y - game.camera.y;
+    var dims = _getTechnodroneDims(p.direction);
+    var flipX = (p.direction === 'right');
+    var spr = _getTechnodroneSprite(p.direction);
+    if (!spr) return;
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(screenX + entW / 2, screenY + entH / 2);
+    if (flipX) ctx.scale(-1, 1);
+    ctx.drawImage(spr.img, -dims.w / 2, -dims.h / 2, dims.w, dims.h);
+    ctx.restore();
+}
+
+function drawParkedTechnodrone() {
+    // Drawing is now handled by drawBuilding/drawBuildingDimensionX
 }
 
 function drawOnFootTurtle() {
@@ -6099,8 +6136,8 @@ function _drawRemotePlayer(_rp) {
             var _rvDir = _rp.vf || 'right';
             var _rvDirMap = { n: 'up', s: 'down', e: 'right', w: 'left', up: 'up', down: 'down', left: 'left', right: 'right' };
             _rvDir = _rvDirMap[_rvDir] || 'right';
-            var _rvDrawW = game.player.width || 128;
-            var _rvDrawH = game.player.height || 128;
+            var _rvDrawW = 128;
+            var _rvDrawH = 128;
             var _rvFlip = (_rvDir === 'left');
             var _rvPatKey;
             if (_rvDir === 'left' || _rvDir === 'right') { _rvPatKey = 'wagonRight5'; }
@@ -6120,8 +6157,23 @@ function _drawRemotePlayer(_rp) {
         var _tlabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(_rpx + _tDrawW / 2 - 30, _rpy - 14, 60, 12);
         ctx.fillStyle = '#fff'; ctx.fillText(_tlabel, _rpx + _tDrawW / 2, _rpy - 4); ctx.textAlign = 'left';
+    } else if (_rMode === 'technodrone') {
+        var _tdEntW = 256, _tdEntH = 256;
+        var _tdDims = _getTechnodroneDims(_rDir);
+        var _tdFlip = (_rDir === 'right');
+        var _tdSpr = _getTechnodroneSprite(_rDir);
+        ctx.save(); ctx.imageSmoothingEnabled = false;
+        ctx.translate(_rpx + _tdEntW / 2, _rpy + _tdEntH / 2);
+        if (_tdFlip) ctx.scale(-1, 1);
+        if (_tdSpr) ctx.drawImage(_tdSpr.img, -_tdDims.w / 2, -_tdDims.h / 2, _tdDims.w, _tdDims.h);
+        else { ctx.fillStyle = 'rgba(128, 0, 255, 0.7)'; ctx.fillRect(-_tdDims.w / 2, -_tdDims.h / 2, _tdDims.w, _tdDims.h); }
+        ctx.restore();
+        ctx.font = '8px monospace'; ctx.textAlign = 'center';
+        var _tdLabel = (_rp.displayName || _rp.id || '???').substring(0, 12);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(_rpx + _tdEntW / 2 - 30, _rpy - 16, 60, 12);
+        ctx.fillStyle = '#ff44ff'; ctx.fillText(_tdLabel, _rpx + _tdEntW / 2, _rpy - 6); ctx.textAlign = 'left';
     } else {
-        var _rDrawW = game.player.width || 128; var _rDrawH = game.player.height || 128;
+        var _rDrawW = 128; var _rDrawH = 128;
         var _rFlip = (_rDir === 'left');
         var _rFrameSet = game.wagonFrames[_rDir];
         var _rFrameIdx = sm.moving ? (sm.frame % (_rFrameSet ? _rFrameSet.length : 1)) : 0;
@@ -6231,6 +6283,10 @@ function drawAllChatBubbles() {
             sx = t.x - game.camera.x;
             sy = t.y - game.camera.y;
             sw = t.width || 32;
+        } else if (game.controllerEntity === 'technodrone') {
+            sx = p.x - game.camera.x;
+            sy = p.y - game.camera.y;
+            sw = game.technodrone.width;
         } else {
             sx = p.x - game.camera.x;
             sy = p.y - game.camera.y;
@@ -6249,7 +6305,7 @@ function drawAllChatBubbles() {
         var rpx = wx - game.camera.x;
         var rpy = wy - game.camera.y;
         var rpMode = rp.mode || 'van';
-        var rpW = rpMode === 'foot' ? (game.turtle.width || 32) : (game.player.width || 128);
+        var rpW = rpMode === 'foot' ? (game.turtle.width || 32) : (rpMode === 'technodrone' ? 256 : (game.player.width || 128));
         drawSpeechBubble(ctx, bubbles[rp.id].text, rpx, rpy, rpW, '#80ff80');
     }
 }
@@ -6428,6 +6484,13 @@ function drawWaypointPips() {
         drawWaypointPip(vx, vy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#00ff00', 'VAN');
     }
 
+    // Magenta technodrone locator when parked and not currently driving it
+    if (game.mode === 'REGION' && game.technodrone.x != null && !game.technodrone.active && game.controllerEntity !== 'technodrone') {
+        var tdcx = game.technodrone.x + game.technodrone.width / 2;
+        var tdcy = game.technodrone.y + game.technodrone.height / 2;
+        drawWaypointPip(tdcx, tdcy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#ff44ff', 'TECHNODRONE');
+    }
+
     if (typeof MP !== 'undefined' && MP.isConnected() && game.mode === 'REGION') {
         var _myRid = game.currentRegionId || null;
         // Active (in-AOI) players — always same region since they're physically nearby
@@ -6555,7 +6618,9 @@ function rectHitsBuildingCollision(rx, ry, rw, rh) {
         var bucket = ROW_BUILDINGS[row];
         if (!bucket) continue;
         for (var i = 0; i < bucket.length; i++) {
-            var c = bucket[i].collisionWorld;
+            var bld = bucket[i];
+            if (bld.buildingType === 'dimension_x' && game.technodrone.active) continue;
+            var c = bld.collisionWorld;
             if (!c) continue;
             if (rx < c.x + c.w && rx + rw > c.x &&
                 ry < c.y + c.h && ry + rh > c.y) return true;
@@ -6574,10 +6639,12 @@ function checkCollision(newX, newY) {
         return true;
     }
 
-    var inset = 24;
+    var isTD = game.controllerEntity === 'technodrone';
+    var inset = isTD ? 96 : 24;
     var rx = newX + inset, ry = newY + inset;
     var rw = p.width - inset * 2, rh = p.height - inset * 2;
-    if (rectHitsCollisionGrid(rx, ry, rw, rh)) return true;
+    // Technodrone skips tile grid (manholes, ground features) — only checks buildings
+    if (!isTD && rectHitsCollisionGrid(rx, ry, rw, rh)) return true;
     if (rectHitsBuildingCollision(rx, ry, rw, rh)) return true;
     return false;
 }
@@ -6593,6 +6660,7 @@ function updateInteraction() {
     if (game.activeBuildingId !== null) {
         const active = BUILDING_BY_ID[game.activeBuildingId];
         if (!active) { setActiveBuilding(null); }
+        else if (active.buildingType === 'dimension_x' && game.controllerEntity === 'technodrone') { setActiveBuilding(null); }
         else if (rectsOverlap(pRect, active.exitWorld)) { return; }
         else { setActiveBuilding(null); }
     }
@@ -6604,7 +6672,22 @@ function updateInteraction() {
         var _ib = ROW_BUILDINGS[_ir];
         if (!_ib) continue;
         for (var _ii = 0; _ii < _ib.length; _ii++) {
+            if (_ib[_ii].buildingType === 'dimension_x' && game.controllerEntity === 'technodrone') continue;
             if (rectsOverlap(pRect, _ib[_ii].enterWorld)) candidates.push(_ib[_ii]);
+        }
+    }
+    // dimension_x building may have moved out of its original ROW_BUILDINGS bucket — check it directly
+    if (game.controllerEntity !== 'technodrone') {
+        for (var _bi = 0; _bi < BUILDINGS.length; _bi++) {
+            if (BUILDINGS[_bi].buildingType === 'dimension_x') {
+                var _dxb = BUILDINGS[_bi];
+                var _alreadyIn = false;
+                for (var _ci = 0; _ci < candidates.length; _ci++) {
+                    if (candidates[_ci].id === _dxb.id) { _alreadyIn = true; break; }
+                }
+                if (!_alreadyIn && rectsOverlap(pRect, _dxb.enterWorld)) candidates.push(_dxb);
+                break;
+            }
         }
     }
     if (candidates.length === 0) return;
@@ -7038,7 +7121,6 @@ function requestAttack() {
         var vp = game.player;
         var vdx = vp.direction === 'right' ? 1 : vp.direction === 'left' ? -1 : 0;
         var vdy = vp.direction === 'down'  ? 1 : vp.direction === 'up'   ? -1 : 0;
-        // Spawn from the leading edge of the van
         var projX = vp.x + vp.width  / 2 + vdx * (vp.width  / 2 + 4);
         var projY = vp.y + vp.height / 2 + vdy * (vp.height / 2 + 4);
         if (!game.vanProjectiles) game.vanProjectiles = [];
@@ -7051,10 +7133,56 @@ function requestAttack() {
             animTimer: 0,
             frame: 0
         });
-        game.van.shotCooldown = 0.35;  // ~3 shots/second
+        game.van.shotCooldown = 0.35;
         if (typeof MP !== 'undefined' && MP.isConnected()) {
             MP.sendVanShot(projX, projY, vdx * 700, vdy * 700, 1.6);
         }
+    }
+    // Driving the technodrone: multiple smaller shots from red cannons
+    if (game.mode === 'REGION' && game.controllerEntity === 'technodrone') {
+        if (game.technodrone.shotCooldown > 0) return;
+        var tp = game.player;
+        var tw = tp.width, th = tp.height;
+        var cx = tp.x + tw / 2, cy = tp.y + th / 2;
+        var tdx = tp.direction === 'right' ? 1 : tp.direction === 'left' ? -1 : 0;
+        var tdy = tp.direction === 'down'  ? 1 : tp.direction === 'up'   ? -1 : 0;
+        if (!game.vanProjectiles) game.vanProjectiles = [];
+        var speed = 650;
+        var spread = 0.25;
+        var cannonOffsets;
+        if (tdx !== 0) {
+            cannonOffsets = [
+                { ox: tdx * (tw * 0.45), oy: -th * 0.30, ang: 0 },
+                { ox: tdx * (tw * 0.50), oy: 0,           ang: 0 },
+                { ox: tdx * (tw * 0.45), oy:  th * 0.30, ang: 0 }
+            ];
+        } else {
+            cannonOffsets = [
+                { ox: -tw * 0.30, oy: tdy * (th * 0.45), ang: 0 },
+                { ox: 0,           oy: tdy * (th * 0.50), ang: 0 },
+                { ox:  tw * 0.30, oy: tdy * (th * 0.45), ang: 0 }
+            ];
+        }
+        var baseAng = Math.atan2(tdy, tdx);
+        for (var ci = 0; ci < cannonOffsets.length; ci++) {
+            var co = cannonOffsets[ci];
+            var spreadAng = baseAng + (ci - 1) * spread;
+            var svx = Math.cos(spreadAng) * speed;
+            var svy = Math.sin(spreadAng) * speed;
+            var sx = cx + co.ox;
+            var sy = cy + co.oy;
+            game.vanProjectiles.push({
+                x: sx, y: sy,
+                vx: svx, vy: svy,
+                life: 1.5, maxLife: 1.5,
+                animTimer: 0, frame: 0,
+                small: true
+            });
+            if (typeof MP !== 'undefined' && MP.isConnected()) {
+                MP.sendVanShot(sx, sy, svx, svy, 1.5);
+            }
+        }
+        game.technodrone.shotCooldown = 0.18;
     }
 }
 
@@ -7076,7 +7204,8 @@ function requestBackAction() {
         return;
     }
     if (game.mode === 'REGION' && game.state === 'OVERWORLD') {
-        if (game.controllerEntity === 'foot') return; // must be in van to leave region
+        if (game.controllerEntity === 'foot') return; // must be in van/technodrone to leave region
+        _autoparkTechnodrone();
         startReturnToWorld();
         return;
     }
@@ -7379,7 +7508,44 @@ function updateTransition(dt) {
     updateMobileActionVisibility();
 }
 
-// ── Van/Foot toggle ──────────────────────────────────────────
+// ── Van/Foot/Technodrone toggle ──────────────────────────────
+function _exitVehicleToFoot(vehicleW, vehicleH) {
+    var p = game.player;
+    var t = game.turtle;
+    t.y = p.y + vehicleH / 2 - t.height / 2;
+    if (p.direction === 'right') {
+        t.x = p.x - t.width - 4;
+        t.direction = 'left';
+    } else if (p.direction === 'left') {
+        t.x = p.x + vehicleW + 4;
+        t.direction = 'right';
+    } else {
+        t.x = p.x + vehicleW / 2 - t.width / 2;
+        t.y = p.y + vehicleH / 2 - t.height / 2;
+        var spawnOffset = vehicleH / 2 + 16;
+        if (p.direction === 'down') t.y += spawnOffset;
+        else t.y -= spawnOffset;
+        t.direction = p.direction;
+    }
+    t.frame = 0;
+    t.animTimer = 0;
+    game.controllerEntity = 'foot';
+}
+
+function _autoparkTechnodrone() {
+    if (game.controllerEntity !== 'technodrone') return;
+    var p = game.player;
+    console.log('[technodrone] autopark at', p.x, p.y, p.direction);
+    game.technodrone.x = p.x;
+    game.technodrone.y = p.y;
+    game.technodrone.direction = p.direction;
+    game.technodrone.active = false;
+    game.technodrone.driverId = null;
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendTechnodronePark(p.x, p.y, p.direction);
+    }
+}
+
 function attemptToggleVanFoot() {
     if (game.mode !== 'REGION') return;
     if (game.state !== 'OVERWORLD') return;
@@ -7389,57 +7555,143 @@ function attemptToggleVanFoot() {
     var t = game.turtle;
 
     if (game.controllerEntity === 'van') {
-        // Exit van: park it, spawn turtle next to it
         game.van.x = p.x;
         game.van.y = p.y;
         game.van.direction = p.direction;
         game.van.frame = p.frame;
+        _exitVehicleToFoot(p.width, p.height);
+    } else if (game.controllerEntity === 'technodrone') {
+        // Exit technodrone: park it, notify server
+        var _parkX = p.x;
+        var _parkY = p.y;
+        var _parkDir = p.direction;
+        var _tdW = game.technodrone.width;
+        var _tdH = game.technodrone.height;
 
-        // Turtle exits from the van door
-        t.y = p.y + p.height / 2 - t.height / 2;
-        if (p.direction === 'right') {
-            // wagonRight5: door on the left (rear) side
-            t.x = p.x - t.width - 4;
-            t.direction = 'left';
-        } else if (p.direction === 'left') {
-            // flipped: door on the right (rear) side
-            t.x = p.x + p.width + 4;
-            t.direction = 'right';
-        } else {
-            // Vertical: spawn offset in facing direction
-            t.x = p.x + p.width / 2 - t.width / 2;
-            t.y = p.y + p.height / 2 - t.height / 2;
-            var spawnOffset = 48;
-            if (p.direction === 'down') t.y += spawnOffset;
-            else t.y -= spawnOffset;
-            t.direction = p.direction;
-        }
-        t.frame = 0;
-        t.animTimer = 0;
-
+        // Switch back to van size first
+        p.width = 128; p.height = 128;
+        p.pxPerSecond = 300;
         game.controllerEntity = 'foot';
+
+        // Park the technodrone at the position we were at
+        game.technodrone.x = _parkX;
+        game.technodrone.y = _parkY;
+        game.technodrone.direction = _parkDir;
+        game.technodrone.active = false;
+        game.technodrone.driverId = null;
+        MP.sendTechnodronePark(_parkX, _parkY, _parkDir);
+
+        // Place turtle outside the technodrone, offset far enough to clear its collision
+        var t = game.turtle;
+        var _spawnDist = _tdW / 2 + t.width + 8;
+        t.y = _parkY + _tdH / 2 - t.height / 2;
+        if (_parkDir === 'right') {
+            t.x = _parkX + _tdW + 8;
+            t.direction = 'right';
+        } else if (_parkDir === 'left') {
+            t.x = _parkX - t.width - 8;
+            t.direction = 'left';
+        } else if (_parkDir === 'down') {
+            t.x = _parkX + _tdW / 2 - t.width / 2;
+            t.y = _parkY + _tdH + 8;
+            t.direction = 'down';
+        } else {
+            t.x = _parkX + _tdW / 2 - t.width / 2;
+            t.y = _parkY - t.height - 8;
+            t.direction = 'up';
+        }
+        return;
     } else {
-        // Re-enter van: check proximity
-        var vanCX = game.van.x + p.width / 2;
-        var vanCY = game.van.y + p.height / 2;
+        // On foot: check what we can enter
         var tCX = t.x + t.width / 2;
         var tCY = t.y + t.height / 2;
-        var dist = Math.hypot(tCX - vanCX, tCY - vanCY);
-        if (dist > p.width * 0.8) return; // too far from van
+        var td = game.technodrone;
 
-        // Snap player back to van position
-        p.x = game.van.x;
-        p.y = game.van.y;
-        p.direction = game.van.direction;
-        game.controllerEntity = 'van';
+        // 1) Re-enter van: check proximity (checked first so denied Technodrone access doesn't block van)
+        var vanCX = game.van.x + 64;
+        var vanCY = game.van.y + 64;
+        var vanDist = Math.hypot(tCX - vanCX, tCY - vanCY);
+        if (vanDist <= 102) {
+            p.x = game.van.x;
+            p.y = game.van.y;
+            p.direction = game.van.direction;
+            p.width = 128; p.height = 128;
+            p.pxPerSecond = 300;
+            game.controllerEntity = 'van';
+            return;
+        }
+
+        // 2) Check proximity to parked technodrone (server validates permissions)
+        if (td.x != null && !td.active) {
+            var tdCX = td.x + td.width / 2;
+            var tdCY = td.y + td.height / 2;
+            var tdDist = Math.hypot(tCX - tdCX, tCY - tdCY);
+            if (tdDist < 300) {
+                _enterTechnodrone(td.x, td.y, td.direction);
+                return;
+            }
+        }
+
+        // 3) Check proximity to dimension_x building (first-time or re-entry near original spot)
+        if (!td.active) {
+            var dimXBldg = _findNearbyDimensionXBuilding(tCX, tCY);
+            if (dimXBldg) {
+                var bx = (td.x != null) ? td.x : dimXBldg.worldX;
+                var by = (td.y != null) ? td.y : dimXBldg.worldY;
+                _enterTechnodrone(bx, by, td.direction || 'right');
+                return;
+            }
+        }
     }
 }
 
+function _findNearbyDimensionXBuilding(cx, cy) {
+    if (!BUILDINGS) return null;
+    for (var i = 0; i < BUILDINGS.length; i++) {
+        var b = BUILDINGS[i];
+        if (b.buildingType !== 'dimension_x') continue;
+        var bCX = b.worldX + TILE_SIZE / 2;
+        var bCY = b.worldY + TILE_SIZE / 2;
+        if (Math.hypot(cx - bCX, cy - bCY) < 200) return b;
+    }
+    return null;
+}
+
+function _enterTechnodrone(bx, by, dir) {
+    console.log('[T] _enterTechnodrone called at', bx, by, dir);
+    MP.requestTechnodroneEnter(bx, by, dir, function(result) {
+        console.log('[T] server response:', JSON.stringify(result));
+        if (!result.ok) {
+            if (result.reason === 'already_driven') {
+                game.technodromeMsgTimer = 2.0;
+                game.technodromeMsg = 'ALREADY BEING DRIVEN';
+            } else if (result.reason === 'not_allowed') {
+                game.technodromeMsgTimer = 2.0;
+                game.technodromeMsg = 'ACCESS DENIED';
+            }
+            return;
+        }
+        var p = game.player;
+        var td = game.technodrone;
+        td.x = result.x;
+        td.y = result.y;
+        td.direction = result.dir || 'right';
+        td.active = true;
+        td.driverId = MP.entityId;
+        p.x = td.x;
+        p.y = td.y;
+        p.width = td.width;
+        p.height = td.height;
+        p.pxPerSecond = 250;
+        p.direction = td.direction;
+        game.controllerEntity = 'technodrone';
+    });
+}
+
 function getVanReenterDist() {
-    var p = game.player;
     var t = game.turtle;
-    var vanCX = game.van.x + p.width / 2;
-    var vanCY = game.van.y + p.height / 2;
+    var vanCX = game.van.x + 64;
+    var vanCY = game.van.y + 64;
     var tCX = t.x + t.width / 2;
     var tCY = t.y + t.height / 2;
     return Math.hypot(tCX - vanCX, tCY - vanCY);
@@ -7638,12 +7890,14 @@ function update(dt) {
         }
 
         var _facing = dx < 0 ? 'w' : dx > 0 ? 'e' : dy < 0 ? 'n' : 's';
+        var _syncMode = game.controllerEntity === 'technodrone' ? 'technodrone' : 'van';
         if (typeof MP !== 'undefined' && MP.isConnected()) {
-            MP.sendPosSync(p.x, p.y, _facing, 'van', game.activeTurtle);
+            MP.sendPosSync(p.x, p.y, _facing, _syncMode, game.activeTurtle);
         }
     } else if (typeof MP !== 'undefined' && MP.isConnected()) {
         var _idleFacing = p.direction === 'left' ? 'w' : p.direction === 'right' ? 'e' : p.direction === 'up' ? 'n' : 's';
-        MP.sendPosSync(p.x, p.y, _idleFacing, game.controllerEntity === 'foot' ? 'foot' : 'van', game.activeTurtle);
+        var _idleMode = game.controllerEntity === 'technodrone' ? 'technodrone' : (game.controllerEntity === 'foot' ? 'foot' : 'van');
+        MP.sendPosSync(p.x, p.y, _idleFacing, _idleMode, game.activeTurtle);
     }
     
     p.moving = isMoving;
@@ -7675,9 +7929,54 @@ function update(dt) {
         updateWorldInteraction();
         if (typeof updateBlimpHover === 'function') updateBlimpHover(dt);
     } else {
+        _syncTechnodroneBuilding();
         updateInteraction();
         updateBlimpInteraction();
         updatePOIProximity();
+    }
+}
+
+function _syncTechnodroneBuilding() {
+    if (game.mode !== 'REGION') return;
+    var td = game.technodrone;
+    if (td.x == null && !td.active) return;
+    for (var _bi = 0; _bi < BUILDINGS.length; _bi++) {
+        var b = BUILDINGS[_bi];
+        if (b.buildingType !== 'dimension_x') continue;
+
+        if (td.active && game.controllerEntity === 'technodrone') {
+            b.worldX = game.player.x;
+            b.worldY = game.player.y;
+        } else if (td.active && td.driverId) {
+            var _remotes = (typeof MP !== 'undefined') ? MP.getRemotePlayers() : [];
+            for (var _ri = 0; _ri < _remotes.length; _ri++) {
+                if (_remotes[_ri].id === td.driverId) {
+                    b.worldX = _remotes[_ri].x;
+                    b.worldY = _remotes[_ri].y;
+                    break;
+                }
+            }
+        } else if (td.x != null) {
+            var _tdInBounds = td.x >= 0 && td.x < WORLD_WIDTH * TILE_SIZE &&
+                              td.y >= 0 && td.y < WORLD_HEIGHT * TILE_SIZE;
+            if (!_tdInBounds) {
+                td.x = b.worldX; td.y = b.worldY;
+                td.active = false; td.driverId = null;
+            } else {
+                b.worldX = td.x; b.worldY = td.y;
+            }
+        }
+
+        if (b._dimxCR) {
+            b.collisionWorld.x = b.worldX + b._dimxCR.ox;
+            b.collisionWorld.y = b.worldY + b._dimxCR.oy;
+            b.enterWorld.x = b.worldX + b._dimxER.ox;
+            b.enterWorld.y = b.worldY + b._dimxER.oy;
+            b.exitWorld.x = b.worldX + b._dimxXR.ox;
+            b.exitWorld.y = b.worldY + b._dimxXR.oy;
+        }
+
+        break;
     }
 }
 
@@ -9131,6 +9430,7 @@ function updateVanProjectiles(dt) {
 
     // Tick shot-fire cooldown
     if (game.van && game.van.shotCooldown > 0) game.van.shotCooldown -= dt;
+    if (game.technodrone && game.technodrone.shotCooldown > 0) game.technodrone.shotCooldown -= dt;
 
     // Spawn remote van shots broadcast by other players.
     // NOTE: drainEnemySyncs is called here ONLY for shots; updateRegionEnemies
@@ -10477,8 +10777,13 @@ function draw() {
                 _playerDrawn = true;
                 if (game.controllerEntity === 'foot') {
                     drawParkedVan();
+                    drawParkedTechnodrone();
                     drawOnFootTurtle();
+                } else if (game.controllerEntity === 'technodrone') {
+                    drawParkedVan();
+                    drawTechnodrone();
                 } else {
+                    drawParkedTechnodrone();
                     drawPartyWagon();
                 }
             }
@@ -10505,10 +10810,11 @@ function draw() {
                 }
             }
 
-            // Draw enterable buildings for this row
+            // Draw enterable buildings for this row (skip dimension_x — drawn separately)
             var bRow = ROW_BUILDINGS[ry];
             if (bRow) for (var bi = 0; bi < bRow.length; bi++) {
                 var bld = bRow[bi];
+                if (bld.buildingType === 'dimension_x') continue;
                 if (bld.x >= startX - 2 && bld.x <= endX + 1) drawBuilding(bld, BUILDINGS.indexOf(bld));
             }
 
@@ -10524,13 +10830,26 @@ function draw() {
         if (!_playerDrawn) {
             if (game.controllerEntity === 'foot') {
                 drawParkedVan();
+                drawParkedTechnodrone();
                 drawOnFootTurtle();
+            } else if (game.controllerEntity === 'technodrone') {
+                drawParkedVan();
+                drawTechnodrone();
             } else {
+                drawParkedTechnodrone();
                 drawPartyWagon();
             }
         }
 
         drawTownProps(startX, startY, endX, endY);
+
+        // Draw dimension_x building directly (it moves, so row bucketing doesn't apply)
+        for (var _dxdi = 0; _dxdi < BUILDINGS.length; _dxdi++) {
+            if (BUILDINGS[_dxdi].buildingType === 'dimension_x') {
+                drawBuilding(BUILDINGS[_dxdi], _dxdi);
+                break;
+            }
+        }
 
         // Overworld hit sparks (drawn on top of all world geometry)
         if (game.owHitSparks && game.owHitSparks.length > 0) {
@@ -10555,37 +10874,54 @@ function draw() {
             }
         }
 
-        // Van cannonball projectiles (drawn on top of everything)
+        // Projectiles (drawn on top of everything)
         if (game.vanProjectiles && game.vanProjectiles.length > 0) {
             for (var _vpi = 0; _vpi < game.vanProjectiles.length; _vpi++) {
                 var _vp = game.vanProjectiles[_vpi];
                 var _vpsx = _vp.x - game.camera.x;
                 var _vpsy = _vp.y - game.camera.y;
-                var _vpAge  = 1 - _vp.life / _vp.maxLife; // 0=fresh, 1=old
-                var _vpR    = 7 + Math.sin(_vp.animTimer * 30) * 1.5; // pulsing radius
                 ctx.save();
-                // Outer glow ring
-                ctx.beginPath();
-                ctx.arc(_vpsx, _vpsy, _vpR + 3, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(80, 255, 40, 0.25)';
-                ctx.fill();
-                // Main ball — bright NES green-yellow
-                ctx.beginPath();
-                ctx.arc(_vpsx, _vpsy, _vpR, 0, Math.PI * 2);
-                ctx.fillStyle = '#40ff00';
-                ctx.fill();
-                // Inner highlight (white core)
-                ctx.beginPath();
-                ctx.arc(_vpsx - _vpR * 0.25, _vpsy - _vpR * 0.25, _vpR * 0.4, 0, Math.PI * 2);
-                ctx.fillStyle = '#ffffff';
-                ctx.fill();
-                // Trailing sparks based on direction
-                var _vTrailX = _vpsx - (_vp.vx / 700) * 14;
-                var _vTrailY = _vpsy - (_vp.vy / 700) * 14;
-                ctx.beginPath();
-                ctx.arc(_vTrailX, _vTrailY, _vpR * 0.5, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 200, 0, 0.6)';
-                ctx.fill();
+                if (_vp.small) {
+                    var _sR = 3.5 + Math.sin(_vp.animTimer * 40) * 0.8;
+                    ctx.beginPath();
+                    ctx.arc(_vpsx, _vpsy, _sR + 2, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 60, 30, 0.3)';
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(_vpsx, _vpsy, _sR, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff3020';
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(_vpsx - _sR * 0.2, _vpsy - _sR * 0.2, _sR * 0.4, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.fill();
+                    var _sTX = _vpsx - (_vp.vx / 650) * 8;
+                    var _sTY = _vpsy - (_vp.vy / 650) * 8;
+                    ctx.beginPath();
+                    ctx.arc(_sTX, _sTY, _sR * 0.4, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 100, 0, 0.5)';
+                    ctx.fill();
+                } else {
+                    var _vpR = 7 + Math.sin(_vp.animTimer * 30) * 1.5;
+                    ctx.beginPath();
+                    ctx.arc(_vpsx, _vpsy, _vpR + 3, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(80, 255, 40, 0.25)';
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(_vpsx, _vpsy, _vpR, 0, Math.PI * 2);
+                    ctx.fillStyle = '#40ff00';
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(_vpsx - _vpR * 0.25, _vpsy - _vpR * 0.25, _vpR * 0.4, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                    var _vTrailX = _vpsx - (_vp.vx / 700) * 14;
+                    var _vTrailY = _vpsy - (_vp.vy / 700) * 14;
+                    ctx.beginPath();
+                    ctx.arc(_vTrailX, _vTrailY, _vpR * 0.5, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 200, 0, 0.6)';
+                    ctx.fill();
+                }
                 ctx.restore();
             }
         }
@@ -10787,16 +11123,31 @@ function draw() {
             ctx.fillText(tLabels[ti], tx + 1, 57);
         }
 
-        // On-foot mode indicator
+        // On-foot / vehicle mode indicator
         if (game.controllerEntity === 'foot') {
             var footY = 64;
             ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(8, footY, 112, 16);
+            ctx.fillRect(8, footY, 140, 16);
             var vanDist = getVanReenterDist();
-            var nearVan = vanDist <= game.player.width * 0.8;
-            ctx.fillStyle = nearVan ? '#4ade80' : '#fbbf24';
+            var nearVan = vanDist <= 102;
+            var td = game.technodrone;
+            var nearTD = false;
+            if (td.x != null && !td.active && MP.canDriveVehicle('technodrone')) {
+                var _htCX = game.turtle.x + game.turtle.width / 2;
+                var _htCY = game.turtle.y + game.turtle.height / 2;
+                nearTD = Math.hypot(_htCX - (td.x + td.width / 2), _htCY - (td.y + td.height / 2)) < td.width * 0.6;
+            }
             ctx.font = 'bold 7px monospace';
-            ctx.fillText(nearVan ? '[T] ENTER VAN' : 'ON FOOT — [T] near van', 12, footY + 11);
+            if (nearTD) { ctx.fillStyle = '#ff44ff'; ctx.fillText('[T] DRIVE TECHNODRONE', 12, footY + 11); }
+            else if (nearVan) { ctx.fillStyle = '#4ade80'; ctx.fillText('[T] ENTER VAN', 12, footY + 11); }
+            else { ctx.fillStyle = '#fbbf24'; ctx.fillText('ON FOOT — [T] near vehicle', 12, footY + 11); }
+        } else if (game.controllerEntity === 'technodrone') {
+            var tdY = 64;
+            ctx.fillStyle = 'rgba(80, 0, 128, 0.8)';
+            ctx.fillRect(8, tdY, 130, 16);
+            ctx.fillStyle = '#ff44ff';
+            ctx.font = 'bold 7px monospace';
+            ctx.fillText('TECHNODRONE [T] EXIT', 12, tdY + 11);
         }
     }
 
@@ -11501,6 +11852,18 @@ async function completeEnterRegion(regionId) {
         game.pendingVisitArtist = null;
         spawnPos = _findSpawnNearArtist(visitArtist);
     }
+    // Spawn near parked technodrone if this region has a dimension_x building
+    if (!spawnPos && game.technodrone.x != null) {
+        var _hasDimX = false;
+        for (var _bi = 0; _bi < BUILDINGS.length; _bi++) {
+            if (BUILDINGS[_bi].buildingType === 'dimension_x') { _hasDimX = true; break; }
+        }
+        if (_hasDimX) {
+            var tdTX = Math.floor(game.technodrone.x / TILE_SIZE);
+            var tdTY = Math.floor(game.technodrone.y / TILE_SIZE);
+            spawnPos = findSafeDrivablePos(tdTX, tdTY, 15, false);
+        }
+    }
     if (!spawnPos) spawnPos = findSpawnOnRoad();
     game.player.x = spawnPos.x;
     game.player.y = spawnPos.y;
@@ -11517,7 +11880,21 @@ async function completeEnterRegion(regionId) {
     if (typeof MP !== 'undefined' && MP.sendRegion) MP.sendRegion(regionId);
     updateMobileActionVisibility();
     spawnRegionEnemies();
-    console.log('Region loaded:', regionId, 'spawn at', spawnPos.x, spawnPos.y);
+    // Ensure technodrone is findable: if this region has dimension_x and state is lost, reset to building
+    if (game.technodrone.x == null) {
+        for (var _dxi = 0; _dxi < BUILDINGS.length; _dxi++) {
+            if (BUILDINGS[_dxi].buildingType === 'dimension_x') {
+                game.technodrone.x = BUILDINGS[_dxi].worldX;
+                game.technodrone.y = BUILDINGS[_dxi].worldY;
+                game.technodrone.direction = 'right';
+                game.technodrone.active = false;
+                game.technodrone.driverId = null;
+                console.log('[technodrone] reset to building at', game.technodrone.x, game.technodrone.y);
+                break;
+            }
+        }
+    }
+    console.log('Region loaded:', regionId, 'spawn at', spawnPos.x, spawnPos.y, 'td:', game.technodrone.x, game.technodrone.y, game.technodrone.active);
 }
 
 function _findSpawnNearArtist(artistId) {
@@ -15836,6 +16213,21 @@ function cleanStaleRegionCache() {
             localStorage.removeItem(key);
         }
     }
+}
+
+// Wire up technodrone state from server
+if (typeof MP !== 'undefined') {
+    MP.onTechnodroneState = function(state) {
+        if (!state) return;
+        var td = game.technodrone;
+        if (state.x != null) td.x = state.x;
+        if (state.y != null) td.y = state.y;
+        if (state.dir) td.direction = state.dir;
+        td.active = !!state.active;
+        td.driverId = state.driverId || null;
+        // If someone else started driving, and building was at its old position
+        // clients update: building rendering will use td.x/td.y
+    };
 }
 
 async function init() {

@@ -161,7 +161,7 @@ class Zone {
     entity.px = px;
     entity.py = py;
     if (facing && VALID_FACING[facing]) entity.facing = facing;
-    if (mode === 'van' || mode === 'foot') entity.mode = mode;
+    if (mode === 'van' || mode === 'foot' || mode === 'technodrone') entity.mode = mode;
     if (turtleId) entity.turtleId = turtleId;
     if (mode === 'foot' && vpx != null) {
       entity.vpx = vpx;
