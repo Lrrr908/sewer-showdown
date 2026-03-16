@@ -7179,7 +7179,7 @@ function requestAttack() {
                 small: true
             });
             if (typeof MP !== 'undefined' && MP.isConnected()) {
-                MP.sendVanShot(sx, sy, svx, svy, 1.5);
+                MP.sendVanShot(sx, sy, svx, svy, 1.5, true);
             }
         }
         game.technodrone.shotCooldown = 0.18;
@@ -7581,23 +7581,25 @@ function attemptToggleVanFoot() {
         game.technodrone.driverId = null;
         MP.sendTechnodronePark(_parkX, _parkY, _parkDir);
 
-        // Place turtle outside the technodrone, offset far enough to clear its collision
+        // Place turtle outside the building collision rect (ox:-80 oy:-96 w:224 h:224)
         var t = game.turtle;
-        var _spawnDist = _tdW / 2 + t.width + 8;
+        var _colLeft = _parkX - 80;
+        var _colTop = _parkY - 96;
+        var _colRight = _colLeft + 224;
+        var _colBottom = _colTop + 224;
+        t.x = _parkX + _tdW / 2 - t.width / 2;
         t.y = _parkY + _tdH / 2 - t.height / 2;
         if (_parkDir === 'right') {
-            t.x = _parkX + _tdW + 8;
+            t.x = _colRight + 12;
             t.direction = 'right';
         } else if (_parkDir === 'left') {
-            t.x = _parkX - t.width - 8;
+            t.x = _colLeft - t.width - 12;
             t.direction = 'left';
         } else if (_parkDir === 'down') {
-            t.x = _parkX + _tdW / 2 - t.width / 2;
-            t.y = _parkY + _tdH + 8;
+            t.y = _colBottom + 12;
             t.direction = 'down';
         } else {
-            t.x = _parkX + _tdW / 2 - t.width / 2;
-            t.y = _parkY - t.height - 8;
+            t.y = _colTop - t.height - 12;
             t.direction = 'up';
         }
         return;
@@ -9452,7 +9454,8 @@ function updateVanProjectiles(dt) {
                     life: _life, maxLife: _sh.life || 1.6,
                     animTimer: _elapsed % 0.32,
                     frame: 0,
-                    remote: true  // visual only — damage is handled by enemy_sync kills
+                    remote: true,
+                    small: !!_sh.small
                 });
             }
         }
@@ -9527,7 +9530,7 @@ function updateVanProjectiles(dt) {
     }
 
     // ── Van roadkill: running over walkers while driving ─────────────────────
-    if (game.controllerEntity === 'van' && game.player && game.player.moving) {
+    if ((game.controllerEntity === 'van' || game.controllerEntity === 'technodrone') && game.player && game.player.moving) {
         var vp = game.player;
         var vx1 = vp.x + 8, vy1 = vp.y + 8;
         var vx2 = vp.x + vp.width - 8, vy2 = vp.y + vp.height - 8;

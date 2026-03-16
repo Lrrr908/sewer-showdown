@@ -289,11 +289,13 @@ var MP = (function () {
         _flushEnemySync(true);  // fire immediately — same priority as kills
     }
 
-    function sendVanShot(x, y, vx, vy, life) {
+    function sendVanShot(x, y, vx, vy, life, small) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
-        _outShots.push({ x: Math.round(x), y: Math.round(y), vx: Math.round(vx), vy: Math.round(vy),
-                         life: life || 1.6, t: Date.now() });
-        _flushEnemySync(true);  // shots go out immediately like kills
+        var shot = { x: Math.round(x), y: Math.round(y), vx: Math.round(vx), vy: Math.round(vy),
+                         life: life || 1.6, t: Date.now() };
+        if (small) shot.small = true;
+        _outShots.push(shot);
+        _flushEnemySync(true);
     }
 
     function sendEnemyKill(enemyId, worldX, worldY) {
