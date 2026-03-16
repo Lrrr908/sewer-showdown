@@ -9480,23 +9480,22 @@ function updateVanProjectiles(dt) {
             continue;
         }
 
-        // Remote projectiles are display-only — skip local damage (handled by enemy_sync)
-        if (proj.remote) continue;
-
-        // Check collision with enemy cars
+        // Check collision with enemies first (before buildings, since walkers stand near buildings)
         var hitSomething = false;
-        if (game.regionEnemies) {
+        if (!proj.remote && game.regionEnemies) {
             for (var ei = 0; ei < game.regionEnemies.length; ei++) {
                 var ce = game.regionEnemies[ei];
-                if (ce.type !== 'car') continue;
                 if (ce.state === 'dead' || ce.state === 'dying') continue;
-                var cecx = ce.x + REGION_ENEMY_CAR_W / 2;
-                var cecy = ce.y + REGION_ENEMY_CAR_H / 2;
+                var _eW, _eH;
+                if (ce.type === 'car') { _eW = REGION_ENEMY_CAR_W; _eH = REGION_ENEMY_CAR_H; }
+                else if (ce.type === 'walker') { _eW = REGION_ENEMY_WALK_W; _eH = REGION_ENEMY_WALK_H; }
+                else continue;
+                var cecx = ce.x + _eW / 2;
+                var cecy = ce.y + _eH / 2;
                 var pdx  = proj.x - cecx, pdy = proj.y - cecy;
-                if (Math.abs(pdx) < REGION_ENEMY_CAR_W / 2 + 8 &&
-                    Math.abs(pdy) < REGION_ENEMY_CAR_H / 2 + 8) {
-                    // Hit — deal full damage to car
-                    ce.hp -= OW_TURTLE_ATK_DMG * 3;  // cannonball hits hard
+                if (Math.abs(pdx) < _eW / 2 + 8 &&
+                    Math.abs(pdy) < _eH / 2 + 8) {
+                    ce.hp -= OW_TURTLE_ATK_DMG * 3;
                     if (ce.hp <= 0) {
                         ce.hp = 0;
                         ce.state = 'dying';
@@ -9512,7 +9511,6 @@ function updateVanProjectiles(dt) {
                         if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyHit(ce.id, ce.hp);
                     }
                     game.owHitSparks.push({ x: proj.x, y: proj.y, life: 0.2, maxLife: 0.2 });
-                    // Extra sparks for satisfying impact
                     for (var _si = 0; _si < 3; _si++) {
                         game.owHitSparks.push({
                             x: proj.x + (Math.random() - 0.5) * 20,
@@ -9527,6 +9525,15 @@ function updateVanProjectiles(dt) {
         }
         if (hitSomething) {
             game.vanProjectiles.splice(pi, 1);
+            continue;
+        }
+
+        // Stop projectile if it hits a building (tile grid or enterable building collision)
+        if (rectHitsCollisionGrid(proj.x - 4, proj.y - 4, 8, 8) ||
+            rectHitsBuildingCollision(proj.x - 4, proj.y - 4, 8, 8)) {
+            game.owHitSparks.push({ x: proj.x, y: proj.y, life: 0.15, maxLife: 0.15 });
+            game.vanProjectiles.splice(pi, 1);
+            continue;
         }
     }
 
