@@ -5819,26 +5819,27 @@ function drawBuilding(b, index) {
                 if (entranceSprite) ctx.drawImage(entranceSprite, bx, by, bw, bh);
             }
         }
-        // Sign tag label (compact, on top of all non-gallery buildings)
-        var signColor = SIGN_COLORS[bt] || '#808080';
-        var signTag = SIGN_TAGS[bt] || bt.substring(0, 3).toUpperCase();
-        // Check if this building's level has been cleared
-        var levelSeed = (game.currentRegionId || 'na') + ':' + b.id;
-        var bCleared = game.progress.levelWins[levelSeed];
-        if (bCleared && (bt === 'arcade' || bt === 'warehouse' || bt === 'dimension_x')) {
-            signColor = '#408040';
-            signTag = 'CLR';
+        // Sign tag label (compact, on top of all non-gallery, non-dimension_x buildings)
+        if (!isDimX) {
+            var signColor = SIGN_COLORS[bt] || '#808080';
+            var signTag = SIGN_TAGS[bt] || bt.substring(0, 3).toUpperCase();
+            var levelSeed = (game.currentRegionId || 'na') + ':' + b.id;
+            var bCleared = game.progress.levelWins[levelSeed];
+            if (bCleared && (bt === 'arcade' || bt === 'warehouse')) {
+                signColor = '#408040';
+                signTag = 'CLR';
+            }
+            ctx.fillStyle = signColor;
+            ctx.fillRect(bx + 8, by - 2, bw - 16, 12);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(bx + 8, by - 2, bw - 16, 12);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 8px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(signTag, bx + bw / 2, by + 8);
+            ctx.textAlign = 'left';
         }
-        ctx.fillStyle = signColor;
-        ctx.fillRect(bx + 8, by - 2, bw - 16, 12);
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(bx + 8, by - 2, bw - 16, 12);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 8px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(signTag, bx + bw / 2, by + 8);
-        ctx.textAlign = 'left';
     }
 
     // Building number badge (artist buildings only)
