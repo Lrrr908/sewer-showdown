@@ -3714,6 +3714,39 @@ function applyMapData(mapData) {
         }
     }
 
+    // ── Phase 4c: Fill road grid gaps (multi-pass) ──
+    // Tiles with road on 3+ cardinal sides are clearly interior gaps.
+    // Run multiple passes so newly-filled tiles enable adjacent gaps to qualify.
+    if (ROAD_GRID && TERRAIN_GRID) {
+        var _totalGapFills = 0;
+        for (var _pass = 0; _pass < 4; _pass++) {
+            var _gapFills = [];
+            for (var gy = 1; gy < h - 1; gy++) {
+                if (!TERRAIN_GRID[gy]) continue;
+                for (var gx = 1; gx < w - 1; gx++) {
+                    var gk = gy * w + gx;
+                    if (ROAD_GRID[gk]) continue;
+                    var gt = TERRAIN_GRID[gy][gx] || 0;
+                    if (gt !== 2 && gt !== 3) continue;
+                    var gAdj = 0;
+                    if (ROAD_GRID[gk - 1]) gAdj++;
+                    if (ROAD_GRID[gk + 1]) gAdj++;
+                    if (ROAD_GRID[gk - w]) gAdj++;
+                    if (ROAD_GRID[gk + w]) gAdj++;
+                    if (gAdj >= 3) _gapFills.push(gk);
+                }
+            }
+            if (_gapFills.length === 0) break;
+            for (var gfi = 0; gfi < _gapFills.length; gfi++) {
+                ROAD_GRID[_gapFills[gfi]] = 1;
+                ROAD_COUNT++;
+                if (!ROAD_TYPE_GRID[_gapFills[gfi]]) ROAD_TYPE_GRID[_gapFills[gfi]] = 1;
+            }
+            _totalGapFills += _gapFills.length;
+        }
+        if (_totalGapFills > 0) console.log('Road gap fill: ' + _totalGapFills + ' tiles patched');
+    }
+
     // ── Phase 5: Bridge computation ──
     BRIDGE_GRID = new Uint8Array(n);
     BRIDGE_COUNT = 0;
@@ -4204,6 +4237,7 @@ async function loadMap(mapPath, reqId) {
         return false;
     }
     generateMap();
+    _buildRoadGraph();
     return true;
 }
 
@@ -8948,6 +8982,390 @@ function _regionEnemyStrSeed(str) {
     return h;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Road Graph — intersection graph + A* pathfinding for smart car AI
+// ══════════════════════════════════════════════════════════════════════════════
+
+var ROAD_GRAPH = null; // { nodes: {key→node}, edges: [], nodeAt: Uint32Array }
+
+function _buildRoadGraph() {
+    ROAD_GRAPH = null;
+    if (!ROAD_GRID || WORLD_WIDTH <= 0 || WORLD_HEIGHT <= 0) return;
+
+    var w = WORLD_WIDTH, h = WORLD_HEIGHT;
+    var nodes = {};
+    var edges = [];
+    var nodeAt = new Uint32Array(w * h);
+    var hasNodeAt = new Uint8Array(w * h);
+
+    // Phase 1: Identify candidate graph nodes (intersections, corners, dead-ends)
+    // For wide roads (2-3 tiles), many tiles appear as 'cross' but are really
+    // just part of a straight wide road. Filter those out using roadFlowDir.
+    for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+            var k = y * w + x;
+            if (!ROAD_GRID[k]) continue;
+            var rn = roadNeighbors(x, y);
+            if (rn.type === 'h' || rn.type === 'v') continue;
+
+            // For 'cross' tiles (4 neighbors), check if this is a real intersection
+            // or just part of a wide straight road. A wide-road tile has a dominant
+            // flow direction — all perpendicular neighbors share the same flow.
+            if (rn.type === 'cross') {
+                var flow = roadFlowDir(x, y);
+                var isWideRoad = true;
+                // Check perpendicular neighbors: for a horizontal wide road,
+                // the tiles above/below should also have flow 'h'
+                if (flow === 'h') {
+                    if (rn.n && roadFlowDir(x, y - 1) !== 'h') isWideRoad = false;
+                    if (rn.s && roadFlowDir(x, y + 1) !== 'h') isWideRoad = false;
+                } else {
+                    if (rn.e && roadFlowDir(x + 1, y) !== 'v') isWideRoad = false;
+                    if (rn.w && roadFlowDir(x - 1, y) !== 'v') isWideRoad = false;
+                }
+                if (isWideRoad) continue; // skip — it's a wide road, not a real intersection
+            }
+
+            nodes[k] = { key: k, tx: x, ty: y, type: rn.type, neighbors: rn, edges: [] };
+        }
+    }
+
+    // Phase 2: Trace edges between nodes in east and south directions
+    var dirs = [
+        { dx: 1, dy: 0, name: 'e', opp: 'w' },
+        { dx: 0, dy: 1, name: 's', opp: 'n' }
+    ];
+    var visited = {};
+
+    for (var nk in nodes) {
+        if (!nodes.hasOwnProperty(nk)) continue;
+        var node = nodes[nk];
+        for (var di = 0; di < dirs.length; di++) {
+            var dir = dirs[di];
+            if (!node.neighbors[dir.name]) continue;
+            var vKey = nk + '-' + dir.name;
+            if (visited[vKey]) continue;
+
+            var tiles = [node.key];
+            var cx = node.tx + dir.dx, cy = node.ty + dir.dy;
+            var foundEnd = null;
+            while (cx >= 0 && cx < w && cy >= 0 && cy < h) {
+                var ck = cy * w + cx;
+                if (!ROAD_GRID[ck]) break;
+                tiles.push(ck);
+                if (nodes[ck]) {
+                    foundEnd = nodes[ck];
+                    break;
+                }
+                cx += dir.dx;
+                cy += dir.dy;
+            }
+
+            if (foundEnd) {
+                var edgeIdx = edges.length;
+                var edgeDir = dir.dx !== 0 ? 'h' : 'v';
+                edges.push({
+                    from: node.key, to: foundEnd.key,
+                    tiles: tiles, length: tiles.length,
+                    dir: edgeDir
+                });
+                node.edges.push(edgeIdx);
+                foundEnd.edges.push(edgeIdx);
+                visited[vKey] = true;
+                visited[foundEnd.key + '-' + dir.opp] = true;
+            }
+        }
+    }
+
+    // Phase 2b: Collapse very short edges (length <= 2) caused by remaining
+    // wide-road artifacts. Merge the two endpoint nodes into one.
+    var merged = {}; // nodeKey → canonical nodeKey
+    function canonical(k) {
+        while (merged[k] !== undefined) k = merged[k];
+        return k;
+    }
+    for (var ei2 = 0; ei2 < edges.length; ei2++) {
+        var se = edges[ei2];
+        if (se.length > 2) continue;
+        var cfrom = canonical(se.from), cto = canonical(se.to);
+        if (cfrom === cto) continue;
+        // Merge cto into cfrom (keep cfrom as the canonical)
+        merged[cto] = cfrom;
+        var mergedNode = nodes[cfrom], deadNode = nodes[cto];
+        if (!mergedNode || !deadNode) continue;
+        // Transfer edges from dead node to merged node
+        for (var me = 0; me < deadNode.edges.length; me++) {
+            var mEdge = edges[deadNode.edges[me]];
+            if (mEdge.from === cto) mEdge.from = cfrom;
+            if (mEdge.to === cto) mEdge.to = cfrom;
+            if (mergedNode.edges.indexOf(deadNode.edges[me]) < 0) {
+                mergedNode.edges.push(deadNode.edges[me]);
+            }
+        }
+    }
+    // Remove self-loop edges and update node references
+    var cleanEdges = [];
+    var edgeRemap = {};
+    for (var ei3 = 0; ei3 < edges.length; ei3++) {
+        var ce = edges[ei3];
+        ce.from = canonical(ce.from);
+        ce.to = canonical(ce.to);
+        if (ce.from === ce.to) continue; // self-loop after merge
+        edgeRemap[ei3] = cleanEdges.length;
+        cleanEdges.push(ce);
+    }
+    edges = cleanEdges;
+    // Remove merged nodes and rebuild edge lists
+    for (var mk in merged) {
+        if (merged.hasOwnProperty(mk)) delete nodes[mk];
+    }
+    for (var nk1 in nodes) {
+        if (!nodes.hasOwnProperty(nk1)) continue;
+        var cn = nodes[nk1];
+        var newEdgeList = [];
+        for (var ce2 = 0; ce2 < cn.edges.length; ce2++) {
+            var remapped = edgeRemap[cn.edges[ce2]];
+            if (remapped !== undefined && newEdgeList.indexOf(remapped) < 0) {
+                newEdgeList.push(remapped);
+            }
+        }
+        cn.edges = newEdgeList;
+    }
+
+    // Phase 3: Build nodeAt lookup
+    for (var ek = 0; ek < edges.length; ek++) {
+        var edge = edges[ek];
+        var half = Math.floor(edge.tiles.length / 2);
+        for (var ti = 0; ti < edge.tiles.length; ti++) {
+            var tileKey = edge.tiles[ti];
+            nodeAt[tileKey] = ti <= half ? edge.from : edge.to;
+            hasNodeAt[tileKey] = 1;
+        }
+    }
+    for (var nk2 in nodes) {
+        if (nodes.hasOwnProperty(nk2)) {
+            nodeAt[+nk2] = +nk2;
+            hasNodeAt[+nk2] = 1;
+        }
+    }
+
+    ROAD_GRAPH = { nodes: nodes, edges: edges, nodeAt: nodeAt, hasNodeAt: hasNodeAt };
+}
+
+// Find the nearest graph node to a tile position
+function _nearestGraphNode(tx, ty) {
+    if (!ROAD_GRAPH) return null;
+    var w = WORLD_WIDTH, h = WORLD_HEIGHT;
+    if (tx < 0 || tx >= w || ty < 0 || ty >= h) return null;
+    var k = ty * w + tx;
+    // Fast path: hasNodeAt marks tiles with a known nearest node
+    if (ROAD_GRAPH.hasNodeAt && ROAD_GRAPH.hasNodeAt[k]) {
+        var nk = ROAD_GRAPH.nodeAt[k];
+        if (ROAD_GRAPH.nodes[nk]) return ROAD_GRAPH.nodes[nk];
+    }
+    // Fallback: BFS from this tile to find a graph node
+    var queue = [k], seen = {};
+    seen[k] = true;
+    var dxs = [1, -1, 0, 0], dys = [0, 0, 1, -1];
+    for (var qi = 0; qi < queue.length && qi < 400; qi++) {
+        var ck = queue[qi];
+        if (ROAD_GRAPH.nodes[ck]) return ROAD_GRAPH.nodes[ck];
+        var cx2 = ck % w, cy2 = Math.floor(ck / w);
+        for (var d = 0; d < 4; d++) {
+            var nx = cx2 + dxs[d], ny = cy2 + dys[d];
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            var nk2 = ny * w + nx;
+            if (!ROAD_GRID[nk2] || seen[nk2]) continue;
+            seen[nk2] = true;
+            queue.push(nk2);
+        }
+    }
+    return null;
+}
+
+// A* pathfinding on the road graph. Returns array of node keys or null.
+function _roadGraphAStar(fromKey, toKey) {
+    if (!ROAD_GRAPH || fromKey === toKey) return fromKey === toKey ? [fromKey] : null;
+    var nodes = ROAD_GRAPH.nodes, edges = ROAD_GRAPH.edges;
+    if (!nodes[fromKey] || !nodes[toKey]) return null;
+
+    var toNode = nodes[toKey];
+    var w = WORLD_WIDTH;
+
+    // Priority queue (simple array, sorted by f)
+    var open = [{ key: fromKey, g: 0, f: 0 }];
+    var gScore = {};
+    var cameFrom = {};
+    gScore[fromKey] = 0;
+
+    function heuristic(nodeKey) {
+        var n = nodes[nodeKey];
+        return Math.abs(n.tx - toNode.tx) + Math.abs(n.ty - toNode.ty);
+    }
+
+    var iterations = 0;
+    while (open.length > 0 && iterations < 2000) {
+        iterations++;
+        // Find lowest f in open set
+        var bestIdx = 0;
+        for (var oi = 1; oi < open.length; oi++) {
+            if (open[oi].f < open[bestIdx].f) bestIdx = oi;
+        }
+        var current = open[bestIdx];
+        open.splice(bestIdx, 1);
+
+        if (current.key === toKey) {
+            // Reconstruct path
+            var path = [toKey];
+            var pk = toKey;
+            while (cameFrom[pk] !== undefined) {
+                pk = cameFrom[pk];
+                path.push(pk);
+            }
+            path.reverse();
+            return path;
+        }
+
+        var cNode = nodes[current.key];
+        for (var ei = 0; ei < cNode.edges.length; ei++) {
+            var edge = edges[cNode.edges[ei]];
+            var neighborKey = edge.from === current.key ? edge.to : edge.from;
+            var tentG = current.g + edge.length;
+
+            if (gScore[neighborKey] !== undefined && tentG >= gScore[neighborKey]) continue;
+            gScore[neighborKey] = tentG;
+            cameFrom[neighborKey] = current.key;
+
+            // Check if already in open
+            var inOpen = false;
+            for (var oj = 0; oj < open.length; oj++) {
+                if (open[oj].key === neighborKey) {
+                    open[oj].g = tentG;
+                    open[oj].f = tentG + heuristic(neighborKey);
+                    inOpen = true;
+                    break;
+                }
+            }
+            if (!inOpen) {
+                open.push({ key: neighborKey, g: tentG, f: tentG + heuristic(neighborKey) });
+            }
+        }
+    }
+    return null; // no path
+}
+
+// Given current tile and next graph node, return the cardinal direction to drive
+function _dirToward(fromTx, fromTy, toTx, toTy) {
+    var dx = toTx - fromTx, dy = toTy - fromTy;
+    if (dx === 0 && dy === 0) return 'right'; // same tile fallback
+    if (Math.abs(dx) >= Math.abs(dy)) {
+        return dx > 0 ? 'right' : 'left';
+    }
+    return dy > 0 ? 'down' : 'up';
+}
+
+// Build a patrol route (list of node keys) starting from a given node.
+// Strategy: random walk up to 60 nodes. At each step, if we can loop back
+// to the start via A* with a short detour, close the loop. This produces
+// natural-looking circuits. Falls back to out-and-back if no loop found.
+function _buildPatrolRoute(startKey, rng) {
+    if (!ROAD_GRAPH || !ROAD_GRAPH.nodes[startKey]) return null;
+    var nodes = ROAD_GRAPH.nodes, edges = ROAD_GRAPH.edges;
+    var route = [startKey];
+    var visited = {};
+    visited[startKey] = true;
+    var current = startKey;
+
+    for (var step = 0; step < 60; step++) {
+        var cNode = nodes[current];
+        if (!cNode || cNode.edges.length === 0) break;
+
+        var candidates = [];
+        var canLoopDirect = false;
+        for (var ei = 0; ei < cNode.edges.length; ei++) {
+            var edge = edges[cNode.edges[ei]];
+            var neighbor = edge.from === current ? edge.to : edge.from;
+            if (neighbor === startKey && route.length >= 4) {
+                canLoopDirect = true;
+            }
+            if (!visited[neighbor]) candidates.push(neighbor);
+        }
+
+        // Direct loop back to start
+        if (canLoopDirect && route.length >= 4) {
+            route.push(startKey);
+            return route;
+        }
+
+        // After building up enough length, try to find a short path back to
+        // start through unvisited (or lightly-visited) nodes using BFS
+        if (route.length >= 6 && step % 3 === 0) {
+            var loopPath = _findShortReturn(current, startKey, visited, 8);
+            if (loopPath) {
+                for (var lp = 1; lp < loopPath.length; lp++) route.push(loopPath[lp]);
+                return route;
+            }
+        }
+
+        if (candidates.length === 0) break;
+
+        // Prefer longer edges (more interesting patrol stretches)
+        candidates.sort(function(a, b) {
+            return b - a; // rough sort — higher node keys tend to be farther
+        });
+        // Weighted random: favor first candidate slightly
+        var pick = 0;
+        if (candidates.length > 1) {
+            pick = rng() < 0.6 ? 0 : Math.floor(rng() * candidates.length);
+        }
+        var next = candidates[pick];
+        visited[next] = true;
+        route.push(next);
+        current = next;
+    }
+
+    // No loop found — out-and-back
+    if (route.length > 1) {
+        for (var ri = route.length - 2; ri >= 0; ri--) {
+            route.push(route[ri]);
+        }
+    }
+    return route.length > 1 ? route : null;
+}
+
+// BFS to find a short path from 'fromKey' back to 'targetKey', allowing
+// traversal through already-visited nodes. Max depth limited.
+function _findShortReturn(fromKey, targetKey, visitedNodes, maxDepth) {
+    if (!ROAD_GRAPH) return null;
+    var nodes = ROAD_GRAPH.nodes, edges = ROAD_GRAPH.edges;
+    var queue = [{ key: fromKey, path: [fromKey] }];
+    var seen = {};
+    seen[fromKey] = true;
+
+    for (var qi = 0; qi < queue.length && qi < 200; qi++) {
+        var item = queue[qi];
+        if (item.path.length > maxDepth) continue;
+        var cNode = nodes[item.key];
+        if (!cNode) continue;
+
+        for (var ei = 0; ei < cNode.edges.length; ei++) {
+            var edge = edges[cNode.edges[ei]];
+            var neighbor = edge.from === item.key ? edge.to : edge.from;
+            if (neighbor === targetKey) {
+                var result = item.path.slice();
+                result.push(targetKey);
+                return result;
+            }
+            if (seen[neighbor]) continue;
+            seen[neighbor] = true;
+            var np = item.path.slice();
+            np.push(neighbor);
+            queue.push({ key: neighbor, path: np });
+        }
+    }
+    return null;
+}
+
 // Returns true if the center of a car placed at (x,y) sits on a road tile.
 function _carCenterOnRoad(x, y) {
     var cx = Math.floor((x + REGION_ENEMY_CAR_W / 2) / TILE_SIZE);
@@ -8972,62 +9390,54 @@ function _tickEnemyArray(arr, dt) {
         if (e.aiState && e.aiState !== 'patrol') continue;  // AI-controlled enemies updated per-frame
 
         if (e.type === 'car') {
+            // ── CarAI Module handles smart behavior ──
+            if (e._carBrain && typeof CarAI !== 'undefined') {
+                // Use CarAI for direction decisions (patrol mode only in tick)
+                e.direction = CarAI.update(e, e._carBrain, dt, 0, 0, 0, false);
+            }
+
+            // Movement with road constraint
             var ndx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
             var ndy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
             var nx  = e.x + ndx * e.speed * dt;
             var ny  = e.y + ndy * e.speed * dt;
 
-            // World-edge bounce
+            // World edge bounce
             if (nx < 0 || nx + REGION_ENEMY_CAR_W > worldPxW) {
                 e.direction = (e.direction === 'left') ? 'right' : 'left';
                 nx = Math.max(0, Math.min(worldPxW - REGION_ENEMY_CAR_W, nx));
-                ndx = -ndx;
             }
             if (ny < 0 || ny + REGION_ENEMY_CAR_H > worldPxH) {
                 e.direction = (e.direction === 'up') ? 'down' : 'up';
                 ny = Math.max(0, Math.min(worldPxH - REGION_ENEMY_CAR_H, ny));
-                ndy = -ndy;
             }
 
-            // Road check — if next step leaves the road, find a road direction
-            if (!_carCenterOnRoad(nx, ny)) {
-                var turned = false;
+            // Road constraint - only move if staying on road
+            if (_carCenterOnRoad(nx, ny)) {
+                e.x = nx;
+                e.y = ny;
+            } else {
+                // Try to find any valid road direction
                 for (var d = 0; d < _carDirs.length; d++) {
                     var td = _carDirs[d];
-                    if (td === e.direction) continue;
                     var tdx = td === 'right' ? 1 : td === 'left' ? -1 : 0;
                     var tdy = td === 'down'  ? 1 : td === 'up'   ? -1 : 0;
                     var tnx = e.x + tdx * e.speed * dt;
                     var tny = e.y + tdy * e.speed * dt;
                     if (_carCenterOnRoad(tnx, tny)) {
                         e.direction = td;
-                        nx = tnx; ny = tny;
-                        e.dirChangeTimer = 1 + e._rng() * 2;
-                        turned = true;
+                        e.x = tnx;
+                        e.y = tny;
                         break;
                     }
                 }
-                if (!turned) { nx = e.x; ny = e.y; e.dirChangeTimer = 0.1; }
             }
 
-            e.x = nx; e.y = ny;
-
-            // Periodic direction change (simulates turning at intersections)
+            // Consume RNG for determinism (even though CarAI handles direction)
             e.dirChangeTimer -= dt;
             if (e.dirChangeTimer <= 0) {
-                var rng = e._rng;
-                // Prefer perpendicular turn onto a road if possible
-                var perp = (e.direction === 'left' || e.direction === 'right')
-                    ? (rng() < 0.5 ? 'up' : 'down')
-                    : (rng() < 0.5 ? 'left' : 'right');
-                var want = rng() < 0.6 ? perp : _carDirs[Math.floor(rng() * 4)];
-                // Only turn if the wanted direction has road
-                var wtdx = want === 'right' ? 1 : want === 'left' ? -1 : 0;
-                var wtdy = want === 'down'  ? 1 : want === 'up'   ? -1 : 0;
-                if (_carCenterOnRoad(e.x + wtdx * e.speed * dt, e.y + wtdy * e.speed * dt)) {
-                    e.direction = want;
-                }
-                e.dirChangeTimer = 2 + rng() * 4;
+                e._rng(); e._rng(); e._rng(); e._rng();
+                e.dirChangeTimer = 2 + e._rng() * 4;
             }
 
         } else { // walker — land roaming (no road constraint, but must stay on land)
@@ -9142,7 +9552,11 @@ function _updateEnemyAI(e, dt, targetX, targetY) {
             // Transition: detect target
             if (dist < detectR) {
                 e.aiState = isCar ? 'chase' : 'investigate';
-                if (isCar) e.direction = _carChaseDirection(e, targetX, targetY, false);
+                if (isCar) {
+                    e.direction = _carChaseDirection(e, targetX, targetY, false);
+                    e._chasePath = null;
+                    e._chaseRepath = 0; // compute path immediately on next frame
+                }
             }
             break;
 
@@ -9151,6 +9565,7 @@ function _updateEnemyAI(e, dt, targetX, targetY) {
             // Back to patrol if target out of range
             if (dist > detectR * 1.5) {
                 e.aiState = 'patrol';
+                if (e._carBrain) e._carBrain.state = 'patrol';
                 break;
             }
             // Transition to attack
@@ -9158,22 +9573,31 @@ function _updateEnemyAI(e, dt, targetX, targetY) {
                 e.aiState = 'attack';
                 break;
             }
-            // Move toward target
+            // Move toward target using CarAI
             if (isCar) {
-                var chaseDir = _carChaseDirection(e, targetX, targetY, false);
-                e.direction = chaseDir;
-                var cSpeed = e.speed * OW_CHASE_SPEED_MULT;
-                var cDx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
-                var cDy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
-                var cnx = e.x + cDx * cSpeed * dt;
-                var cny = e.y + cDy * cSpeed * dt;
-                if (_carCenterOnRoad(cnx, cny)) {
-                    e.x = cnx; e.y = cny;
+                if (e._carBrain && typeof CarAI !== 'undefined') {
+                    // Let CarAI handle chase pathfinding
+                    e.direction = CarAI.update(e, e._carBrain, dt, targetX, targetY, detectR, true);
+                    var cSpeed = CarAI.getSpeed(e._carBrain);
+                    var cDx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+                    var cDy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+                    var cnx = e.x + cDx * cSpeed * dt;
+                    var cny = e.y + cDy * cSpeed * dt;
+                    if (_carCenterOnRoad(cnx, cny)) {
+                        e.x = cnx; e.y = cny;
+                    }
                 } else {
-                    // Try the current direction without speed boost
-                    var cnx2 = e.x + cDx * e.speed * dt;
-                    var cny2 = e.y + cDy * e.speed * dt;
-                    if (_carCenterOnRoad(cnx2, cny2)) { e.x = cnx2; e.y = cny2; }
+                    // Fallback to simple chase
+                    var chaseDir = _carChaseDirection(e, targetX, targetY, false);
+                    e.direction = chaseDir;
+                    var cSpeed2 = e.speed * OW_CHASE_SPEED_MULT;
+                    var cDx2 = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+                    var cDy2 = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+                    var cnx2 = e.x + cDx2 * cSpeed2 * dt;
+                    var cny2 = e.y + cDy2 * cSpeed2 * dt;
+                    if (_carCenterOnRoad(cnx2, cny2)) {
+                        e.x = cnx2; e.y = cny2;
+                    }
                 }
             } else {
                 // Walker: move directly toward turtle
@@ -9308,6 +9732,9 @@ function _spawnSectorEnemies(sx, sy) {
             atkCooldown: 0, stunTimer: 0,
             kbVx: 0, kbVy: 0, kbTimer: 0,
             ramCooldown: 0, deathFlash: 0,
+            _carBrain: typeof CarAI !== 'undefined' ? CarAI.createBrain() : null,
+            width: REGION_ENEMY_CAR_W,
+            height: REGION_ENEMY_CAR_H,
         });
     }
     for (var ww = 0; ww < numWalkers; ww++) {
@@ -9340,6 +9767,51 @@ function _spawnSectorEnemies(sx, sy) {
         _tickEnemyArray(newEnemies, REGION_ENEMY_SIM_STEP);
     }
 
+    // After fast-forward, orient cars to match the road at their current position.
+    // Done OUTSIDE the deterministic sim so it doesn't shift the RNG sequence.
+    if (ROAD_GRID) {
+        for (var _ori = 0; _ori < newEnemies.length; _ori++) {
+            var _oe = newEnemies[_ori];
+            if (_oe.type !== 'car') continue;
+            var _otx = Math.floor((_oe.x + REGION_ENEMY_CAR_W / 2) / TILE_SIZE);
+            var _oty = Math.floor((_oe.y + REGION_ENEMY_CAR_H / 2) / TILE_SIZE);
+            if (_otx < 0 || _otx >= WORLD_WIDTH || _oty < 0 || _oty >= WORLD_HEIGHT) continue;
+            var _oIdx = _oty * WORLD_WIDTH + _otx;
+            var _oH = (_otx > 0 && ROAD_GRID[_oIdx - 1]) || (_otx < WORLD_WIDTH - 1 && ROAD_GRID[_oIdx + 1]);
+            var _oV = (_oty > 0 && ROAD_GRID[_oIdx - WORLD_WIDTH]) || (_oty < WORLD_HEIGHT - 1 && ROAD_GRID[_oIdx + WORLD_WIDTH]);
+            if (_oH && !_oV) {
+                if (_oe.direction === 'up' || _oe.direction === 'down')
+                    _oe.direction = (_oe.direction === 'up') ? 'left' : 'right';
+            } else if (_oV && !_oH) {
+                if (_oe.direction === 'left' || _oe.direction === 'right')
+                    _oe.direction = (_oe.direction === 'left') ? 'up' : 'down';
+            }
+        }
+    }
+
+    // Assign patrol routes from the road graph (OUTSIDE deterministic sim)
+    if (ROAD_GRAPH) {
+        for (var _ri = 0; _ri < newEnemies.length; _ri++) {
+            var _re = newEnemies[_ri];
+            if (_re.type !== 'car') continue;
+            var _rtx = Math.floor((_re.x + REGION_ENEMY_CAR_W / 2) / TILE_SIZE);
+            var _rty = Math.floor((_re.y + REGION_ENEMY_CAR_H / 2) / TILE_SIZE);
+            var _startNode = _nearestGraphNode(_rtx, _rty);
+            if (_startNode) {
+                var _route = _buildPatrolRoute(_startNode.key, _re._rng);
+                if (_route) {
+                    _re._patrolRoute = _route;
+                    _re._patrolIdx = 0;
+                    // Set initial direction toward first waypoint
+                    var _firstWp = ROAD_GRAPH.nodes[_route[0]];
+                    if (_firstWp) {
+                        _re.direction = _dirToward(_rtx, _rty, _firstWp.tx, _firstWp.ty);
+                    }
+                }
+            }
+        }
+    }
+
     var killedIds = game._killedEnemyIds;
     for (var ni = 0; ni < newEnemies.length; ni++) {
         if (killedIds && killedIds.has(newEnemies[ni].id)) continue;  // don't re-spawn killed enemies
@@ -9370,12 +9842,19 @@ function _refreshEnemySectors() {
         }
     }
 
-    // Drop enemies from sectors that left range (keep dying enemies until animation finishes)
+    // Drop enemies that are currently outside the active sector range.
+    // Use the enemy's CURRENT position (not spawn sector) so routed cars
+    // that have driven far from their origin don't vanish near the player.
     for (var i = game.regionEnemies.length - 1; i >= 0; i--) {
         var _re_e = game.regionEnemies[i];
-        if (_re_e.state === 'dying') continue; // let death animation finish
-        var sk = _re_e._sectorKey;
-        if (sk && !active[sk]) game.regionEnemies.splice(i, 1);
+        if (_re_e.state === 'dying') continue;
+        var _ew = _re_e.type === 'car' ? REGION_ENEMY_CAR_W : REGION_ENEMY_WALK_W;
+        var _eh = _re_e.type === 'car' ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H;
+        var _eSX = Math.floor(Math.floor((_re_e.x + _ew / 2) / TILE_SIZE) / ENEMY_SECTOR_SIZE);
+        var _eSY = Math.floor(Math.floor((_re_e.y + _eh / 2) / TILE_SIZE) / ENEMY_SECTOR_SIZE);
+        var _eCurKey = _eSX + ',' + _eSY;
+        _re_e._sectorKey = _eCurKey;
+        if (!active[_eCurKey]) game.regionEnemies.splice(i, 1);
     }
 
     // Spawn any newly-needed sectors
@@ -9403,6 +9882,11 @@ function spawnRegionEnemies() {
     game._lastEnemySY    = null;
     if (game.mode !== 'REGION') return;
     if (!ROAD_GRID || typeof WORLD_WIDTH !== 'number' || typeof WORLD_HEIGHT !== 'number') return;
+
+    // Initialize CarAI module with road data
+    if (typeof CarAI !== 'undefined') {
+        CarAI.setRoadData(ROAD_GRID, ROAD_GRAPH, WORLD_WIDTH, WORLD_HEIGHT, TILE_SIZE);
+    }
 
     // Align epoch to a 1-minute window so all clients share the same clock start
     game._enemyEpochMs   = Math.floor(Date.now() / REGION_ENEMY_EPOCH_MS) * REGION_ENEMY_EPOCH_MS;
@@ -10706,6 +11190,7 @@ function draw() {
                     }
                     continue;
                 }
+                // Road gap fill handled at generation time (Phase 4c)
                 // Sidewalk overlay on grass tiles adjacent to roads
                 if (SIDEWALK_GRID && SIDEWALK_GRID[key]) {
                     NES.drawTileStretched(ctx, sx, sy, TILE_SIZE, TILE_SIZE, 'sidewalk');
