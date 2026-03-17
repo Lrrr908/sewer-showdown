@@ -6156,9 +6156,10 @@ function _smoothRemotePos(_rp) {
     if (!_remoteAnimState[id]) {
         _remoteAnimState[id] = {
             rx: 0, ry: 0,
-            vx: 0, vy: 0,            // velocity estimate in px/ms
+            vx: 0, vy: 0,            // velocity in px/ms
             prevTargetX: 0, prevTargetY: 0,
-            lastPacketMs: 0,
+            lastMoveMs: 0,           // when target last changed position
+            lastRenderMs: 0,         // for dt calculation
             frame: 0, animTimer: 0, lastPx: 0, lastPy: 0,
             atkPhase: 'IDLE', atkTimer: 0, atkFrame: 0
         };
@@ -6168,43 +6169,55 @@ function _smoothRemotePos(_rp) {
     var targetY = _rp.py != null ? _rp.py : _rp.y * TILE_SIZE;
     var nowMs = Date.now();
 
-    // First-time init — snap sprite to position
-    if (st.rx === 0 && st.ry === 0) {
+    // Wall-clock dt so smoothing is frame-rate independent
+    var renderDt = st.lastRenderMs > 0 ? Math.min((nowMs - st.lastRenderMs) / 1000.0, 0.1) : 0.016;
+    st.lastRenderMs = nowMs;
+
+    // First-time init — snap to exact position
+    if (st.lastMoveMs === 0) {
         st.rx = targetX; st.ry = targetY;
         st.prevTargetX = targetX; st.prevTargetY = targetY;
-        st.lastPacketMs = nowMs;
+        st.lastMoveMs = nowMs;
     }
 
-    // Detect a new packet (target moved) — update velocity estimate
+    // Target moved → update velocity estimate
     if (targetX !== st.prevTargetX || targetY !== st.prevTargetY) {
-        var elapsed = nowMs - st.lastPacketMs;
-        if (elapsed > 0 && elapsed < 500) {          // sanity-clamp burst/stall
-            st.vx = (targetX - st.prevTargetX) / elapsed;  // px/ms
+        var elapsed = nowMs - st.lastMoveMs;
+        if (elapsed > 5 && elapsed < 500) {
+            st.vx = (targetX - st.prevTargetX) / elapsed;
             st.vy = (targetY - st.prevTargetY) / elapsed;
         }
         st.prevTargetX = targetX;
         st.prevTargetY = targetY;
-        st.lastPacketMs = nowMs;
+        st.lastMoveMs = nowMs;
+    } else {
+        // Player hasn't moved — decay velocity to zero so we stop overshooting
+        st.vx *= 0.85;
+        st.vy *= 0.85;
     }
 
-    // Dead-reckoning: extrapolate where the player probably is right now
-    // Cap extrapolation at 150 ms so a stalled packet doesn't walk them off-screen
-    var extrapMs = Math.min(nowMs - st.lastPacketMs, 150);
+    // Dead-reckoning: project forward from last known position
+    // Cap at one packet interval (60 ms) to avoid runaway drift
+    var extrapMs = Math.min(nowMs - st.lastMoveMs, 60);
     var extrapX  = targetX + st.vx * extrapMs;
     var extrapY  = targetY + st.vy * extrapMs;
 
+    // Exponential smoothing — frame-rate independent, closes ~94% of gap per 50 ms
     var dx = extrapX - st.rx;
     var dy = extrapY - st.ry;
     var dist = Math.sqrt(dx * dx + dy * dy);
     var moving = dist > 2;
-    if (dist > 700) { st.rx = extrapX; st.ry = extrapY; } // hard-snap on true teleport only
-    else if (moving) {
-        // Gentle correction — dead reckoning already handles most of the gap
-        var lerp = dist > 150 ? 0.30 : 0.20;
-        st.rx += dx * lerp; st.ry += dy * lerp;
+    if (dist > 600) {
+        st.rx = extrapX; st.ry = extrapY; // hard-snap only on true teleport
+    } else if (moving) {
+        var alpha = 1.0 - Math.exp(-55 * renderDt); // ~56% per frame at 60fps → 94% per 50ms
+        st.rx += dx * alpha;
+        st.ry += dy * alpha;
     }
+
+    // Animation driven by wall-clock dt
     if (moving) {
-        st.animTimer += 0.016;
+        st.animTimer += renderDt;
         if (st.animTimer >= 0.15) { st.animTimer -= 0.15; st.frame = (st.frame + 1) % 2; }
     } else { st.frame = 0; st.animTimer = 0; }
     st.lastPx = targetX; st.lastPy = targetY;
@@ -6226,7 +6239,7 @@ function _smoothRemotePos(_rp) {
         st.atkFrame = 0;
     }
     if (st.atkPhase !== 'IDLE') {
-        st.atkTimer -= 0.016;
+        st.atkTimer -= renderDt;
         if (st.atkTimer <= 0) {
             if (st.atkPhase === 'WINDUP')      { st.atkPhase = 'ACTIVE';   st.atkTimer = ATK_ACTIVE;   st.atkFrame = 0; }
             else if (st.atkPhase === 'ACTIVE') { st.atkPhase = 'RECOVERY'; st.atkTimer = ATK_RECOVERY; st.atkFrame = 0; }
@@ -6267,6 +6280,7 @@ function _drawRemotePlayer(_rp) {
             ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.85;
             ctx.translate(_rvx + _rvDrawW / 2, _rvy + _rvDrawH / 2);
             if (_rvFlip) ctx.scale(-1, 1);
+            if (_rp.ps) { var _rvHue = (Date.now() / 5) % 360; ctx.filter = 'hue-rotate(' + Math.round(_rvHue) + 'deg) saturate(2) brightness(1.25)'; }
             if (_rvPatKey) { var _rvScale = _rvDrawW / 32; NES.drawSprite(ctx, -_rvDrawW / 2, -_rvDrawH / 2, _rvPatKey, _rvScale); }
             ctx.restore();
         }
@@ -6304,6 +6318,7 @@ function _drawRemotePlayer(_rp) {
         ctx.save(); ctx.imageSmoothingEnabled = false;
         ctx.translate(_rpx + _rDrawW / 2, _rpy + _rDrawH / 2);
         if (_rFlip) ctx.scale(-1, 1);
+        if (_rp.ps) { var _rHue = (Date.now() / 5) % 360; ctx.filter = 'hue-rotate(' + Math.round(_rHue) + 'deg) saturate(2) brightness(1.25)'; }
         if (_rPatKey && typeof NES !== 'undefined') { var _rScale = _rDrawW / 32; NES.drawSprite(ctx, -_rDrawW / 2, -_rDrawH / 2, _rPatKey, _rScale); }
         else { ctx.fillStyle = 'rgba(0, 200, 255, 0.7)'; ctx.fillRect(-_rDrawW / 2, -_rDrawH / 2, _rDrawW, _rDrawH); }
         ctx.restore();
@@ -9000,7 +9015,7 @@ var REGION_ENEMY_EPOCH_MS     = 60 * 60 * 1000; // 1-hour window; enemies reset 
 
 // Sector tunables
 var ENEMY_SECTOR_SIZE         = 20;   // tiles per sector side (20×20 = 400 tiles)
-var ENEMY_SECTOR_RADIUS       = 2;    // active sector radius around player (5×5 grid)
+var ENEMY_SECTOR_RADIUS       = 1;    // active sector radius around player (3×3 grid)
 var ENEMY_SECTOR_CARS         = 1;    // car enemies per sector
 var ENEMY_SECTOR_WALKERS      = 3;    // walker enemies per sector
 // Global cap: no single client will ever hold more than this many live enemies.
@@ -9015,6 +9030,7 @@ var OW_ATTACK_CAR       = 96;    // px — car ram contact radius
 var OW_ATTACK_WALK      = 44;    // px — walker melee contact radius
 var OW_MELEE_DAMAGE     = 10;    // walker → turtle damage per hit
 var OW_RAM_DAMAGE       = 25;    // car → van damage per ram
+var OW_CAR_FOOT_DAMAGE  = 8;     // car → on-foot turtle damage per hit
 var OW_TURTLE_ATK_DMG   = 15;    // turtle melee → enemy damage
 var OW_TURTLE_ATK_RANGE = 44;    // px radius of turtle attack arc
 var OW_STUN_TIME        = 0.5;   // seconds enemy stays stunned after being hit
@@ -10333,7 +10349,15 @@ function _spawnSectorEnemies(sx, sy) {
         for (var tx = tileX0; tx <= tileX1; tx++) {
             var k = ty * WORLD_WIDTH + tx;
             if (ROAD_GRID[k]) {
-                roadTiles.push(k);
+                // Only include road tiles that have at least one road neighbour so
+                // cars never spawn on an isolated or dead-end tile with nowhere to go
+                var hasNeighbour = (
+                    (tx > 0              && ROAD_GRID[ty * WORLD_WIDTH + (tx - 1)]) ||
+                    (tx < WORLD_WIDTH-1  && ROAD_GRID[ty * WORLD_WIDTH + (tx + 1)]) ||
+                    (ty > 0              && ROAD_GRID[(ty - 1) * WORLD_WIDTH + tx]) ||
+                    (ty < WORLD_HEIGHT-1 && ROAD_GRID[(ty + 1) * WORLD_WIDTH + tx])
+                );
+                if (hasNeighbour) roadTiles.push(k);
             } else if (TERRAIN_GRID && TERRAIN_GRID[ty]) {
                 var tt = TERRAIN_GRID[ty][tx];
                 if (tt === 2 || tt === 3) walkTiles.push(k);
@@ -10349,11 +10373,19 @@ function _spawnSectorEnemies(sx, sy) {
     for (var c = 0; c < numCars; c++) {
         var cidx  = roadTiles[Math.floor(rng() * roadTiles.length)];
         var eid   = 'ec_' + sKey + '_' + c;
+        var _ctx  = cidx % WORLD_WIDTH, _cty = Math.floor(cidx / WORLD_WIDTH);
+        // Pick an initial direction that actually has a road neighbour
+        var _validDirs = [];
+        if (_ctx > 0              && ROAD_GRID[_cty * WORLD_WIDTH + (_ctx - 1)]) _validDirs.push('left');
+        if (_ctx < WORLD_WIDTH-1  && ROAD_GRID[_cty * WORLD_WIDTH + (_ctx + 1)]) _validDirs.push('right');
+        if (_cty > 0              && ROAD_GRID[(_cty - 1) * WORLD_WIDTH + _ctx]) _validDirs.push('up');
+        if (_cty < WORLD_HEIGHT-1 && ROAD_GRID[(_cty + 1) * WORLD_WIDTH + _ctx]) _validDirs.push('down');
+        var _startDir = _validDirs.length > 0 ? _validDirs[Math.floor(rng() * _validDirs.length)] : dirs4[Math.floor(rng() * 4)];
         newEnemies.push({
             id: eid, type: 'car',
-            x: (cidx % WORLD_WIDTH) * TILE_SIZE,
-            y: Math.floor(cidx / WORLD_WIDTH) * TILE_SIZE,
-            direction: dirs4[Math.floor(rng() * 4)],
+            x: _ctx * TILE_SIZE,
+            y: _cty * TILE_SIZE,
+            direction: _startDir,
             speed: REGION_ENEMY_CAR_SPEED + rng() * 32,
             hp: 45, maxHp: 45, state: 'patrol',
             deathTimer: 0, animTimer: rng() * 0.3, frame: 0,
@@ -11089,7 +11121,38 @@ function updateRegionEnemies(dt) {
         }
     }
 
-    // ── C: Car → van ───────────────────────────────────────────────────────
+    // ── C: Car → on-foot turtle ────────────────────────────────────────────
+    if (isOnFoot) {
+        var _cft = game.turtle;
+        if (_cft.invTimer <= 0) {
+            var _cftCx = _cft.x + _cft.width  / 2;
+            var _cftCy = _cft.y + _cft.height / 2;
+            for (var _cfi = 0; _cfi < game.regionEnemies.length; _cfi++) {
+                var _cfe = game.regionEnemies[_cfi];
+                if (_cfe.type !== 'car') continue;
+                if (_cfe.aiState !== 'attack') continue; // only deal damage on full ram, not while chasing
+                if (_cfe.state === 'dead' || _cfe.state === 'dying') continue;
+                if (_cfe.ramCooldown > 0) continue;
+                var _cfex = _cfe.x + REGION_ENEMY_CAR_W / 2;
+                var _cfey = _cfe.y + REGION_ENEMY_CAR_H / 2;
+                var _cfdx = _cftCx - _cfex, _cfdy = _cftCy - _cfey;
+                if (Math.sqrt(_cfdx * _cfdx + _cfdy * _cfdy) <= OW_ATTACK_CAR * 0.6) {
+                    _cft.hp -= OW_CAR_FOOT_DAMAGE;
+                    if (_cft.hp < 0) _cft.hp = 0;
+                    game.party.hp[game.activeTurtle] = _cft.hp;
+                    _cfe.ramCooldown = 1.2;
+                    _cft.invTimer = OW_INV_TIME * 5; // enough time to escape after a ram
+                    var _cfkd = Math.sqrt(_cfdx * _cfdx + _cfdy * _cfdy) || 1;
+                    _cft.kbVx = (_cfdx / _cfkd) * OW_KB_SPEED * 1.5;
+                    _cft.kbVy = (_cfdy / _cfkd) * OW_KB_SPEED * 1.5;
+                    _cft.kbTimer = OW_KB_TIME;
+                    game.owHitSparks.push({ x: (_cfex + _cftCx) / 2, y: (_cfey + _cftCy) / 2, life: 0.2, maxLife: 0.2 });
+                }
+            }
+        }
+    }
+
+    // ── D: Car → van ───────────────────────────────────────────────────────
     if (!isOnFoot && game.van.respawnInv <= 0) {
         var van = game.player;
         var vanCx = van.x + van.width  / 2;

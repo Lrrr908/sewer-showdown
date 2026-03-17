@@ -1215,6 +1215,8 @@ var MP = (function () {
             msg.vpy = Math.round(vanPy);
             msg.vf = vanDir || 's';
         }
+        // Broadcast pizza star state so remote players see the rainbow effect
+        if (typeof game !== 'undefined' && game.pizzaStar > 0) msg.ps = 1;
         ws.send(JSON.stringify(msg));
     }
 
