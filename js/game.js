@@ -20,7 +20,7 @@ const BRAND = {
 // ============================================
 
 const SAVE_KEY = 'sewerShowdown_save';
-const SAVE_VERSION = 4;
+const SAVE_VERSION = 5;
 
 function saveGame() {
     try {
@@ -44,7 +44,8 @@ function saveGame() {
                 activeTurtle: game.activeTurtle || 'leo',
                 vanX: game.van ? game.van.x : 0,
                 vanY: game.van ? game.van.y : 0,
-                vanDir: game.van ? game.van.direction : 'down'
+                vanDir: game.van ? game.van.direction : 'down',
+                vanHp: game.player ? game.player.hp : OW_VAN_MAX_HP
             },
             party: {
                 hp: Object.assign({}, game.party.hp),
@@ -79,6 +80,8 @@ function loadSave() {
         }
         // Migrate v2/v3 -> v4: party hp/status added (no data to copy; defaults are fine)
         if (blob.version < 4) blob.version = 4;
+        // Migrate v4 -> v5: van HP persistence added (default to full health for old saves)
+        if (blob.version < 5) blob.version = 5;
         if (blob.progress) {
             if (blob.progress.levelWins) {
                 for (var k in blob.progress.levelWins) {
@@ -115,6 +118,12 @@ function loadSave() {
         }
         if (blob.position) {
             game._savedPosition = blob.position;
+            // Restore van HP so damage persists across refreshes
+            if (blob.position.vanHp != null && game.player) {
+                var _savedVanHp = Math.max(1, Math.min(blob.position.vanHp, OW_VAN_MAX_HP));
+                game.player.hp = _savedVanHp;
+                game.van.hp    = _savedVanHp;
+            }
         }
         console.log('Save loaded (' + Object.keys(game.progress.levelWins).length + ' wins, saved ' + new Date(blob.timestamp).toLocaleString() + (game._savedPosition ? ', pos ' + Math.round(game._savedPosition.x) + ',' + Math.round(game._savedPosition.y) : '') + ')');
     } catch (e) {
@@ -9133,7 +9142,10 @@ function _syncPartyHp() {
 
 function _triggerGameOver() {
     console.log('[party] GAME OVER - all turtles dead');
-    
+
+    // Submit 0 to remove this player from the global leaderboard immediately on death
+    _submitScoreToServer(0);
+
     game.progress.score = 0;
     game.gameOverTimer = 3.0;
     
@@ -9454,6 +9466,7 @@ function _collectPizza(pizzaId) {
                 var _vanHeal = (p.type === 'whole') ? VAN_PIZZA_WHOLE : VAN_PIZZA_SLICE;
                 game.player.hp = Math.min(game.player.hp + _vanHeal, game.player.maxHp);
                 console.log('[pizza] Van healed +' + _vanHeal + ' HP (' + game.player.hp + '/' + game.player.maxHp + ')');
+                saveGame();
             } else if (p.type === 'slice') {
                 // Heal current turtle
                 game.turtle.hp = Math.min(game.turtle.hp + PIZZA_SLICE_HEAL, game.turtle.maxHp);
@@ -11195,7 +11208,10 @@ function updateRegionEnemies(dt) {
                     }
                     game.owScreenShake = 12;
                     _triggerGameOver();
+                    break; // stop processing cars — HP has been fully reset
                 }
+                // Persist van HP immediately so a refresh keeps the damage
+                saveGame();
             }
         }
     }
@@ -12858,6 +12874,7 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.code === 'KeyH' && game.mode !== 'LEVEL') {
         game.showScoreBoard = !game.showScoreBoard;
+        if (game.showScoreBoard) _submitScoreToServer();
         return;
     }
 
@@ -14686,6 +14703,22 @@ function finalizeLevelScore() {
 
 // Server-authoritative global leaderboard (populated via MP.onLeaderboard)
 var _globalLeaderboard = [];
+var _globalLeaderboardReceived = false; // true once server has responded at least once
+var _lastScoreSubmit = 0;
+
+function _submitScoreToServer(forceScore) {
+    if (typeof MP === 'undefined' || !MP.sendScoreSubmit || !MP.isConnected()) return;
+    var _sc = (forceScore !== undefined) ? forceScore : (game.progress.score || 0);
+    var _now = Date.now();
+    // Death (score=0) always goes through immediately; regular updates throttled to 5s
+    if (_sc > 0 && _now - _lastScoreSubmit < 5000) return;
+    _lastScoreSubmit = _now;
+    var _nm = MP.displayName || game.activeTurtle || 'Player';
+    MP.sendScoreSubmit(_nm, _sc);
+}
+
+// Periodically push the running score so others see it on the leaderboard in real-time
+setInterval(function() { _submitScoreToServer(); }, 60000);
 
 function recordHighScore() {
     var _score = game.progress.score;
@@ -14724,10 +14757,9 @@ function recordHighScore() {
     hist.sort(function(a, b) { return b.score - a.score; });
     if (hist.length > 10) hist.length = 10;
 
-    // Submit to server so ALL players see a shared global leaderboard
-    if (typeof MP !== 'undefined' && MP.sendScoreSubmit) {
-        MP.sendScoreSubmit(_hsName, _score);
-    }
+    // Submit current score to the global leaderboard
+    _lastScoreSubmit = 0; // bypass throttle so this fires immediately
+    _submitScoreToServer();
 }
 
 // ============================================
@@ -17627,8 +17659,8 @@ function drawScoreBoard() {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
     ctx.fillRect(bx2 + 2, by2 + 2, bw2 - 4, bh2 - 4);
 
-    // Use server-side global leaderboard when available, fall back to local history
-    var _useGlobal = _globalLeaderboard && _globalLeaderboard.length > 0;
+    // Use server global list if we've had a server response; fall back to local if offline
+    var _useGlobal = _globalLeaderboardReceived;
     var _dispHist  = _useGlobal ? _globalLeaderboard : game.progress.scoreHistory;
 
     ctx.fillStyle = '#fcfc00';
@@ -17639,12 +17671,12 @@ function drawScoreBoard() {
     // Source label
     ctx.font = '7px monospace';
     ctx.fillStyle = _useGlobal ? '#44ff44' : '#888888';
-    ctx.fillText(_useGlobal ? 'GLOBAL - ALL PLAYERS' : 'LOCAL ONLY', cx2, by2 + 34);
+    ctx.fillText(_useGlobal ? 'GLOBAL - ALL PLAYERS' : 'LOCAL ONLY (OFFLINE)', cx2, by2 + 34);
 
     ctx.font = '9px monospace';
     if (_dispHist.length === 0) {
         ctx.fillStyle = '#666666';
-        ctx.fillText('NO SCORES YET', cx2, by2 + 68);
+        ctx.fillText(_useGlobal ? 'NO SCORES YET - PLAY TO EARN ONE!' : 'NO SCORES YET', cx2, by2 + 68);
     } else {
         var _myName = (typeof MP !== 'undefined' && MP.displayName) ? MP.displayName : (game.activeTurtle || 'Player');
         for (var si4 = 0; si4 < Math.min(_dispHist.length, 10); si4++) {
@@ -17778,7 +17810,10 @@ function cleanStaleRegionCache() {
 // Keep the global leaderboard in sync whenever the server pushes an update
 if (typeof MP !== 'undefined') {
     MP.onLeaderboard = function(scores) {
-        if (Array.isArray(scores)) _globalLeaderboard = scores;
+        if (Array.isArray(scores)) {
+            _globalLeaderboard = scores;
+            _globalLeaderboardReceived = true;
+        }
     };
 }
 

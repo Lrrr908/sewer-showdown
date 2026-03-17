@@ -241,14 +241,23 @@ function _saveLeaderboard() {
 }
 
 function leaderboardSubmit(playerName, score) {
-    if (typeof score !== 'number' || score <= 0 || score > SCORE_MAX_VALUE) return false;
     if (typeof playerName !== 'string' || playerName.length < 1 || playerName.length > 24) return false;
+    if (typeof score !== 'number' || score > SCORE_MAX_VALUE) return false;
 
-    const existing = globalLeaderboard.find(e => e.name === playerName);
-    if (existing) {
-        if (score <= existing.score) return false; // no improvement
-        existing.score = score;
-        existing.date = new Date().toISOString().slice(0, 10);
+    const idx = globalLeaderboard.findIndex(e => e.name === playerName);
+
+    if (score <= 0) {
+        // Player died — remove them from the board entirely
+        if (idx === -1) return false; // wasn't on the board, no change
+        globalLeaderboard.splice(idx, 1);
+        _saveLeaderboard();
+        return true;
+    }
+
+    // Live score update — always overwrite with the current value
+    if (idx !== -1) {
+        if (globalLeaderboard[idx].score === score) return false; // no change
+        globalLeaderboard[idx].score = score;
     } else {
         globalLeaderboard.push({ name: playerName, score, date: new Date().toISOString().slice(0, 10) });
     }
@@ -421,10 +430,8 @@ function initWsServer(wss) {
           } catch {}
         }
 
-        // Send current global leaderboard so the client displays up-to-date scores immediately
-        if (globalLeaderboard.length > 0) {
-          try { ws.send(JSON.stringify({ t: 'leaderboard', scores: globalLeaderboard })); } catch {}
-        }
+        // Always send the current global leaderboard on connect (empty array clears stale local display)
+        try { ws.send(JSON.stringify({ t: 'leaderboard', scores: globalLeaderboard })); } catch {}
 
         console.log(`[ws] ${entityId} (${accountId}) joined ${zoneId} (resume: ${resumeResult.reason}) instance=${require('../config').INSTANCE_ID}`);
         return;
@@ -465,7 +472,7 @@ function initWsServer(wss) {
           lastPosSyncMs = now;
           if (isSafeNumber(msg.px) && isSafeNumber(msg.py)) {
             const zone = sim.getZoneForAccount(accountId);
-            if (zone) zone.posSync(accountId, msg.px, msg.py, msg.facing, msg.mode, msg.tid, msg.vpx, msg.vpy, msg.vf, msg.atk);
+            if (zone) zone.posSync(accountId, msg.px, msg.py, msg.facing, msg.mode, msg.tid, msg.vpx, msg.vpy, msg.vf, msg.atk, msg.ps);
             // Track technodrone position while being driven
             if (msg.mode === 'technodrone' && technodroneState.driverId === entityId) {
               technodroneState.x = msg.px;
@@ -865,23 +872,24 @@ function initWsServer(wss) {
         }
 
         case 'score_submit': {
-          // Rate-limit: max one submission every 10 seconds per connection
           const _now_ss = Date.now();
-          if (_now_ss - (_rl.scoreSubmit || 0) < 10000) break;
-          _rl.scoreSubmit = _now_ss;
-
-          const _ssScore = msg.score;
+          const _ssScore = typeof msg.score === 'number' ? msg.score : -1;
           const _ssName  = msg.name;
-          if (!isSafeNumber(_ssScore) || _ssScore <= 0 || _ssScore > SCORE_MAX_VALUE) break;
           if (!isSafeString(_ssName, 24)) break;
 
-          const _changed = leaderboardSubmit(_ssName, Math.floor(_ssScore));
+          // Death submissions (score = 0) bypass rate-limit so removal is immediate.
+          // Regular updates are throttled to once every 5 s per connection.
+          const _isDeath = _ssScore <= 0;
+          if (!_isDeath && _now_ss - (_rl.scoreSubmit || 0) < 5000) break;
+          _rl.scoreSubmit = _now_ss;
+
+          if (!_isDeath && (!isSafeNumber(_ssScore) || _ssScore > SCORE_MAX_VALUE)) break;
+
+          const _changed = leaderboardSubmit(_ssName, _isDeath ? 0 : Math.floor(_ssScore));
           if (_changed) {
-              // Send current leaderboard to everyone (the submitter gets it too)
               broadcastLeaderboard(null);
-              console.log(`[leaderboard] ${_ssName} posted ${Math.floor(_ssScore)}`);
+              console.log(`[leaderboard] ${_ssName} -> ${_isDeath ? 'REMOVED (died)' : Math.floor(_ssScore)}`);
           } else {
-              // Still send the current leaderboard back to just the submitter so they're in sync
               try { ws.send(JSON.stringify({ t: 'leaderboard', scores: globalLeaderboard })); } catch {}
           }
           break;
@@ -1156,5 +1164,12 @@ setInterval(() => {
     } catch (_) {}
   }
 }, 5000);
+
+// Broadcast the leaderboard to all connected clients every 60 s so even
+// players who haven't submitted anything yet see other players' scores.
+setInterval(() => {
+    if (globalLeaderboard.length === 0) return;
+    broadcastLeaderboard(null);
+}, 60000);
 
 module.exports = { initWsServer, connByAccount };

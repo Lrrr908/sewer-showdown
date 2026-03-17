@@ -885,7 +885,7 @@ var MP = (function () {
                     for (var bi = 0; bi < msg.p.length; bi++) {
                         var be = msg.p[bi];
                         var bid = be[0], bpx = be[1], bpy = be[2], bf = be[3], bmode = be[4] || 'van', btid = be[5] || 'leo';
-                        var bvpx = be[6], bvpy = be[7], bvf = be[8], bdn = be[9] || '', batk = be[10] || 'IDLE';
+                        var bvpx = be[6], bvpy = be[7], bvf = be[8], bdn = be[9] || '', batk = be[10] || 'IDLE', bps = be[11] || 0;
                         if (bid === entityId) continue;
                         var rp = remotePlayers[bid];
                         if (rp) {
@@ -899,13 +899,14 @@ var MP = (function () {
                             rp.vf = bvf || rp.vf;
                             if (bdn) rp.displayName = bdn;
                             rp.atk = batk;
+                            rp.ps = bps;
                             if (!rp._interpBuf) rp._interpBuf = [];
                             rp._interpBuf.push({ px: bpx, py: bpy, t: now });
                             if (rp._interpBuf.length > 6) rp._interpBuf.shift();
                             rp._lastUpdate = now;
                             rp._removeAt = null;
                         } else {
-                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, vpx: bvpx, vpy: bvpy, vf: bvf, displayName: bdn, atk: batk, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }], _lastUpdate: now };
+                            remotePlayers[bid] = { id: bid, x: Math.floor(bpx / TILE_SIZE), y: Math.floor(bpy / TILE_SIZE), px: bpx, py: bpy, facing: bf, mode: bmode, tid: btid, vpx: bvpx, vpy: bvpy, vf: bvf, displayName: bdn, atk: batk, ps: bps, spriteRef: 'base:van', _interpBuf: [{ px: bpx, py: bpy, t: now }], _lastUpdate: now };
                         }
                         // Player (re)entered AOI — remove from ghost list
                         delete _lastSeenPos[bid];
@@ -1321,7 +1322,8 @@ var MP = (function () {
 
     function sendScoreSubmit(name, score) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
-        if (typeof score !== 'number' || score <= 0) return;
+        if (typeof score !== 'number') return;
+        // score=0 is a valid "player died, remove from leaderboard" signal
         ws.send(JSON.stringify({ t: 'score_submit', name: String(name).substring(0, 24), score: Math.floor(score) }));
     }
 
