@@ -102,7 +102,9 @@ var MP = (function () {
 
     // Overworld enemy sync
     var _inOwDeadEnemies  = null;   // [enemyId] received from server after ow_join
-    var _inOwEnemySyncs   = [];     // [{id,x,y,s}] positions from nearby players
+    var _inOwPizzaState   = null;   // [{id,x,y,type,...}] current pizzas from server on ow_join
+    var _inOwJoinEnemies  = null;   // [{id,x,y,s,tp}] authoritative enemy snapshot from server on join
+    var _inOwEnemySyncs   = [];     // [{id,x,y,s}] positions from zone players
 
     // --- Technodrone vehicle-building state ---
     var _allowedVehicles = [];
@@ -114,6 +116,7 @@ var MP = (function () {
     var onEvent = null;
     var onUgcUpdate = null;
     var onAuthChange = null;
+    var onGrantItems = null;
     var onTransferBegin = null;
     var onTransferCommit = null;
     var onChatReceived = null;
@@ -121,6 +124,11 @@ var MP = (function () {
 
     var chatBubbles = {};
     var CHAT_MAX_LEN = 60;
+    // Current chat context: null = overworld, otherwise the level instanceId.
+    // Chat messages whose ctx doesn't match are silently discarded.
+    var _chatContext = null;
+    // Current dungeon room ID within the level (null for single-room levels / overworld).
+    var _chatRoomId = null;
 
     // --- Prediction helpers ---
 
@@ -373,10 +381,11 @@ var MP = (function () {
         ws.send(JSON.stringify(msg));
     }
 
-    function sendLevelSync(instanceId, kills, itemId) {
+    function sendLevelSync(instanceId, kills, itemId, hits) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
         var payload = { t: 'level_sync', instanceId: instanceId, kills: kills || [] };
         if (itemId) payload.item = { id: itemId };
+        if (hits && hits.length > 0) payload.hits = hits;
         ws.send(JSON.stringify(payload));
     }
 
@@ -426,6 +435,14 @@ var MP = (function () {
 
     function drainOwDeadEnemies() {
         var r = _inOwDeadEnemies; _inOwDeadEnemies = null; return r;
+    }
+
+    function drainOwPizzaState() {
+        var r = _inOwPizzaState; _inOwPizzaState = null; return r;
+    }
+
+    function drainOwJoinEnemies() {
+        var r = _inOwJoinEnemies; _inOwJoinEnemies = null; return r;
     }
 
     function sendOwEnemySync(enemies) {
@@ -740,6 +757,10 @@ var MP = (function () {
                 if (msg.vehicles) _allowedVehicles = msg.vehicles;
                 break;
 
+            case 'grant_items':
+                if (Array.isArray(msg.items) && onGrantItems) onGrantItems(msg.items);
+                break;
+
             case 'snapshot':
                 if (msg.zone && msg.zone !== currentZone) break;
                 serverTick = msg.tick;
@@ -774,6 +795,8 @@ var MP = (function () {
                             var _spy = p.py != null ? p.py : p.y * TILE_SIZE;
                             p._interpBuf = [{ px: _spx, py: _spy, t: Date.now() }];
                             remotePlayers[p.id] = p;
+                            // This player is confirmed live — clear any ghost arrow
+                            delete _lastSeenPos[p.id];
                         }
                     }
                 }
@@ -815,6 +838,8 @@ var MP = (function () {
                             upd._removeAt = null;
                             if (upd.dn) upd.displayName = upd.dn;
                             remotePlayers[upd.id] = upd;
+                            // Player is live — remove any ghost arrow left from a prior disconnect
+                            delete _lastSeenPos[upd.id];
                         }
                     }
                 }
@@ -930,11 +955,24 @@ var MP = (function () {
 
             case 'chat':
                 if (msg.zone && msg.zone !== currentZone) break;
+                // Context filter: level chat (ctx = instanceId) only shows inside
+                // that room; overworld chat (no ctx) only shows in the overworld.
+                if (msg.ctx) {
+                    if (_chatContext !== msg.ctx) break; // from a different level room
+                } else {
+                    if (_chatContext !== null) break; // overworld msg reaching level player
+                }
+                // Dungeon room filter: if the sender included a roomId, only show
+                // the bubble if we are in the same dungeon room right now.
+                if (msg.roomId !== undefined && msg.roomId !== null) {
+                    if (_chatRoomId !== msg.roomId) break;
+                }
                 if (msg.from && msg.text) {
                     var bubbleDuration = Math.max(3000, Math.min(msg.text.length * 60, 7000));
                     chatBubbles[msg.from] = {
                         text: msg.text,
                         dn: msg.dn || '',
+                        roomId: (msg.roomId !== undefined) ? msg.roomId : null,
                         expire: Date.now() + bubbleDuration
                     };
                     if (onChatReceived) onChatReceived(msg);
@@ -1035,6 +1073,12 @@ var MP = (function () {
 
             case 'ow_dead_enemies':
                 _inOwDeadEnemies = Array.isArray(msg.deadEnemies) ? msg.deadEnemies : [];
+                if (Array.isArray(msg.pizzas) && msg.pizzas.length > 0) {
+                    _inOwPizzaState = msg.pizzas;
+                }
+                if (Array.isArray(msg.enemies) && msg.enemies.length > 0) {
+                    _inOwJoinEnemies = msg.enemies;
+                }
                 break;
 
             case 'ow_enemy_sync':
@@ -1081,6 +1125,14 @@ var MP = (function () {
                     var _tcd = _technodroneCallbacks.shift();
                     _tcd({ ok: false, reason: msg.reason });
                 }
+                break;
+
+            case 'pizza_spawn':
+                if (msg.pizza) _pizzaSpawnQueue.push(msg.pizza);
+                break;
+
+            case 'pizza_collect':
+                if (msg.id) _pizzaCollectQueue.push(msg.id);
                 break;
 
             case 'error':
@@ -1208,12 +1260,31 @@ var MP = (function () {
         if (typeof text !== 'string') return;
         text = text.trim().substring(0, CHAT_MAX_LEN);
         if (text.length === 0) return;
-        ws.send(JSON.stringify({ t: 'chat', text: text }));
+        var payload = { t: 'chat', text: text };
+        // Include dungeon room ID so receivers in a different room can ignore it.
+        if (_chatRoomId !== null && _chatRoomId !== undefined) payload.roomId = _chatRoomId;
+        ws.send(JSON.stringify(payload));
         var bubbleDuration = Math.max(3000, Math.min(text.length * 60, 7000));
         chatBubbles['__self__'] = { text: text, dn: displayName || '', expire: Date.now() + bubbleDuration };
     }
 
     function getChatBubbles() { return chatBubbles; }
+
+    // Call with the level instanceId when entering a level, null when returning to overworld.
+    function setChatContext(instanceId) {
+        _chatContext = instanceId || null;
+        _chatRoomId = null; // reset room on context change
+        chatBubbles = {};
+    }
+
+    // Call whenever the local player moves to a different dungeon room.
+    // Pass null for single-room levels.
+    function setChatRoomId(roomId) {
+        if (_chatRoomId === roomId) return;
+        _chatRoomId = (roomId !== undefined && roomId !== null) ? roomId : null;
+        // Clear stale bubbles from the previous room.
+        chatBubbles = {};
+    }
 
     // --- Technodrone vehicle API ---
 
@@ -1236,6 +1307,33 @@ var MP = (function () {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
         ws.send(JSON.stringify({ t: 'technodrone_park', x: x, y: y, dir: dir || 'right' }));
     }
+
+    // --- Pizza sync ---
+    var _pizzaSpawnQueue = [];
+    var _pizzaCollectQueue = [];
+
+    function sendPizzaSpawn(pizza) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        ws.send(JSON.stringify({ t: 'pizza_spawn', pizza: pizza }));
+    }
+
+    function sendPizzaCollect(pizzaId) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        ws.send(JSON.stringify({ t: 'pizza_collect', id: pizzaId }));
+    }
+
+    function drainPizzaSpawns() {
+        var q = _pizzaSpawnQueue;
+        _pizzaSpawnQueue = [];
+        return q;
+    }
+
+    function drainPizzaCollects() {
+        var q = _pizzaCollectQueue;
+        _pizzaCollectQueue = [];
+        return q;
+    }
+
     // --- UGC cache ---
 
     function fetchUgcSprite(ugcId, spriteRef) {
@@ -1342,6 +1440,8 @@ var MP = (function () {
         // Overworld enemy sync
         sendOwJoin: sendOwJoin,
         drainOwDeadEnemies: drainOwDeadEnemies,
+        drainOwPizzaState: drainOwPizzaState,
+        drainOwJoinEnemies: drainOwJoinEnemies,
         sendOwEnemySync: sendOwEnemySync,
         drainOwEnemySyncs: drainOwEnemySyncs,
 
@@ -1351,12 +1451,20 @@ var MP = (function () {
         submitUgcSprite: submitUgcSprite,
         sendChat: sendChat,
         getChatBubbles: getChatBubbles,
+        setChatContext: setChatContext,
+        setChatRoomId: setChatRoomId,
 
         // Technodrone vehicle-building
         canDriveVehicle: canDriveVehicle,
         getAllowedVehicles: getAllowedVehicles,
         requestTechnodroneEnter: requestTechnodroneEnter,
         sendTechnodronePark: sendTechnodronePark,
+
+        // Pizza sync
+        sendPizzaSpawn: sendPizzaSpawn,
+        sendPizzaCollect: sendPizzaCollect,
+        drainPizzaSpawns: drainPizzaSpawns,
+        drainPizzaCollects: drainPizzaCollects,
 
         updateRender: updateRender,
 
@@ -1392,6 +1500,7 @@ var MP = (function () {
         set onEvent(fn) { onEvent = fn; },
         set onUgcUpdate(fn) { onUgcUpdate = fn; },
         set onAuthChange(fn) { onAuthChange = fn; },
+        set onGrantItems(fn) { onGrantItems = fn; },
         set onTransferBegin(fn) { onTransferBegin = fn; },
         set onTransferCommit(fn) { onTransferCommit = fn; },
         set onChatReceived(fn) { onChatReceived = fn; },

@@ -107,7 +107,15 @@ app.get('/debug/zones', (_req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  perMessageDeflate: {
+    threshold: 512,              // only compress messages > 512 bytes (skips tiny pos-updates)
+    serverNoContextTakeover: true, // don't hold a zlib context per-connection (saves ~64 KB/conn)
+    clientNoContextTakeover: true,
+  },
+});
 initWsServer(wss);
 
 async function boot() {

@@ -18,8 +18,12 @@ var CarAI = (function() {
         PATROL_SPEED: 96,
         CHASE_SPEED: 144,
         DECISION_INTERVAL: 0.3,      // seconds between AI decisions
-        STUCK_THRESHOLD: 0.5,        // seconds without movement = stuck
-        STUCK_DISTANCE: 4,           // pixels - if moved less than this, considered stuck
+        // Stuck detection: measure total displacement over a window.
+        // At 96 px/s, a freely-moving car travels ~96px in 1s — well above the 20px
+        // threshold. Only genuinely immobile cars (wall-blocked, piled up) trigger it.
+        STUCK_WINDOW: 1.0,           // seconds per displacement check
+        STUCK_DISTANCE: 20,          // pixels — must move at least this far per window
+        STUCK_RECOVERY_TIME: 0.25,   // seconds to hold new direction before re-evaluating
         REPATH_INTERVAL: 1.5,        // seconds between path recalculations in chase
         INTERSECTION_RADIUS: 1,      // tiles - how close to be "at" an intersection
         LOOKAHEAD_TILES: 3,          // how far ahead to check for turns
@@ -119,6 +123,25 @@ var CarAI = (function() {
         return dy > 0 ? 'down' : 'up';
     }
 
+    // ── Nearest road tile search ────────────────────────────────────────────────
+    // Spiral outward from (tx, ty) to find the closest road tile.
+    // Used when the chase target is off-road so the car has a concrete road goal
+    // to pathfind toward rather than thrashing at the road edge.
+
+    function findNearestRoadTile(tx, ty, maxRadius) {
+        if (isRoad(tx, ty)) return { tx: tx, ty: ty };
+        for (var r = 1; r <= maxRadius; r++) {
+            for (var dx = -r; dx <= r; dx++) {
+                for (var dy = -r; dy <= r; dy++) {
+                    if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                    var cx = tx + dx, cy = ty + dy;
+                    if (isRoad(cx, cy)) return { tx: cx, ty: cy };
+                }
+            }
+        }
+        return null;
+    }
+
     // ── Pathfinding (A* on road tiles) ─────────────────────────────────────────
 
     function findPath(startTx, startTy, goalTx, goalTy) {
@@ -206,13 +229,17 @@ var CarAI = (function() {
             targetTx: -1,
             targetTy: -1,
             decisionTimer: 0,
-            stuckTimer: 0,
-            lastX: 0,
-            lastY: 0,
+            stuckTimer: 0,          // time held in STUCK state (for recovery delay)
+            stuckCheckTimer: 0,     // counts up to STUCK_WINDOW
+            stuckRefX: null,        // position at start of check window
+            stuckRefY: null,
             repathTimer: 0,
             patrolDir: null,        // preferred patrol direction
             lastIntersection: null, // last intersection we made a decision at
             turnCooldown: 0,        // prevent rapid direction changes
+            holdPosition: false,    // true when waiting at road-edge for off-road target
+            offRoadGoalTx: -1,      // cached nearest-road tile to off-road target
+            offRoadGoalTy: -1,
         };
     }
 
@@ -220,7 +247,7 @@ var CarAI = (function() {
     // Smooth patrol: pick a direction and stick with it until we hit an
     // intersection, then make a weighted random choice (prefer straight/right turns)
 
-    function updatePatrol(car, brain, dt) {
+    function updatePatrol(car, brain, dt, rng) {
         var tile = pixelToTile(car.x, car.y, car.width || 64, car.height || 48);
         var dirs = getRoadDirections(tile.tx, tile.ty);
 
@@ -258,10 +285,10 @@ var CarAI = (function() {
                 candidates.push({ dir: d, weight: weight });
             }
 
-            // Weighted random selection
+            // Weighted random selection — use seeded RNG for determinism across clients
             var totalWeight = 0;
             for (var j = 0; j < candidates.length; j++) totalWeight += candidates[j].weight;
-            var roll = Math.random() * totalWeight;
+            var roll = (rng ? rng() : Math.random()) * totalWeight;
             var cumulative = 0;
             for (var k = 0; k < candidates.length; k++) {
                 cumulative += candidates[k].weight;
@@ -289,24 +316,66 @@ var CarAI = (function() {
     // Use A* pathfinding to reach the player, recompute periodically
 
     function updateChase(car, brain, targetX, targetY, dt) {
-        var carTile = pixelToTile(car.x, car.y, car.width || 64, car.height || 48);
+        var carTile    = pixelToTile(car.x, car.y, car.width || 64, car.height || 48);
         var targetTile = pixelToTile(targetX, targetY, 32, 32);
+        var targetOnRoad = isRoad(targetTile.tx, targetTile.ty);
 
-        brain.repathTimer -= dt;
+        // ── Off-road target handling ──────────────────────────────────────────
+        // When the player is off-road (building interior, water, terrain) A* has
+        // no valid goal. Instead of thrashing at the road edge we:
+        //   1. Find the nearest road tile to the player's position (≤6 tile spiral).
+        //   2. Pathfind to that tile and stop there.
+        //   3. Set holdPosition = true so the caller skips the movement step.
+        //   4. Clear holdPosition the moment the player returns to road.
+        if (!targetOnRoad) {
+            brain.holdPosition = false; // default — set to true once we arrive
 
-        // Recompute path if needed
-        if (!brain.path || brain.repathTimer <= 0 || brain.pathIndex >= brain.path.length - 1) {
-            brain.path = findPath(carTile.tx, carTile.ty, targetTile.tx, targetTile.ty);
-            brain.pathIndex = 0;
-            brain.repathTimer = CONFIG.REPATH_INTERVAL;
+            // Recompute off-road goal if stale or missing
+            brain.repathTimer -= dt;
+            var needRepath = (brain.offRoadGoalTx < 0) || (brain.repathTimer <= 0);
+            if (needRepath) {
+                var nearest = findNearestRoadTile(targetTile.tx, targetTile.ty, 6);
+                if (nearest) {
+                    brain.offRoadGoalTx = nearest.tx;
+                    brain.offRoadGoalTy = nearest.ty;
+                } else {
+                    // No road found at all — just hold
+                    brain.holdPosition = true;
+                    return car.direction;
+                }
+                brain.path = findPath(carTile.tx, carTile.ty, brain.offRoadGoalTx, brain.offRoadGoalTy);
+                brain.pathIndex = 0;
+                brain.repathTimer = CONFIG.REPATH_INTERVAL;
+            }
+
+            // Already at the wait tile — hold position
+            if (carTile.tx === brain.offRoadGoalTx && carTile.ty === brain.offRoadGoalTy) {
+                brain.holdPosition = true;
+                return car.direction;
+            }
+            // Also hold if there's simply no path to the wait tile
+            if (!brain.path) {
+                brain.holdPosition = true;
+                return car.direction;
+            }
+            // Otherwise follow path to wait tile (fall through to path-follow below)
+        } else {
+            // Target back on road — clear off-road state
+            brain.holdPosition = false;
+            brain.offRoadGoalTx = -1;
+            brain.offRoadGoalTy = -1;
+
+            // Normal repath toward the (on-road) target
+            brain.repathTimer -= dt;
+            if (!brain.path || brain.repathTimer <= 0 || brain.pathIndex >= brain.path.length - 1) {
+                brain.path = findPath(carTile.tx, carTile.ty, targetTile.tx, targetTile.ty);
+                brain.pathIndex = 0;
+                brain.repathTimer = CONFIG.REPATH_INTERVAL;
+            }
 
             if (!brain.path) {
-                // No path - fall back to simple direction toward target
-                var simpleDir = directionToward(carTile.tx, carTile.ty, targetTile.tx, targetTile.ty);
-                if (simpleDir && isRoad(carTile.tx + DIR_DX[simpleDir], carTile.ty + DIR_DY[simpleDir])) {
-                    return simpleDir;
-                }
-                // Try any direction toward target
+                // A* failed even though both tiles are road — unlikely, but fall back
+                // to the road direction that minimises distance to target.
                 var dirs = getRoadDirections(carTile.tx, carTile.ty);
                 var bestDir = car.direction;
                 var bestDist = Infinity;
@@ -314,18 +383,14 @@ var CarAI = (function() {
                     var ntx = carTile.tx + DIR_DX[dirs[i]];
                     var nty = carTile.ty + DIR_DY[dirs[i]];
                     var d = manhattanDist(ntx, nty, targetTile.tx, targetTile.ty);
-                    if (d < bestDist) {
-                        bestDist = d;
-                        bestDir = dirs[i];
-                    }
+                    if (d < bestDist) { bestDist = d; bestDir = dirs[i]; }
                 }
                 return bestDir;
             }
         }
 
-        // Follow path
+        // ── Follow the computed path ──────────────────────────────────────────
         if (brain.path && brain.path.length > 0) {
-            // Advance path index if we've reached current waypoint
             while (brain.pathIndex < brain.path.length - 1) {
                 var wp = brain.path[brain.pathIndex];
                 if (Math.abs(carTile.tx - wp.tx) <= 1 && Math.abs(carTile.ty - wp.ty) <= 1) {
@@ -335,15 +400,12 @@ var CarAI = (function() {
                 }
             }
 
-            // Get direction to next waypoint
             var nextWp = brain.path[Math.min(brain.pathIndex, brain.path.length - 1)];
             var dir = directionToward(carTile.tx, carTile.ty, nextWp.tx, nextWp.ty);
-
             if (dir && isRoad(carTile.tx + DIR_DX[dir], carTile.ty + DIR_DY[dir])) {
                 return dir;
             }
 
-            // Path direction not valid - try next waypoint
             if (brain.pathIndex < brain.path.length - 1) {
                 var nextWp2 = brain.path[brain.pathIndex + 1];
                 var dir2 = directionToward(carTile.tx, carTile.ty, nextWp2.tx, nextWp2.ty);
@@ -359,32 +421,43 @@ var CarAI = (function() {
 
     // ── Stuck Recovery ─────────────────────────────────────────────────────────
 
-    function updateStuck(car, brain, dt) {
+    function updateStuck(car, brain, dt, rng) {
         brain.stuckTimer += dt;
 
-        // Try to find any valid direction
+        // Brief hold before picking a recovery direction.
+        // This prevents instant oscillation where we flip direction, immediately
+        // re-enter stuck, flip again, and produce the left-right spaz effect.
+        if (brain.stuckTimer < CONFIG.STUCK_RECOVERY_TIME) return car.direction;
+
         var tile = pixelToTile(car.x, car.y, car.width || 64, car.height || 48);
         var dirs = getRoadDirections(tile.tx, tile.ty);
 
         if (dirs.length > 0) {
-            // Pick a random direction that isn't our current one
-            var options = dirs.filter(function(d) { return d !== car.direction; });
-            if (options.length > 0) {
-                brain.state = STATE.PATROL;
-                brain.stuckTimer = 0;
-                return options[Math.floor(Math.random() * options.length)];
-            }
-            // Only option is current direction
+            var opp = OPPOSITE[car.direction];
+            // Prefer directions that are neither current nor reverse — helps with
+            // dead-end corners where the only escape is a perpendicular road.
+            var preferred = dirs.filter(function(d) { return d !== car.direction && d !== opp; });
+            var options = preferred.length > 0
+                ? preferred
+                : dirs.filter(function(d) { return d !== car.direction; });
+            if (options.length === 0) options = dirs; // true dead-end: must reverse
+
+            var chosen = options[Math.floor((rng ? rng() : Math.random()) * options.length)];
             brain.state = STATE.PATROL;
             brain.stuckTimer = 0;
-            return dirs[0];
+            brain.stuckCheckTimer = 0;
+            brain.stuckRefX = car.x;
+            brain.stuckRefY = car.y;
+            brain.lastIntersection = null; // force a fresh decision at next intersection
+            brain.turnCooldown = 0.4;      // commit to new direction briefly
+            return chosen;
         }
 
-        // Still stuck after 3 seconds - just pick any direction
-        if (brain.stuckTimer > 3) {
+        // Off-road entirely — wait up to 2 s then try any direction
+        if (brain.stuckTimer > 2.0) {
             brain.state = STATE.PATROL;
             brain.stuckTimer = 0;
-            return DIRS[Math.floor(Math.random() * 4)];
+            return DIRS[Math.floor((rng ? rng() : Math.random()) * 4)];
         }
 
         return car.direction;
@@ -392,20 +465,28 @@ var CarAI = (function() {
 
     // ── Main Update Function ───────────────────────────────────────────────────
 
-    function update(car, brain, dt, targetX, targetY, detectRadius, isChasing) {
+    function update(car, brain, dt, targetX, targetY, detectRadius, isChasing, rng) {
         if (!_roadGrid) return car.direction;
 
-        // Check if stuck (hasn't moved much)
-        var moved = distance(car.x, car.y, brain.lastX, brain.lastY);
-        if (moved < CONFIG.STUCK_DISTANCE * dt * 60) {
-            brain.stuckTimer += dt;
-            if (brain.stuckTimer > CONFIG.STUCK_THRESHOLD && brain.state !== STATE.STUCK) {
+        // Use the car's own seeded RNG if none provided — this keeps direction
+        // decisions deterministic across all clients (same enemy = same turns).
+        var _rng = rng || car._rng || null;
+
+        // ── Windowed stuck detection ──────────────────────────────────────────
+        // Measure total displacement over STUCK_WINDOW seconds. A freely-moving
+        // patrol car covers ~96px/s — far above the 20px threshold. Only cars
+        // genuinely blocked by walls or pileups will fail the check.
+        if (brain.stuckRefX === null) { brain.stuckRefX = car.x; brain.stuckRefY = car.y; }
+        brain.stuckCheckTimer += dt;
+        if (brain.stuckCheckTimer >= CONFIG.STUCK_WINDOW) {
+            var windowMoved = distance(car.x, car.y, brain.stuckRefX, brain.stuckRefY);
+            brain.stuckRefX = car.x;
+            brain.stuckRefY = car.y;
+            brain.stuckCheckTimer -= CONFIG.STUCK_WINDOW;
+            if (windowMoved < CONFIG.STUCK_DISTANCE && brain.state !== STATE.STUCK) {
                 brain.state = STATE.STUCK;
+                brain.stuckTimer = 0;
             }
-        } else {
-            brain.stuckTimer = 0;
-            brain.lastX = car.x;
-            brain.lastY = car.y;
         }
 
         // State transitions
@@ -421,10 +502,16 @@ var CarAI = (function() {
                     brain.state = STATE.CHASE;
                     brain.path = null;
                     brain.repathTimer = 0;
+                    brain.holdPosition = false;
+                    brain.offRoadGoalTx = -1;
+                    brain.offRoadGoalTy = -1;
                 }
             } else if (brain.state === STATE.CHASE && distToTarget > detectRadius * 1.5) {
                 brain.state = STATE.PATROL;
                 brain.path = null;
+                brain.holdPosition = false;
+                brain.offRoadGoalTx = -1;
+                brain.offRoadGoalTy = -1;
             }
         }
 
@@ -432,13 +519,13 @@ var CarAI = (function() {
         var newDir;
         switch (brain.state) {
             case STATE.PATROL:
-                newDir = updatePatrol(car, brain, dt);
+                newDir = updatePatrol(car, brain, dt, _rng);
                 break;
             case STATE.CHASE:
                 newDir = updateChase(car, brain, targetX, targetY, dt);
                 break;
             case STATE.STUCK:
-                newDir = updateStuck(car, brain, dt);
+                newDir = updateStuck(car, brain, dt, _rng);
                 break;
             default:
                 newDir = car.direction;

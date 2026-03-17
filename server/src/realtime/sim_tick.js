@@ -15,7 +15,13 @@ function boot() {
   zoneManager.getOrCreate(DEFAULT_ZONE, 'world');
 }
 
-function makeEntityId() {
+// Derive a stable entity ID from the account ID so the same player always
+// has the same entity ID across disconnects/refreshes. This is what lets
+// other clients correctly overwrite a ghost arrow when the player comes back.
+function makeEntityId(accountId) {
+  if (accountId) {
+    return 'p_' + crypto.createHash('sha256').update(accountId).digest('hex').slice(0, 8);
+  }
   return 'p_' + crypto.randomBytes(4).toString('hex');
 }
 
@@ -42,7 +48,7 @@ function createPlayerEntity(entityId, accountId, spawnX, spawnY, opts) {
 // Fresh spawn — no resume logic.
 function addPlayer(accountId, ws, zoneId) {
   const zone = zoneManager.getOrCreate(zoneId || DEFAULT_ZONE);
-  const entityId = makeEntityId();
+  const entityId = makeEntityId(accountId);
   const entity = createPlayerEntity(entityId, accountId, zone.spawnX, zone.spawnY);
   zone.addEntity(entity, ws);
   return entity;
@@ -56,7 +62,7 @@ function addPlayerWithResume(accountId, ws, clientZone, clientResume) {
 
   const actualZone = resumeResult.zoneId;
   const zone = zoneManager.getOrCreate(actualZone);
-  const entityId = makeEntityId();
+  const entityId = makeEntityId(accountId);
 
   let entity;
   if (resumeResult.resume) {

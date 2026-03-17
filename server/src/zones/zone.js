@@ -28,7 +28,7 @@ class Zone {
     this._pendingTeleports = new Map();
     this._posDirty = new Map();
     this._aoiExits = [];  // [{entityId, oldNeighborKeys}]
-    this.dirtyRemoves = new Set();
+    this.dirtyRemoves = new Map(); // entityId -> lastCellKey (for AOI-scoped removes)
     this.tickId = 0;
 
     const bounds = loadBounds(id);
@@ -72,10 +72,11 @@ class Zone {
   removeEntity(entityId) {
     const entity = this.entities.get(entityId);
     if (entity) this.byAccount.delete(entity.accountId);
+    const lastCell = this.aoi.playerCells.get(entityId) || null;
     this.entities.delete(entityId);
     this.conns.delete(entityId);
     this.aoi.removePlayer(entityId);
-    this.dirtyRemoves.add(entityId);
+    this.dirtyRemoves.set(entityId, lastCell);
   }
 
   removeConn(entityId) {
@@ -344,10 +345,19 @@ class Zone {
     this._posDirty.clear();
 
     if (hasRemoves) {
-      const removeIds = Array.from(this.dirtyRemoves);
-      for (const [, ws] of this.conns) {
-        if (ws && ws.readyState === 1) {
-          ensureBucket(ws).removes.push(...removeIds);
+      for (const [removeId, lastCell] of this.dirtyRemoves) {
+        const neighbors = lastCell
+          ? neighborCells(...lastCell.split(',').map(Number))
+          : [...this.aoi.cells.keys()]; // fallback if cell was unknown
+        for (const nk of neighbors) {
+          const cellSet = this.aoi.cells.get(nk);
+          if (!cellSet) continue;
+          for (const recipientId of cellSet) {
+            const ws = this.conns.get(recipientId);
+            if (ws && ws.readyState === 1) {
+              ensureBucket(ws).removes.push(removeId);
+            }
+          }
         }
       }
     }

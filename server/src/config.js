@@ -42,6 +42,9 @@ module.exports = {
   META_GRAPH_VERSION:  process.env.META_GRAPH_VERSION  || 'v21.0',
 
   TECHNODROME_ALLOWED_EMAILS: (process.env.TECHNODROME_ALLOWED_EMAILS || 'test@test.com,digitalagony@gmail.com,dimensionxtoys@gmail.com,razorsharp128@gmail.com').split(',').map(e => e.trim().toLowerCase()),
+
+  // Accounts that are pre-granted all 10 collectible items on login (test/admin accounts)
+  ALL_ITEMS_EMAILS: (process.env.ALL_ITEMS_EMAILS || 'test@test.com').split(',').map(e => e.trim().toLowerCase()),
 };
 
 // Build identifier for deploy verification

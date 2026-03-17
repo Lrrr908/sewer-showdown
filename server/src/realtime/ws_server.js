@@ -21,31 +21,150 @@ const POS_SYNC_MIN_MS = 25;
 const CHAT_MAX_LEN = 60;
 const CHAT_COOLDOWN_MS = 1000;
 
+// ── Entity-level tracking ─────────────────────────────────────────────────────
+// Tracks which entity IDs are currently inside a building level so the overworld
+// AOI chat broadcast can skip them (they have their own level-room chat channel).
+const inLevelEntityIds = new Set();
+
+// ── Per-connection rate limits (ms between allowed messages) ─────────────────
+const RATE_INPUT_MIN_MS        = 16;   // ~60 Hz max
+const RATE_ENEMY_SYNC_MIN_MS   = 80;   // ~12 Hz max
+const RATE_OW_ENEMY_SYNC_MIN_MS= 80;
+const RATE_OW_JOIN_MIN_MS      = 2000; // re-join cooldown
+const RATE_JOIN_LEVEL_MIN_MS   = 1000;
+const RATE_PIZZA_MIN_MS        = 500;
+const RATE_LEVEL_SYNC_MIN_MS   = 50;
+
+// ── Field validation helpers ──────────────────────────────────────────────────
+const DN_MAX_LEN = 24;
+const INSTANCE_ID_MAX_LEN = 64;
+const OW_KILL_STORE_MAX = 5000; // per zone per hour
+
+function isSafeNumber(v) {
+    return typeof v === 'number' && isFinite(v) && !isNaN(v);
+}
+function isSafeString(v, maxLen) {
+    return typeof v === 'string' && v.length > 0 && v.length <= maxLen;
+}
+
 // ── Overworld hourly kill store ───────────────────────────────────────────────
-// regionId -> { hour: number, ids: Set<string> }
+// zoneId -> { hour: number, ids: Set<string> }
 // Auto-resets each hour. Persists for the server's lifetime (in-memory only).
 const owKillStore = new Map();
 
 function _currentHour() { return Math.floor(Date.now() / 3600000); }
 
-function owRecordKills(regionId, ids) {
+function owRecordKills(zoneKey, ids) {
     const h = _currentHour();
-    let entry = owKillStore.get(regionId);
+    let entry = owKillStore.get(zoneKey);
     if (!entry || entry.hour !== h) {
         entry = { hour: h, ids: new Set() };
-        owKillStore.set(regionId, entry);
+        owKillStore.set(zoneKey, entry);
     }
     for (const id of ids) {
-        if (typeof id === 'string') entry.ids.add(id);
-        else if (id && typeof id === 'object' && id.id) entry.ids.add(id.id);
+        if (entry.ids.size >= OW_KILL_STORE_MAX) break;
+        if (typeof id === 'string' && id.length <= 64) entry.ids.add(id);
+        else if (id && typeof id === 'object' && typeof id.id === 'string' && id.id.length <= 64) entry.ids.add(id.id);
     }
 }
 
-function owGetDeadEnemies(regionId) {
+function owGetDeadEnemies(zoneKey) {
     const h = _currentHour();
-    const entry = owKillStore.get(regionId);
+    const entry = owKillStore.get(zoneKey);
     if (!entry || entry.hour !== h) return [];
     return [...entry.ids];
+}
+
+// ── Per-zone enemy snapshot store ────────────────────────────────────────────
+// Caches the last-known position of every live enemy in a zone so late-joining
+// or refreshing players see enemies at their current positions immediately.
+// zoneId -> Map<enemyId, {id, x, y, s, tp}>
+const owEnemySnapshots = new Map();
+const OW_ENEMY_SNAPSHOT_CAP = 150; // max enemies stored per zone
+
+function _getEnemySnapshotMap(zoneId) {
+    let snap = owEnemySnapshots.get(zoneId);
+    if (!snap) { snap = new Map(); owEnemySnapshots.set(zoneId, snap); }
+    return snap;
+}
+
+function owUpdateEnemySnapshot(zoneId, enemies) {
+    const snap = _getEnemySnapshotMap(zoneId);
+    for (const e of enemies) {
+        if (e && e.id) {
+            snap.set(e.id, { id: e.id, x: e.x, y: e.y, s: e.s || 'patrol', tp: e.tp || 'walker' });
+        }
+    }
+    // Keep the snapshot bounded
+    if (snap.size > OW_ENEMY_SNAPSHOT_CAP) {
+        const toDelete = snap.size - OW_ENEMY_SNAPSHOT_CAP;
+        let deleted = 0;
+        for (const key of snap.keys()) {
+            if (deleted++ >= toDelete) break;
+            snap.delete(key);
+        }
+    }
+}
+
+function owRemoveFromEnemySnapshot(zoneId, kills) {
+    const snap = owEnemySnapshots.get(zoneId);
+    if (!snap) return;
+    for (const k of kills) {
+        const id = typeof k === 'string' ? k : (k && k.id);
+        if (id) snap.delete(id);
+    }
+}
+
+function owGetEnemySnapshot(zoneId) {
+    const snap = owEnemySnapshots.get(zoneId);
+    return snap ? [...snap.values()] : [];
+}
+
+// Region host model removed — all clients simulate their own nearby sectors and
+// broadcast via AOI. This distributes CPU load to client machines and keeps
+// server message volume proportional to local density rather than zone size.
+
+// ── Per-zone pizza state store ────────────────────────────────────────────────
+// zoneId -> Map<pizzaId, { id, x, y, type, spawnTime, collected, collectedTime }>
+// Tracks all active pizzas so late-joining players see the current world state.
+const zonePizzaStore = new Map();
+const PIZZA_EXPIRE_MS = 10 * 60 * 1000; // remove uncollected pizzas after 10 min
+
+function _getPizzaMap(zoneId) {
+    let store = zonePizzaStore.get(zoneId);
+    if (!store) { store = new Map(); zonePizzaStore.set(zoneId, store); }
+    // Prune stale entries on each access to keep memory bounded
+    const now = Date.now();
+    for (const [id, p] of store) {
+        if (p.collected && (now - (p.collectedTime || 0)) > 5 * 60 * 1000) store.delete(id);
+        else if (!p.collected && (now - (p.spawnTime || 0)) > PIZZA_EXPIRE_MS) store.delete(id);
+    }
+    return store;
+}
+
+function zonePizzaAdd(zoneId, pizza) {
+    if (!pizza || !pizza.id) return;
+    const store = _getPizzaMap(zoneId);
+    store.set(pizza.id, { id: pizza.id, x: pizza.x, y: pizza.y, type: pizza.type,
+        spawnTime: pizza.spawnTime || Date.now(), collected: false, collectedTime: 0 });
+}
+
+function zonePizzaCollect(zoneId, pizzaId) {
+    const store = _getPizzaMap(zoneId);
+    const p = store.get(pizzaId);
+    if (p) { p.collected = true; p.collectedTime = Date.now(); }
+}
+
+function zonePizzaList(zoneId) {
+    return [..._getPizzaMap(zoneId).values()].filter(p => !p.collected);
+}
+
+// ── Zone-wide broadcast helper ────────────────────────────────────────────────
+function broadcastToZone(zone, payload, excludeWs) {
+    for (const [, pws] of zone.conns) {
+        if (pws === excludeWs || pws.readyState !== 1) continue;
+        try { pws.send(payload); } catch {}
+    }
 }
 
 // accountId -> ws. Enforces single active connection per account.
@@ -96,12 +215,21 @@ function initWsServer(wss) {
     let lastPosSyncMs = 0;
 
     // Phase tracking for disconnect-during-transfer safety.
-    // null when no transfer active; { from, to, phase } during transfer.
-    // phase: 'begin_sent' | 'commit_sent' | 'snapshot_sent'
     let pendingTransfer = null;
     let lastChatMs = 0;
-    // Current level room instance (for cleanup on disconnect)
     let currentLevelInstanceId = null;
+    let currentRoomId = null;          // dungeon/gallery room the player is currently in
+
+    // Per-connection rate-limit timestamps
+    const _rl = {
+        input:       0,
+        enemySync:   0,
+        owEnemySync: 0,
+        owJoin:      0,
+        joinLevel:   0,
+        pizza:       0,
+        levelSync:   0,
+    };
 
     const pingInterval = setInterval(() => {
       if (!alive) {
@@ -171,7 +299,10 @@ function initWsServer(wss) {
 
         entityId = entity.id;
         zoneId = entity.zoneId;
-        entity.displayName = msg.dn || decoded.dn || accountId.substring(0, 8);
+        // Trust the token's display name over the client-supplied one to prevent
+        // spoofing. Strip to safe length and printable ASCII regardless.
+        const rawDn = decoded.dn || msg.dn || accountId.substring(0, 8);
+        entity.displayName = String(rawDn).replace(/[^\x20-\x7E]/g, '').substring(0, DN_MAX_LEN) || accountId.substring(0, 8);
         authenticated = true;
 
         const zone = sim.getZoneForAccount(accountId);
@@ -184,6 +315,14 @@ function initWsServer(wss) {
           allowedVehicles.push('technodrone');
         }
         try { ws.send(JSON.stringify({ t: 'vehicles_allowed', vehicles: allowedVehicles })); } catch {}
+
+        if (accountEmail && config.ALL_ITEMS_EMAILS.includes(accountEmail.toLowerCase())) {
+          const ALL_ITEM_IDS = [
+            'mutagen_canister', 'pizza_box', 'helmet_shard', 'shell_fragment', 'power_cell',
+            'microphone', 'staff_piece', 'foot_scroll', 'dimension_crystal', 'technodrome_key',
+          ];
+          try { ws.send(JSON.stringify({ t: 'grant_items', items: ALL_ITEM_IDS })); } catch {}
+        }
 
         const allPlayers = [wireSnapshot(entity), ...visiblePlayers];
         const bounds = zone ? { w: zone.boundsW, h: zone.boundsH } : null;
@@ -235,19 +374,23 @@ function initWsServer(wss) {
 
       // --- Post-auth message routing ---
       switch (msg.t) {
-        case 'input':
+        case 'input': {
+          const _now = Date.now();
+          if (_now - _rl.input < RATE_INPUT_MIN_MS) break;
+          _rl.input = _now;
           if (validateInput(msg)) {
             sim.applyInput(accountId, msg);
           } else {
             try { ws.send(makeError('INPUT_INVALID', 'bad input payload', false)); } catch {}
           }
           break;
+        }
 
         case 'pos_sync': {
           const now = Date.now();
           if (now - lastPosSyncMs < POS_SYNC_MIN_MS) break;
           lastPosSyncMs = now;
-          if (typeof msg.px === 'number' && typeof msg.py === 'number') {
+          if (isSafeNumber(msg.px) && isSafeNumber(msg.py)) {
             const zone = sim.getZoneForAccount(accountId);
             if (zone) zone.posSync(accountId, msg.px, msg.py, msg.facing, msg.mode, msg.tid, msg.vpx, msg.vpy, msg.vf, msg.atk);
             // Track technodrone position while being driven
@@ -286,15 +429,19 @@ function initWsServer(wss) {
                 const zone = sim.getZoneForAccount(accountId);
                 if (zone) {
                   const ugcMsg = makeUgcUpdate(zone.id, accountId, result.ugcId, result.baseSpriteKey, result.spriteRef);
-                  for (const [, pws] of zone.conns) {
-                    if (pws.readyState === 1) {
-                      try { pws.send(ugcMsg); } catch {}
-                    }
+                  // Deliver to submitter first (getPlayersNearEntity excludes them)
+                  try { ws.send(ugcMsg); } catch {}
+                  // AOI-scoped broadcast — only players who can actually see this entity
+                  const entityId = zone.byAccount.get(accountId);
+                  const nearby = entityId ? zone.getPlayersNearEntity(entityId) : [];
+                  for (const { ws: pws } of nearby) {
+                    try { pws.send(ugcMsg); } catch {}
                   }
                 }
               }
             } catch (e) {
-              ws.send(JSON.stringify({ t: 'ugc_result', v: PROTOCOL_VERSION, ok: false, error: e.message }));
+              console.error('[ws] ugc_submit error:', e);
+              ws.send(JSON.stringify({ t: 'ugc_result', v: PROTOCOL_VERSION, ok: false, error: 'submission_failed' }));
             }
           } else {
             try { ws.send(makeError('MESSAGE_INVALID', 'bad ugc_submit payload', false)); } catch {}
@@ -302,41 +449,65 @@ function initWsServer(wss) {
           break;
 
         case 'enemy_sync': {
-          // Relay enemy kill/hit/shot events only to players within AOI range of
-          // the sender. Combat events are local — no need to tell players across
-          // the other side of the map.
+          const _esNow = Date.now();
+          if (_esNow - _rl.enemySync < RATE_ENEMY_SYNC_MIN_MS) break;
+          _rl.enemySync = _esNow;
           const hasKills = Array.isArray(msg.kills) && msg.kills.length > 0;
           const hasHits  = Array.isArray(msg.hits)  && msg.hits.length  > 0;
           const hasShots = Array.isArray(msg.shots) && msg.shots.length > 0;
           const hasAtks  = Array.isArray(msg.atks)  && msg.atks.length  > 0;
           if (!hasKills && !hasHits && !hasShots && !hasAtks) break;
-          // Persist kills for the hour so late-joiners don't respawn these enemies
-          if (hasKills) owRecordKills(zoneId, msg.kills.slice(0, 50));
+          // Persist kills for the hour so late-joiners don't respawn these enemies,
+          // and remove from the position snapshot so joiners don't see dead enemies.
+          if (hasKills) {
+            owRecordKills(zoneId, msg.kills.slice(0, 50));
+            owRemoveFromEnemySnapshot(zoneId, msg.kills.slice(0, 50));
+          }
           const zone = sim.getZoneForAccount(accountId);
           if (zone) {
-            const payload = JSON.stringify({
-              t: 'enemy_sync',
-              zone: zoneId,
-              kills: Array.isArray(msg.kills) ? msg.kills.slice(0, 50) : [],
-              hits:  Array.isArray(msg.hits)  ? msg.hits.slice(0, 50)  : [],
-              shots: Array.isArray(msg.shots) ? msg.shots.slice(0, 20) : [],
-              atks:  Array.isArray(msg.atks)  ? msg.atks.slice(0, 10)  : [],
-            });
-            // AOI-filtered: relay only to players in neighboring cells of the sender.
-            const enemySyncNearby = zone.getPlayersNearEntity(entityId);
-            for (const { ws: pws } of enemySyncNearby) {
-              try { pws.send(payload); } catch {}
+            // Kills must reach EVERY player in the zone — a player on the other side of
+            // the map must know an enemy died so it doesn't attack them as a phantom.
+            if (hasKills) {
+              const killPayload = JSON.stringify({
+                t: 'enemy_sync', zone: zoneId,
+                kills: msg.kills.slice(0, 50), hits: [], shots: [], atks: [],
+              });
+              broadcastToZone(zone, killPayload, ws);
+            }
+            // Hits/shots/atks are cosmetic and high-frequency; keep AOI-filtered.
+            if (hasHits || hasShots || hasAtks) {
+              const localPayload = JSON.stringify({
+                t: 'enemy_sync', zone: zoneId,
+                kills: [],
+                hits:  Array.isArray(msg.hits)  ? msg.hits.slice(0, 50)  : [],
+                shots: Array.isArray(msg.shots) ? msg.shots.slice(0, 20) : [],
+                atks:  Array.isArray(msg.atks)  ? msg.atks.slice(0, 10)  : [],
+              });
+              const enemySyncNearby = zone.getPlayersNearEntity(entityId);
+              for (const { ws: pws } of enemySyncNearby) {
+                try { pws.send(localPayload); } catch {}
+              }
             }
           }
           break;
         }
 
         case 'ow_join': {
-          // Client entered a region: send back enemies killed this hour
+          const _ojNow = Date.now();
+          if (_ojNow - _rl.owJoin < RATE_OW_JOIN_MIN_MS) break;
+          _rl.owJoin = _ojNow;
           if (typeof msg.regionId !== 'string') break;
-          const deadEnemies = owGetDeadEnemies(msg.regionId);
+          const deadEnemies = owGetDeadEnemies(zoneId);
+          const currentPizzas = zonePizzaList(zoneId);
+          const currentEnemies = owGetEnemySnapshot(zoneId);
           try {
-            ws.send(JSON.stringify({ t: 'ow_dead_enemies', regionId: msg.regionId, deadEnemies }));
+            ws.send(JSON.stringify({
+              t: 'ow_dead_enemies',
+              regionId: msg.regionId,
+              deadEnemies,
+              pizzas: currentPizzas,
+              enemies: currentEnemies,
+            }));
           } catch (_) {}
           break;
         }
@@ -350,13 +521,20 @@ function initWsServer(wss) {
         }
 
         case 'ow_enemy_sync': {
-          // Relay enemy positions to nearby players via AOI
+          const _oesNow = Date.now();
+          if (_oesNow - _rl.owEnemySync < RATE_OW_ENEMY_SYNC_MIN_MS) break;
+          _rl.owEnemySync = _oesNow;
           if (!Array.isArray(msg.enemies) || msg.enemies.length === 0) break;
           const zone2 = sim.getZoneForAccount(accountId);
           if (zone2) {
-            const owSyncPayload = JSON.stringify({ t: 'ow_enemy_sync', enemies: msg.enemies.slice(0, 100) });
-            const owNearby = zone2.getPlayersNearEntity(entityId);
-            for (const { ws: pws } of owNearby) {
+            const capped = msg.enemies.slice(0, 100);
+            // Update server snapshot so new joiners get current positions
+            owUpdateEnemySnapshot(zoneId, capped);
+            // AOI broadcast — only nearby players receive this
+            const owSyncPayload = JSON.stringify({ t: 'ow_enemy_sync', enemies: capped });
+            const nearby = zone2.getPlayersNearEntity(entityId);
+            for (const { ws: pws } of nearby) {
+              if (pws.readyState !== 1) continue;
               try { pws.send(owSyncPayload); } catch {}
             }
           }
@@ -371,21 +549,42 @@ function initWsServer(wss) {
           if (text.length === 0) break;
           lastChatMs = now;
           const zone = sim.getZoneForAccount(accountId);
-          if (zone) {
-            const entity = zone.entities.get(entityId);
-            const dn = (entity && entity.displayName) || accountId.substring(0, 8);
-            const chatMsg = makeChat(zone.id, entityId, dn, text);
-            for (const [, pws] of zone.conns) {
-              if (pws.readyState === 1) {
-                try { pws.send(chatMsg); } catch {}
-              }
+          if (!zone) break;
+          const entity = zone.entities.get(entityId);
+          const dn = (entity && entity.displayName) || accountId.substring(0, 8);
+
+          if (currentLevelInstanceId) {
+            // ── Inside a level room: chat is private to that room ──────────────
+            // ctx = instanceId so clients can filter against their current level.
+            const _lvlChatPayload = {
+              t: 'chat', zone: zoneId, from: entityId, dn, text,
+              ctx: currentLevelInstanceId,
+            };
+            if (currentRoomId !== null && currentRoomId !== undefined) {
+              _lvlChatPayload.roomId = currentRoomId;
             }
+            const levelChatMsg = JSON.stringify(_lvlChatPayload);
+            levelRoom.broadcast(currentLevelInstanceId, _lvlChatPayload, entityId);
+            try { ws.send(levelChatMsg); } catch {}
+          } else {
+            // ── Overworld: AOI-filtered, only physically nearby players ────────
+            const chatMsg = makeChat(zone.id, entityId, dn, text); // no ctx = overworld
+            const chatNearby = zone.getPlayersNearEntity(entityId);
+            for (const { ws: pws, pid } of chatNearby) {
+              // Skip players who are inside a building level — they have their own channel
+              if (inLevelEntityIds.has(pid)) continue;
+              if (pws.readyState === 1) try { pws.send(chatMsg); } catch {}
+            }
+            try { ws.send(chatMsg); } catch {}
           }
           break;
         }
 
         case 'join_level': {
-          if (typeof msg.instanceId !== 'string') break;
+          const _jlNow = Date.now();
+          if (_jlNow - _rl.joinLevel < RATE_JOIN_LEVEL_MIN_MS) break;
+          _rl.joinLevel = _jlNow;
+          if (!isSafeString(msg.instanceId, INSTANCE_ID_MAX_LEN)) break;
           // Leave any previous room first
           if (currentLevelInstanceId && currentLevelInstanceId !== msg.instanceId) {
             const prevHostId = levelRoom.leaveRoom(currentLevelInstanceId, entityId);
@@ -397,6 +596,7 @@ function initWsServer(wss) {
             }, entityId);
           }
           currentLevelInstanceId = msg.instanceId;
+          if (entityId) inLevelEntityIds.add(entityId);
           const zone = sim.getZoneForAccount(accountId);
           const entity = zone ? zone.entities.get(entityId) : null;
           const dn = (entity && entity.displayName) || accountId.substring(0, 8);
@@ -432,7 +632,11 @@ function initWsServer(wss) {
 
         case 'leave_level': {
           if (typeof msg.instanceId !== 'string') break;
-          if (currentLevelInstanceId === msg.instanceId) currentLevelInstanceId = null;
+          if (currentLevelInstanceId === msg.instanceId) {
+            currentLevelInstanceId = null;
+            currentRoomId = null;
+            if (entityId) inLevelEntityIds.delete(entityId);
+          }
           const newHostId = levelRoom.leaveRoom(msg.instanceId, entityId);
           // Notify remaining members of departure (and new host if changed)
           levelRoom.broadcast(msg.instanceId, {
@@ -457,7 +661,10 @@ function initWsServer(wss) {
             atkPhase: msg.atkPhase,
             tid: msg.tid
           };
-          if (msg.roomId !== undefined && msg.roomId !== null) levelPosMsg.roomId = msg.roomId;
+          if (msg.roomId !== undefined && msg.roomId !== null) {
+            levelPosMsg.roomId = msg.roomId;
+            currentRoomId = msg.roomId; // keep server in sync with client's current room
+          }
           levelRoom.broadcast(msg.instanceId, levelPosMsg, entityId);
           break;
         }
@@ -489,6 +696,12 @@ function initWsServer(wss) {
             kills
           };
 
+          // Relay damage hits so all clients (including the host) can apply guest
+          // damage and HP bars stay consistent. hits = [{id, hp}] after damage applied.
+          if (Array.isArray(msg.hits) && msg.hits.length > 0) {
+            syncPayload.hits = msg.hits.slice(0, 50);
+          }
+
           // Item pickup: only the room host can claim items
           if (msg.item && typeof msg.item.id === 'string' &&
               levelRoom.getHostId(msg.instanceId) === entityId) {
@@ -515,7 +728,7 @@ function initWsServer(wss) {
             break;
           }
           // First time: use position from client (building's current world position)
-          if (technodroneState.x == null && typeof msg.x === 'number') {
+          if (technodroneState.x == null && isSafeNumber(msg.x) && isSafeNumber(msg.y)) {
             technodroneState.x = msg.x;
             technodroneState.y = msg.y;
           }
@@ -536,13 +749,45 @@ function initWsServer(wss) {
 
         case 'technodrone_park': {
           if (technodroneState.driverId && technodroneState.driverId !== entityId) break;
-          if (typeof msg.x === 'number') technodroneState.x = msg.x;
-          if (typeof msg.y === 'number') technodroneState.y = msg.y;
-          if (typeof msg.dir === 'string') technodroneState.direction = msg.dir;
+          if (isSafeNumber(msg.x)) technodroneState.x = msg.x;
+          if (isSafeNumber(msg.y)) technodroneState.y = msg.y;
+          const VALID_DIRS = new Set(['up', 'down', 'left', 'right', 'n', 's', 'e', 'w']);
+          if (typeof msg.dir === 'string' && VALID_DIRS.has(msg.dir)) technodroneState.direction = msg.dir;
           technodroneState.driverId = null;
           technodroneState.driverAccountId = null;
           broadcastTechnodroneState(null);
           console.log(`[technodrone] parked at (${technodroneState.x}, ${technodroneState.y})`);
+          break;
+        }
+
+        case 'pizza_spawn': {
+          const _psNow = Date.now();
+          if (_psNow - _rl.pizza < RATE_PIZZA_MIN_MS) break;
+          _rl.pizza = _psNow;
+          // Validate the pizza object before trusting it.
+          if (!msg.pizza || !isSafeString(msg.pizza.id, 128)) break;
+          if (!isSafeNumber(msg.pizza.x) || !isSafeNumber(msg.pizza.y)) break;
+          // Only store fields we recognise; discard any extra client data.
+          const safePizza = { id: msg.pizza.id, x: msg.pizza.x, y: msg.pizza.y };
+          if (typeof msg.pizza.type === 'string') safePizza.type = msg.pizza.type.substring(0, 32);
+          const zone3 = sim.getZoneForAccount(accountId);
+          if (zone3) {
+            zonePizzaAdd(zoneId, safePizza);
+            const pizzaPayload = JSON.stringify({ t: 'pizza_spawn', pizza: safePizza });
+            broadcastToZone(zone3, pizzaPayload, ws);
+          }
+          break;
+        }
+
+        case 'pizza_collect': {
+          // Type-check id strictly to prevent non-string keys from corrupting the Map.
+          if (!isSafeString(msg.id, 128)) break;
+          const zone4 = sim.getZoneForAccount(accountId);
+          if (zone4) {
+            zonePizzaCollect(zoneId, msg.id);
+            const collectPayload = JSON.stringify({ t: 'pizza_collect', id: msg.id });
+            broadcastToZone(zone4, collectPayload, ws);
+          }
           break;
         }
 
@@ -639,8 +884,13 @@ function initWsServer(wss) {
     }
 
     function handleSpawnPos(msg) {
+      // Only allowed when the server flag is enabled (disabled in production).
+      if (!config.ALLOW_WORLD_LEVEL_TELEPORT) {
+        try { ws.send(JSON.stringify({ t: 'event', event: 'spawn_ack', ok: false, reason: 'forbidden' })); } catch {}
+        return;
+      }
       try {
-        if (typeof msg.x !== 'number' || typeof msg.y !== 'number') {
+        if (!isSafeNumber(msg.x) || !isSafeNumber(msg.y)) {
           try { ws.send(JSON.stringify({ t: 'event', event: 'spawn_ack', ok: false, reason: 'bad_xy' })); } catch {}
           return;
         }
@@ -662,7 +912,8 @@ function initWsServer(wss) {
         console.log('[ws] ' + entityId + ' spawn_pos -> (' + msg.x + ',' + msg.y + ') teleOk=' + teleOk + ' snapshot=' + allPlayers.length);
       } catch (err) {
         console.error('[ws] spawn_pos CRASH:', err);
-        try { ws.send(JSON.stringify({ t: 'event', event: 'spawn_ack', ok: false, reason: 'crash', err: err.message })); } catch {}
+        // Do not expose internal error details to the client.
+        try { ws.send(JSON.stringify({ t: 'event', event: 'spawn_ack', ok: false, reason: 'error' })); } catch {}
       }
     }
 
@@ -714,6 +965,8 @@ function initWsServer(wss) {
         // Auto-park technodrone if this was the driver
         if (entityId) autoParktechnodrone(entityId);
 
+        // No region host to clean up — all clients are equal peers.
+
         // Clean up any level room memberships on disconnect
         if (entityId && currentLevelInstanceId) {
           const newHostId = levelRoom.leaveRoom(currentLevelInstanceId, entityId);
@@ -724,6 +977,8 @@ function initWsServer(wss) {
             newHostId: newHostId || null
           }, entityId);
           currentLevelInstanceId = null;
+          currentRoomId = null;
+          inLevelEntityIds.delete(entityId);
         }
 
         console.log(`[ws] ${entityId} (${accountId}) left`);

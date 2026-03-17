@@ -20,12 +20,16 @@ const BRAND = {
 // ============================================
 
 const SAVE_KEY = 'sewerShowdown_save';
-const SAVE_VERSION = 3;
+const SAVE_VERSION = 4;
 
 function saveGame() {
     try {
         var entity = (game.controllerEntity === 'foot') ? game.turtle : game.player;
         if (!entity || (entity.x <= 0 && entity.y <= 0)) return;
+        // Sync active turtle's live HP into party before serialising
+        if (game.party && game.activeTurtle) {
+            game.party.hp[game.activeTurtle] = game.turtle.hp;
+        }
         var blob = {
             version: SAVE_VERSION,
             timestamp: Date.now(),
@@ -41,6 +45,10 @@ function saveGame() {
                 vanX: game.van ? game.van.x : 0,
                 vanY: game.van ? game.van.y : 0,
                 vanDir: game.van ? game.van.direction : 'down'
+            },
+            party: {
+                hp: Object.assign({}, game.party.hp),
+                status: Object.assign({}, game.party.status)
             }
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(blob));
@@ -69,6 +77,8 @@ function loadSave() {
             blob.progress.technodromeClear = blob.progress.technodromeClear || false;
             blob.version = 2;
         }
+        // Migrate v2/v3 -> v4: party hp/status added (no data to copy; defaults are fine)
+        if (blob.version < 4) blob.version = 4;
         if (blob.progress) {
             if (blob.progress.levelWins) {
                 for (var k in blob.progress.levelWins) {
@@ -81,6 +91,14 @@ function loadSave() {
             game.progress.collectedItems = blob.progress.collectedItems || {};
             game.progress.galleriesVisited = blob.progress.galleriesVisited || {};
             game.progress.technodromeClear = blob.progress.technodromeClear || false;
+        }
+        if (blob.party) {
+            if (blob.party.hp) {
+                for (var phk in blob.party.hp) game.party.hp[phk] = blob.party.hp[phk];
+            }
+            if (blob.party.status) {
+                for (var psk in blob.party.status) game.party.status[psk] = blob.party.status[psk];
+            }
         }
         if (blob.position) {
             game._savedPosition = blob.position;
@@ -4469,9 +4487,12 @@ const game = {
     allowedVehicles: [],       // populated from server login response, e.g. ['technodrone']
     van: {
         x: 0, y: 0,           // parked position (world pixels)
+        width: 128, height: 128,
         direction: 'right',    // last direction van was facing
         frame: 0,
-        shotCooldown: 0       // seconds until next shot is allowed
+        shotCooldown: 0,      // seconds until next shot is allowed
+        hp: 300, maxHp: 300,  // persistent van HP for HUD display
+        respawnInv: 0         // invincibility seconds after game-over respawn
     },
     vanProjectiles: [],        // active cannonball shots from the van
     technodrone: {
@@ -4496,11 +4517,20 @@ const game = {
         atkTimer: 0,
         atkCooldown: 0,
         hp: 100, maxHp: 100,   // overworld HP — matches OW_TURTLE_MAX_HP
-        lives: 3,              // matches OW_TURTLE_LIVES
+        lives: 3,              // deprecated - use party system
         invTimer: 0,
         kbVx: 0, kbVy: 0, kbTimer: 0,
         _atkHitEnemies: null   // Set populated when ACTIVE fires, cleared on IDLE
     },
+    party: {
+        turtles: ['leo', 'raph', 'donnie', 'mikey'],
+        status: { leo: 'alive', raph: 'alive', donnie: 'alive', mikey: 'alive' },
+        hp: { leo: 100, raph: 100, donnie: 100, mikey: 100 },
+        maxHp: 100
+    },
+    lastEnteredBuilding: null,  // {x, y} position of last building entered
+    gameOverTimer: 0,           // countdown for game over message
+    pizzaPickups: [],           // overworld pizza items
     regionEnemies: [],           // enemy cars + walkers on the overview map
     owHitSparks: [],             // hit-spark particles for overworld combat
     owScreenShake: 0,            // overworld screen shake magnitude
@@ -4522,7 +4552,7 @@ const game = {
     },
     // POI (roadside interactables)
     activePOI: null,               // { type, x, y } when near a POI
-    speedBoost: 0,                 // seconds remaining for speed boost
+    pizzaStar: 0,                  // seconds remaining for pizza-star power-up
     postcard: null,                // { text, timer } for viewpoint overlay
     poiHealReady: false,           // gas station refuel: next level starts at 5 HP
     technodromeMsg: null,
@@ -5929,12 +5959,32 @@ function drawPartyWagon() {
     ctx.translate(screenX + drawW / 2, screenY + drawH / 2);
     if (flipX) ctx.scale(-1, 1);
 
+    if (game.pizzaStar > 0) {
+        var _hue = (Date.now() / 5) % 360;
+        ctx.filter = 'hue-rotate(' + Math.round(_hue) + 'deg) saturate(2) brightness(1.25)';
+    } else if (game.van.respawnInv > 0 && Math.floor(game.van.respawnInv * 8) % 2 === 0) {
+        ctx.filter = 'brightness(3) saturate(0)'; // white flash blink during invincibility
+    }
+
     if (patKey) {
         var scale = drawW / 32;
         NES.drawSprite(ctx, -drawW / 2, -drawH / 2, patKey, scale);
     }
 
     ctx.restore();
+
+    // Van HP bar above the sprite
+    var _vCx = screenX + drawW / 2;
+    var _vBarW = 44, _vBarH = 5;
+    var _vBarX = _vCx - _vBarW / 2;
+    var _vBarY = screenY - 10;
+    var _vFrac = Math.max(0, p.hp / (p.maxHp || OW_VAN_MAX_HP));
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(_vBarX - 1, _vBarY - 1, _vBarW + 2, _vBarH + 2);
+    ctx.fillStyle = '#550000';
+    ctx.fillRect(_vBarX, _vBarY, _vBarW, _vBarH);
+    ctx.fillStyle = _vFrac > 0.5 ? '#22cc44' : _vFrac > 0.25 ? '#ffaa00' : '#ff3333';
+    ctx.fillRect(_vBarX, _vBarY, Math.round(_vBarW * _vFrac), _vBarH);
 }
 
 function drawParkedVan() {
@@ -6104,18 +6154,55 @@ function _processRemoteAtks() {
 function _smoothRemotePos(_rp) {
     var id = _rp.id;
     if (!_remoteAnimState[id]) {
-        _remoteAnimState[id] = { rx: 0, ry: 0, frame: 0, animTimer: 0, lastPx: 0, lastPy: 0, atkPhase: 'IDLE', atkTimer: 0, atkFrame: 0 };
+        _remoteAnimState[id] = {
+            rx: 0, ry: 0,
+            vx: 0, vy: 0,            // velocity estimate in px/ms
+            prevTargetX: 0, prevTargetY: 0,
+            lastPacketMs: 0,
+            frame: 0, animTimer: 0, lastPx: 0, lastPy: 0,
+            atkPhase: 'IDLE', atkTimer: 0, atkFrame: 0
+        };
     }
     var st = _remoteAnimState[id];
     var targetX = _rp.px != null ? _rp.px : _rp.x * TILE_SIZE;
     var targetY = _rp.py != null ? _rp.py : _rp.y * TILE_SIZE;
-    if (st.rx === 0 && st.ry === 0) { st.rx = targetX; st.ry = targetY; }
-    var dx = targetX - st.rx;
-    var dy = targetY - st.ry;
+    var nowMs = Date.now();
+
+    // First-time init — snap sprite to position
+    if (st.rx === 0 && st.ry === 0) {
+        st.rx = targetX; st.ry = targetY;
+        st.prevTargetX = targetX; st.prevTargetY = targetY;
+        st.lastPacketMs = nowMs;
+    }
+
+    // Detect a new packet (target moved) — update velocity estimate
+    if (targetX !== st.prevTargetX || targetY !== st.prevTargetY) {
+        var elapsed = nowMs - st.lastPacketMs;
+        if (elapsed > 0 && elapsed < 500) {          // sanity-clamp burst/stall
+            st.vx = (targetX - st.prevTargetX) / elapsed;  // px/ms
+            st.vy = (targetY - st.prevTargetY) / elapsed;
+        }
+        st.prevTargetX = targetX;
+        st.prevTargetY = targetY;
+        st.lastPacketMs = nowMs;
+    }
+
+    // Dead-reckoning: extrapolate where the player probably is right now
+    // Cap extrapolation at 150 ms so a stalled packet doesn't walk them off-screen
+    var extrapMs = Math.min(nowMs - st.lastPacketMs, 150);
+    var extrapX  = targetX + st.vx * extrapMs;
+    var extrapY  = targetY + st.vy * extrapMs;
+
+    var dx = extrapX - st.rx;
+    var dy = extrapY - st.ry;
     var dist = Math.sqrt(dx * dx + dy * dy);
     var moving = dist > 2;
-    if (dist > 400) { st.rx = targetX; st.ry = targetY; }
-    else if (moving) { var lerp = 0.18; st.rx += dx * lerp; st.ry += dy * lerp; }
+    if (dist > 700) { st.rx = extrapX; st.ry = extrapY; } // hard-snap on true teleport only
+    else if (moving) {
+        // Gentle correction — dead reckoning already handles most of the gap
+        var lerp = dist > 150 ? 0.30 : 0.20;
+        st.rx += dx * lerp; st.ry += dy * lerp;
+    }
     if (moving) {
         st.animTimer += 0.016;
         if (st.animTimer >= 0.15) { st.animTimer -= 0.15; st.frame = (st.frame + 1) % 2; }
@@ -6519,8 +6606,11 @@ function drawWaypointPips() {
         drawWaypointPip(vx, vy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#00ff00', 'VAN');
     }
 
-    // Magenta technodrone locator when parked and not currently driving it
-    if (game.mode === 'REGION' && game.technodrone.x != null && !game.technodrone.active && game.controllerEntity !== 'technodrone') {
+    // Magenta technodrone locator: only shown to players who can actually drive it
+    // (all 10 items collected, or an explicitly allowed account)
+    var _tdCanDrive = (Object.keys(game.progress.collectedItems).length >= 10) ||
+                      (typeof MP !== 'undefined' && MP.canDriveVehicle('technodrone'));
+    if (_tdCanDrive && game.mode === 'REGION' && game.technodrone.x != null && !game.technodrone.active && game.controllerEntity !== 'technodrone') {
         var tdcx = game.technodrone.x + game.technodrone.width / 2;
         var tdcy = game.technodrone.y + game.technodrone.height / 2;
         drawWaypointPip(tdcx, tdcy, pcx, pcy, vpLeft, vpTop, vpRight, vpBottom, '#ff44ff', 'TECHNODRONE');
@@ -6550,6 +6640,7 @@ function drawWaypointPips() {
         }
     }
 }
+
 
 function drawUI() {
     // Header
@@ -6598,32 +6689,17 @@ function drawUI() {
         ctx.fillText('ARROWS:Move  ENTER:Visit  T:Exit Van  M:World', 10, CANVAS_HEIGHT - 8);
     }
 
-    // Turtle HUD — show in REGION mode while on foot
-    if (game.mode === 'REGION' && game.controllerEntity === 'foot') {
-        var t = game.turtle;
-        var hudX = 8, hudY = CANVAS_HEIGHT - 52;
-        // Background panel
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(hudX - 2, hudY - 12, 100, 36);
-        // Turtle name label
-        ctx.fillStyle = '#fcfc00';
-        ctx.font = '6px "Press Start 2P", monospace';
-        ctx.textAlign = 'left';
-        var tName = (game.activeTurtle || 'turtle').toUpperCase();
-        ctx.fillText(tName, hudX, hudY - 2);
-        // HP bar (60×5)
-        ctx.fillStyle = '#880000';
-        ctx.fillRect(hudX, hudY + 2, 60, 5);
-        ctx.fillStyle = t.invTimer > 0 ? '#ffffff' : '#00cc00';
-        ctx.fillRect(hudX, hudY + 2, Math.round(60 * Math.max(0, t.hp / t.maxHp)), 5);
-        ctx.fillStyle = '#aaaaaa';
-        ctx.font = '6px "Press Start 2P", monospace';
-        ctx.fillText(t.hp + '/' + t.maxHp, hudX + 63, hudY + 7);
-        // Lives hearts
-        var livesTxt = '';
-        for (var _lv = 0; _lv < (t.lives || 0); _lv++) livesTxt += '\u2665';
-        ctx.fillStyle = '#ff4444';
-        ctx.fillText(livesTxt, hudX, hudY + 18);
+    // Game Over message
+    if (game.gameOverTimer > 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.fillStyle = '#ff0000';
+        ctx.font = '24px "Press Start 2P", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '10px "Press Start 2P", monospace';
+        ctx.fillText('SCORE RESET', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
         ctx.textAlign = 'left';
     }
 }
@@ -7117,6 +7193,7 @@ function requestPrimaryAction() {
         if (levelCtx) {
             var _retE = (game.controllerEntity === 'foot') ? game.turtle : game.player;
             game.levelReturnPos = { x: _retE.x, y: _retE.y };
+            game.lastEnteredBuilding = { x: _retE.x, y: _retE.y };
             startEnterLevelFromContext(levelCtx);
             return;
         }
@@ -7753,6 +7830,12 @@ function update(dt) {
     // Re-entry grace timer
     if (game.levelReentryGrace > 0) game.levelReentryGrace -= dt;
 
+    // Game over timer countdown
+    if (game.gameOverTimer > 0) {
+        game.gameOverTimer -= dt;
+        return;
+    }
+
     // Technodrome locked message — tick in all modes so it always fades out
     if (game.technodromeMsgTimer > 0) {
         game.technodromeMsgTimer -= dt;
@@ -7875,32 +7958,30 @@ function update(dt) {
             }
         }
 
-        // Turtle HP → life loss and respawn
+        // Turtle HP → death and party switch
         if (t.hp <= 0) {
-            t.lives = (t.lives || 1) - 1;
-            t.hp = t.maxHp;
-            t.invTimer = OW_INV_TIME * 3;
+            _syncPartyHp();
+            game.party.status[game.activeTurtle] = 'dead';
+            game.party.hp[game.activeTurtle] = 0;
+            
             t.kbTimer = 0;
             t.atkPhase = 'IDLE';
             t._atkHitEnemies = null;
-            // Teleport to nearest sewer entrance landmark (or starting position)
-            var bestDist = Infinity, bestLx = t.x, bestLy = t.y;
-            for (var _li = 0; _li < LANDMARKS.length; _li++) {
-                var _lm = LANDMARKS[_li];
-                if (_lm.id === 'lm_sewer' || _lm.id === 'lm_start') {
-                    var _lpx = _lm.x * TILE_SIZE, _lpy = _lm.y * TILE_SIZE;
-                    var _ld = Math.abs(_lpx - t.x) + Math.abs(_lpy - t.y);
-                    if (_ld < bestDist) { bestDist = _ld; bestLx = _lpx; bestLy = _lpy; }
-                }
-            }
-            t.x = bestLx; t.y = bestLy;
-            if (t.lives <= 0) {
-                t.lives = OW_TURTLE_LIVES; // reset lives — no hard game-over yet
+            
+            var nextTurtle = _getNextAliveTurtle();
+            if (nextTurtle) {
+                _switchToTurtle(nextTurtle);
+                t.invTimer = OW_INV_TIME * 3;
+                console.log('[party] Switched to ' + nextTurtle + ' (HP: ' + t.hp + ')');
+            } else {
+                _triggerGameOver();
             }
         }
 
         updateVanProjectiles(dt);
         updateRegionEnemies(dt);
+        _updatePizzaSpawns(dt);
+        _checkPizzaCollection();
         return;
     }
     
@@ -7946,13 +8027,22 @@ function update(dt) {
         }
     }
     
-    // Speed boost decay
-    if (game.speedBoost > 0) {
-        game.speedBoost -= dt;
-        if (game.speedBoost <= 0) {
-            game.speedBoost = 0;
-            if (game.mode === 'REGION') game.player.pxPerSecond = 400;
+    // Pizza-star decay
+    if (game.pizzaStar > 0) {
+        game.pizzaStar -= dt;
+        if (game.pizzaStar <= 0) {
+            game.pizzaStar = 0;
+            if (game.mode === 'REGION') game.player.pxPerSecond = 300;
         }
+    }
+
+    // Van respawn invincibility countdown
+    if (game.van.respawnInv > 0) game.van.respawnInv -= dt;
+
+    // Keep game.van.hp in sync with player HP while driving
+    if (game.mode === 'REGION' && game.controllerEntity === 'van' && game.player) {
+        game.van.hp    = game.player.hp;
+        game.van.maxHp = game.player.maxHp || OW_VAN_MAX_HP;
     }
     // Postcard overlay decay
     if (game.postcard && game.postcard.timer > 0) {
@@ -7960,7 +8050,7 @@ function update(dt) {
         if (game.postcard.timer <= 0) game.postcard = null;
     }
 
-    if (game.mode === 'REGION') { _processRemoteAtks(); updateVanProjectiles(dt); updateRegionEnemies(dt); }
+    if (game.mode === 'REGION') { _processRemoteAtks(); updateVanProjectiles(dt); updateRegionEnemies(dt); _updatePizzaSpawns(dt); _checkPizzaCollection(); }
     updateCamera(dt);
     if (game.mode === 'WORLD') {
         updateWorldInteraction();
@@ -8271,7 +8361,7 @@ function drawHighwayOverlay(sx, sy, tx, ty) {
 // ── Highway micro-features (roadside dressing, pure visual) ─────
 
 const HW_DRESSING_INTERVAL = 211;
-const HW_DRESSING_TYPES = ['rest_stop'];
+const HW_DRESSING_TYPES = ['mile_marker'];
 
 // ── Background buildings draw ────────────────────────────────────
 var _tintVariants = [
@@ -8913,6 +9003,10 @@ var ENEMY_SECTOR_SIZE         = 20;   // tiles per sector side (20×20 = 400 til
 var ENEMY_SECTOR_RADIUS       = 2;    // active sector radius around player (5×5 grid)
 var ENEMY_SECTOR_CARS         = 1;    // car enemies per sector
 var ENEMY_SECTOR_WALKERS      = 3;    // walker enemies per sector
+// Global cap: no single client will ever hold more than this many live enemies.
+// Shared between all players in the same area so the world isn't overrun when
+// many players are together — each player's cap is the same fixed ceiling.
+var MAX_REGION_ENEMIES        = 80;
 
 // ── Overworld combat constants ────────────────────────────────────────────────
 var OW_DETECT_CAR       = 400;   // px — van/turtle detection radius for cars
@@ -8930,12 +9024,490 @@ var OW_KB_TIME          = 0.25;  // seconds knockback lasts
 var OW_RETREAT_HP_FRAC  = 0.2;   // car retreats when hp < 20% of maxHp
 var OW_CHASE_SPEED_MULT = 1.4;   // speed multiplier when chasing
 var OW_TURTLE_MAX_HP    = 100;
-var OW_TURTLE_LIVES     = 3;
+var OW_TURTLE_LIVES     = 3;  // deprecated - use party system
 var OW_VAN_MAX_HP       = 300;
+
+// Pizza pickup constants
+var PIZZA_SLICE_HEAL    = 25;   // HP restored by pizza slice (turtle on foot)
+var VAN_PIZZA_SLICE     = 75;   // HP restored to van by a pizza slice
+var VAN_PIZZA_WHOLE     = 200;  // HP restored to van by a whole pizza
+var PIZZA_SPAWN_MIN     = 8;    // seconds between pizza spawns (min) — slightly rarer
+var PIZZA_SPAWN_MAX     = 22;   // seconds between pizza spawns (max)
+var PIZZA_RESPAWN_TIME  = 300;  // seconds until collected pizza respawns (5 min)
+var PIZZA_MAX_COUNT     = 8;    // max pizzas on map at once
+var PIZZA_COLLECT_DIST  = 40;   // pixels - pickup radius
+var PIZZA_STAR_DURATION = 12;   // seconds the pizza-star power-up lasts
+var PIZZA_STAR_SPEED    = 620;  // van speed while star-powered (px/sec)
 
 // Overworld kill score values (walkers give same as foot soldiers in levels)
 var OW_SCORE_WALKER = 100;
 var OW_SCORE_CAR    = 200;
+
+// ── Party System Helpers ─────────────────────────────────────────────────────
+function _getAliveTurtles() {
+    var alive = [];
+    for (var i = 0; i < game.party.turtles.length; i++) {
+        var tid = game.party.turtles[i];
+        if (game.party.status[tid] === 'alive') alive.push(tid);
+    }
+    return alive;
+}
+
+function _getDeadTurtles() {
+    var dead = [];
+    for (var i = 0; i < game.party.turtles.length; i++) {
+        var tid = game.party.turtles[i];
+        if (game.party.status[tid] === 'dead') dead.push(tid);
+    }
+    return dead;
+}
+
+function _getNextAliveTurtle() {
+    var current = game.activeTurtle;
+    var turtles = game.party.turtles;
+    var startIdx = turtles.indexOf(current);
+    for (var i = 1; i <= turtles.length; i++) {
+        var idx = (startIdx + i) % turtles.length;
+        var tid = turtles[idx];
+        if (game.party.status[tid] === 'alive') return tid;
+    }
+    return null;
+}
+
+function _switchToTurtle(turtleId) {
+    if (!turtleId || game.party.status[turtleId] !== 'alive') return false;
+    game.party.hp[game.activeTurtle] = game.turtle.hp;
+    game.activeTurtle = turtleId;
+    game.turtle.hp = game.party.hp[turtleId];
+    return true;
+}
+
+function _reviveAllTurtles() {
+    for (var i = 0; i < game.party.turtles.length; i++) {
+        var tid = game.party.turtles[i];
+        game.party.status[tid] = 'alive';
+        game.party.hp[tid] = game.party.maxHp;
+    }
+    game.turtle.hp = game.party.maxHp;
+}
+
+function _reviveTurtle(turtleId) {
+    if (!turtleId || game.party.status[turtleId] !== 'dead') return false;
+    game.party.status[turtleId] = 'alive';
+    game.party.hp[turtleId] = game.party.maxHp;
+    return true;
+}
+
+function _syncPartyHp() {
+    game.party.hp[game.activeTurtle] = game.turtle.hp;
+}
+
+function _triggerGameOver() {
+    console.log('[party] GAME OVER - all turtles dead');
+    
+    game.progress.score = 0;
+    game.gameOverTimer = 3.0;
+    
+    _reviveAllTurtles();
+    game.activeTurtle = game.party.turtles[0];
+    game.turtle.hp = game.party.maxHp;
+    game.turtle.invTimer = OW_INV_TIME * 5;
+    game.turtle.kbTimer = 0;
+    game.turtle.atkPhase = 'IDLE';
+    game.turtle._atkHitEnemies = null;
+    
+    var t = game.turtle;
+
+    // Find nearest building or landmark to the van's explosion point.
+    // Search origin: van position (if valid), otherwise turtle position.
+    var _refX = (game.van && game.van.x > 0) ? game.van.x + (game.van.width || 128) / 2
+                                               : t.x + (t.width || 32) / 2;
+    var _refY = (game.van && game.van.y > 0) ? game.van.y + (game.van.height || 128) / 2
+                                               : t.y + (t.height || 32) / 2;
+
+    var _bestDist = Infinity, _bestX = _refX, _bestY = _refY;
+
+    // Check enterable buildings first (most visible landmarks)
+    for (var _bi = 0; _bi < BUILDINGS.length; _bi++) {
+        var _bld = BUILDINGS[_bi];
+        var _bcx = _bld.worldX + TILE_SIZE, _bcy = _bld.worldY + TILE_SIZE * 1.5;
+        var _bd = Math.abs(_bcx - _refX) + Math.abs(_bcy - _refY);
+        if (_bd < _bestDist) { _bestDist = _bd; _bestX = _bcx; _bestY = _bcy; }
+    }
+
+    // Also check all landmarks
+    for (var _li = 0; _li < LANDMARKS.length; _li++) {
+        var _lm = LANDMARKS[_li];
+        var _lpx = _lm.x * TILE_SIZE, _lpy = _lm.y * TILE_SIZE;
+        var _ld = Math.abs(_lpx - _refX) + Math.abs(_lpy - _refY);
+        if (_ld < _bestDist) { _bestDist = _ld; _bestX = _lpx; _bestY = _lpy; }
+    }
+
+    t.x = _bestX - (t.width || 32) / 2;
+    t.y = _bestY - (t.height || 32) / 2;
+
+    // Reset van HP, give it invincibility, and snap to respawn point
+    game.van.hp         = game.van.maxHp || OW_VAN_MAX_HP;
+    game.van.respawnInv = 3.0;  // 3 seconds of invincibility so it can get clear
+    game.van.x = _bestX - (game.van.width  || 128) / 2;
+    game.van.y = _bestY - (game.van.height || 128) / 2;
+    // Also restore player HP if currently in van
+    if (game.controllerEntity === 'van' && game.player) {
+        game.player.hp    = game.player.maxHp || OW_VAN_MAX_HP;
+    }
+
+    saveGame();
+}
+
+// ── Pizza Pickup System ──────────────────────────────────────────────────────
+var _pizzaSpawnTimer = 0;
+var _pizzaStarSpawnTimer = 999; // only spawned as combo reward now
+var _pizzaIdCounter = 0;
+// Random token generated once per page-load so pizza IDs are unique across
+// sessions. Without this, a refresh resets the counter to 0, causing id
+// "p_abc_p1" to be reused — other clients already have that id and silently
+// skip the new pizza, making it invisible to everyone but the spawner.
+var _pizzaSessionToken = Math.random().toString(36).slice(2, 7);
+
+function _spawnPizza() {
+    if (!ROAD_GRID) {
+        console.log('[pizza] No ROAD_GRID, cannot spawn');
+        return;
+    }
+    if (game.pizzaPickups.length >= PIZZA_MAX_COUNT) {
+        console.log('[pizza] Max count reached:', game.pizzaPickups.length);
+        return;
+    }
+    
+    // Find a random road tile near the camera center (within ~30 tiles)
+    var camCenterX = game.camera.x + CANVAS_WIDTH / 2;
+    var camCenterY = game.camera.y + CANVAS_HEIGHT / 2;
+    var playerTx = Math.floor(camCenterX / TILE_SIZE);
+    var playerTy = Math.floor(camCenterY / TILE_SIZE);
+    var spawnRadius = 20;
+    console.log('[pizza] Trying to spawn near camera at tile', playerTx, playerTy);
+    
+    var attempts = 0;
+    var maxAttempts = 100;
+    while (attempts < maxAttempts) {
+        attempts++;
+        var rx = playerTx + Math.floor((Math.random() - 0.5) * spawnRadius * 2);
+        var ry = playerTy + Math.floor((Math.random() - 0.5) * spawnRadius * 2);
+        if (rx < 0 || rx >= WORLD_WIDTH || ry < 0 || ry >= WORLD_HEIGHT) continue;
+        var rk = ry * WORLD_WIDTH + rx;
+        if (!ROAD_GRID[rk]) continue;
+        
+        // Check not too close to existing pizzas
+        var px = rx * TILE_SIZE + TILE_SIZE / 2;
+        var py = ry * TILE_SIZE + TILE_SIZE / 2;
+        var tooClose = false;
+        for (var i = 0; i < game.pizzaPickups.length; i++) {
+            var op = game.pizzaPickups[i];
+            var dx = op.x - px, dy = op.y - py;
+            if (Math.sqrt(dx*dx + dy*dy) < TILE_SIZE * 3) {
+                tooClose = true;
+                break;
+            }
+        }
+        if (tooClose) continue;
+        
+        // 70% slice, 20% whole, 10% star
+        var _pr = Math.random();
+        var ptype = _pr < 0.70 ? 'slice' : _pr < 0.90 ? 'whole' : 'star';
+        var _pidOwner = (typeof MP !== 'undefined' && MP.entityId) ? MP.entityId : 'local';
+        var pizza = {
+            id: _pidOwner + '_' + _pizzaSessionToken + '_p' + (++_pizzaIdCounter),
+            x: px,
+            y: py,
+            type: ptype,
+            spawnTime: Date.now(),
+            collected: false,
+            collectedTime: 0
+        };
+        game.pizzaPickups.push(pizza);
+        console.log('[pizza] Spawned ' + ptype + ' at ' + rx + ',' + ry);
+        if (typeof MP !== 'undefined' && MP.isConnected()) {
+            MP.sendPizzaSpawn(pizza);
+        }
+        return;
+    }
+    // Fallback: spawn near camera center when no road tile found
+    console.log('[pizza] No road found after ' + maxAttempts + ' attempts, spawning near camera anyway');
+    var camCX = game.camera.x + CANVAS_WIDTH / 2;
+    var camCY = game.camera.y + CANVAS_HEIGHT / 2;
+    var _fpOwner = (typeof MP !== 'undefined' && MP.entityId) ? MP.entityId : 'local';
+    var fallbackPizza = {
+        id: _fpOwner + '_' + _pizzaSessionToken + '_p' + (++_pizzaIdCounter),
+        x: camCX + (Math.random() - 0.5) * 300,
+        y: camCY + (Math.random() - 0.5) * 300,
+        type: (function(){ var _r=Math.random(); return _r<0.70?'slice':_r<0.90?'whole':'star'; })(),
+        spawnTime: Date.now(),
+        collected: false,
+        collectedTime: 0
+    };
+    game.pizzaPickups.push(fallbackPizza);
+    console.log('[pizza] Fallback spawned at', fallbackPizza.x.toFixed(0), fallbackPizza.y.toFixed(0));
+    // Fallback must also broadcast so other players see it
+    if (typeof MP !== 'undefined' && MP.isConnected()) {
+        MP.sendPizzaSpawn(fallbackPizza);
+    }
+}
+
+function _updatePizzaSpawns(dt) {
+    if (game.mode !== 'REGION') return;
+    
+    // Regular pizza spawn timer (slices + wholes only)
+    _pizzaSpawnTimer -= dt;
+    if (_pizzaSpawnTimer <= 0) {
+        _spawnPizza();
+        _pizzaSpawnTimer = PIZZA_SPAWN_MIN + Math.random() * (PIZZA_SPAWN_MAX - PIZZA_SPAWN_MIN);
+        console.log('[pizza] Timer reset to ' + _pizzaSpawnTimer.toFixed(1) + 's, total pizzas: ' + game.pizzaPickups.length);
+    }
+
+    // Dedicated star spawn timer — always fires regardless of pizza count
+    _pizzaStarSpawnTimer -= dt;
+    if (_pizzaStarSpawnTimer <= 0) {
+        _pizzaStarSpawnTimer = 45 + Math.random() * 30; // next star in 45-75s
+        // Only spawn if no star already on map
+        var _hasActiveStar = false;
+        for (var _si = 0; _si < game.pizzaPickups.length; _si++) {
+            if (game.pizzaPickups[_si].type === 'star' && !game.pizzaPickups[_si].collected) {
+                _hasActiveStar = true; break;
+            }
+        }
+        if (!_hasActiveStar && ROAD_GRID) {
+            var _scx = game.camera.x + CANVAS_WIDTH / 2;
+            var _scy = game.camera.y + CANVAS_HEIGHT / 2;
+            var _stx = Math.floor(_scx / TILE_SIZE), _sty = Math.floor(_scy / TILE_SIZE);
+            // Find a road tile near the player
+            var _starPlaced = false;
+            for (var _sa = 0; _sa < 80 && !_starPlaced; _sa++) {
+                var _srx = _stx + Math.floor((Math.random() - 0.5) * 24);
+                var _sry = _sty + Math.floor((Math.random() - 0.5) * 24);
+                if (_srx < 0 || _sry < 0 || _srx >= WORLD_WIDTH || _sry >= WORLD_HEIGHT) continue;
+                if (!ROAD_GRID[_sry * WORLD_WIDTH + _srx]) continue;
+                var _starId = 'star_' + _pizzaSessionToken + '_' + (++_pizzaIdCounter);
+                var _starPizza = { id: _starId, x: _srx * TILE_SIZE, y: _sry * TILE_SIZE, type: 'star', spawnTime: Date.now(), collected: false, collectedTime: 0 };
+                game.pizzaPickups.push(_starPizza);
+                if (typeof MP !== 'undefined' && MP.isConnected() && MP.sendPizzaSpawn) MP.sendPizzaSpawn(_starPizza);
+                console.log('[pizza] STAR spawned at tile', _srx, _sry);
+                _starPlaced = true;
+            }
+        }
+    }
+    
+    // Respawn collected pizzas after timeout
+    var now = Date.now();
+    for (var i = game.pizzaPickups.length - 1; i >= 0; i--) {
+        var p = game.pizzaPickups[i];
+        if (p.collected && (now - p.collectedTime) > PIZZA_RESPAWN_TIME * 1000) {
+            game.pizzaPickups.splice(i, 1);
+        }
+    }
+}
+
+// Pizza sprite images
+var _pizzaWholeImg = new Image();
+var _pizzaSliceImg = new Image();
+var _pizzaStarImg  = new Image();
+_pizzaWholeImg.src = 'img/wholepizza.png';
+_pizzaSliceImg.src = 'img/slicepizza.png';
+_pizzaStarImg.src  = 'img/pizzastar.png';
+
+// Debug: spawn pizza at player position (call from console: window.debugSpawnPizza())
+window.debugSpawnPizza = function() {
+    // Use camera position as reference since that's what we see
+    var px = game.camera.x + CANVAS_WIDTH / 2 + (Math.random() - 0.5) * 200;
+    var py = game.camera.y + CANVAS_HEIGHT / 2 + (Math.random() - 0.5) * 200;
+    var pizza = {
+        id: 'pizza_debug_' + Date.now(),
+        x: px,
+        y: py,
+        type: Math.random() < 0.5 ? 'slice' : 'whole',
+        spawnTime: Date.now(),
+        collected: false,
+        collectedTime: 0
+    };
+    game.pizzaPickups.push(pizza);
+    console.log('[pizza] DEBUG spawned at world pos', px.toFixed(0), py.toFixed(0), 'camera:', game.camera.x.toFixed(0), game.camera.y.toFixed(0));
+    return pizza;
+};
+
+// Spawn a pizza star right in front of the player (call from console: debugSpawnStar())
+window.debugSpawnStar = function() {
+    var px = game.camera.x + CANVAS_WIDTH / 2 + (Math.random() - 0.5) * 120;
+    var py = game.camera.y + CANVAS_HEIGHT / 2 + (Math.random() - 0.5) * 120;
+    var star = { id: 'star_debug_' + Date.now(), x: px, y: py, type: 'star', spawnTime: Date.now(), collected: false, collectedTime: 0 };
+    game.pizzaPickups.push(star);
+    console.log('[pizza] DEBUG star spawned at', px.toFixed(0), py.toFixed(0));
+    return star;
+};
+
+// Clear all pizzas and spawn fresh ones near player
+window.debugResetPizzas = function() {
+    game.pizzaPickups = [];
+    for (var i = 0; i < 4; i++) {
+        window.debugSpawnPizza();
+    }
+    console.log('[pizza] Reset - spawned 4 near camera center');
+};
+
+function _drawPizzaPickups() {
+    for (var i = 0; i < game.pizzaPickups.length; i++) {
+        var p = game.pizzaPickups[i];
+        if (p.collected) continue;
+        
+        var sx = p.x - game.camera.x;
+        var sy = p.y - game.camera.y;
+        
+        // Skip if off screen
+        if (sx < -64 || sx > CANVAS_WIDTH + 64 || sy < -64 || sy > CANVAS_HEIGHT + 64) continue;
+        
+        // Floating animation
+        var bob = Math.sin(Date.now() / 300 + i) * 2;
+        var drawY = sy + bob;
+        
+        if (p.type === 'star') {
+            // Rainbow spinning star — like Mario's invincibility star
+            var _st = Date.now() / 1000;
+            var _spin = _st * 3.0;
+            var _hue  = (_st * 180) % 360;
+            var _size = 32;
+            ctx.save();
+            ctx.translate(sx, drawY);
+            ctx.rotate(_spin);
+            // Outer rainbow glow
+            ctx.shadowBlur = 14;
+            ctx.shadowColor = 'hsl(' + _hue + ',100%,60%)';
+            ctx.filter = 'hue-rotate(' + Math.round(_hue) + 'deg) brightness(1.4)';
+            if (_pizzaStarImg.complete && _pizzaStarImg.naturalWidth > 0) {
+                ctx.drawImage(_pizzaStarImg, -_size / 2, -_size / 2, _size, _size);
+            } else {
+                ctx.fillStyle = 'hsl(' + _hue + ',100%,60%)';
+                ctx.beginPath();
+                ctx.arc(0, 0, _size / 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.filter = 'none';
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        } else {
+            // Draw pizza sprite image
+            var img = p.type === 'whole' ? _pizzaWholeImg : _pizzaSliceImg;
+            var size = p.type === 'whole' ? 28 : 22;
+            if (img.complete && img.naturalWidth > 0) {
+                ctx.drawImage(img, sx - size / 2, drawY - size / 2, size, size);
+            } else {
+                // Fallback circle if image not loaded
+                ctx.fillStyle = p.type === 'whole' ? '#ff8800' : '#ffcc00';
+                ctx.beginPath();
+                ctx.arc(sx, drawY, size / 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+}
+
+function _collectPizza(pizzaId) {
+    for (var i = 0; i < game.pizzaPickups.length; i++) {
+        var p = game.pizzaPickups[i];
+        if (p.id === pizzaId && !p.collected) {
+            p.collected = true;
+            p.collectedTime = Date.now();
+            
+            if (p.type === 'star') {
+                // Pizza star — Mario-style speed + invincibility for the van
+                game.pizzaStar = PIZZA_STAR_DURATION;
+                if (game.mode === 'REGION') game.player.pxPerSecond = PIZZA_STAR_SPEED;
+                console.log('[pizza] PIZZA STAR! ' + PIZZA_STAR_DURATION + 's');
+            } else if (game.controllerEntity === 'van') {
+                // Driving the van: pizza heals van HP instead of turtle
+                var _vanHeal = (p.type === 'whole') ? VAN_PIZZA_WHOLE : VAN_PIZZA_SLICE;
+                game.player.hp = Math.min(game.player.hp + _vanHeal, game.player.maxHp);
+                console.log('[pizza] Van healed +' + _vanHeal + ' HP (' + game.player.hp + '/' + game.player.maxHp + ')');
+            } else if (p.type === 'slice') {
+                // Heal current turtle
+                game.turtle.hp = Math.min(game.turtle.hp + PIZZA_SLICE_HEAL, game.turtle.maxHp);
+                game.party.hp[game.activeTurtle] = game.turtle.hp;
+                console.log('[pizza] Healed ' + PIZZA_SLICE_HEAL + ' HP');
+            } else {
+                // Revive a dead turtle
+                var deadTurtles = _getDeadTurtles();
+                if (deadTurtles.length > 0) {
+                    _reviveTurtle(deadTurtles[0]);
+                    console.log('[pizza] Revived ' + deadTurtles[0]);
+                } else {
+                    // All alive - full heal instead
+                    game.turtle.hp = game.turtle.maxHp;
+                    game.party.hp[game.activeTurtle] = game.turtle.hp;
+                    console.log('[pizza] Full heal (no dead turtles)');
+                }
+            }
+            
+            // Broadcast collection
+            if (typeof MP !== 'undefined' && MP.isConnected()) {
+                MP.sendPizzaCollect(pizzaId);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+function _checkPizzaCollection() {
+    var ccx, ccy, cDist;
+    if (game.controllerEntity === 'foot') {
+        var t = game.turtle;
+        ccx = t.x + t.width / 2;
+        ccy = t.y + t.height / 2;
+        cDist = PIZZA_COLLECT_DIST;
+    } else if (game.controllerEntity === 'van') {
+        var vp = game.player;
+        ccx = vp.x + vp.width / 2;
+        ccy = vp.y + vp.height / 2;
+        cDist = PIZZA_COLLECT_DIST * 2; // wider pickup radius for van
+    } else {
+        return;
+    }
+
+    for (var i = 0; i < game.pizzaPickups.length; i++) {
+        var p = game.pizzaPickups[i];
+        if (p.collected) continue;
+        // Van picks up all pizza types; foot picks up everything too
+        var pdx = p.x - ccx, pdy = p.y - ccy;
+        if (Math.sqrt(pdx * pdx + pdy * pdy) < cDist) {
+            _collectPizza(p.id);
+            break;
+        }
+    }
+}
+
+function _handleRemotePizzaSpawn(pizzaData) {
+    // Check if we already have this pizza
+    for (var i = 0; i < game.pizzaPickups.length; i++) {
+        if (game.pizzaPickups[i].id === pizzaData.id) return;
+    }
+    game.pizzaPickups.push({
+        id: pizzaData.id,
+        x: pizzaData.x,
+        y: pizzaData.y,
+        type: pizzaData.type,
+        spawnTime: pizzaData.spawnTime || Date.now(),
+        collected: false,
+        collectedTime: 0
+    });
+}
+
+function _handleRemotePizzaCollect(pizzaId) {
+    for (var i = 0; i < game.pizzaPickups.length; i++) {
+        var p = game.pizzaPickups[i];
+        if (p.id === pizzaId) {
+            p.collected = true;
+            p.collectedTime = Date.now();
+            break;
+        }
+    }
+}
 
 // ── _owAddKillScore ───────────────────────────────────────────────────────────
 // Awards points for an overworld kill, drives combo + floating popup — same
@@ -8951,6 +9523,32 @@ function _owAddKillScore(enemyType, worldX, worldY) {
         game.owComboCount = 1;
     }
     game.owComboTimer = COMBO_WINDOW;
+
+    // Every 5th combo kill spawns a pizza star as a reward
+    if (game.owComboCount > 0 && game.owComboCount % 5 === 0) {
+        var _hasActiveStar = false;
+        for (var _csi = 0; _csi < game.pizzaPickups.length; _csi++) {
+            if (game.pizzaPickups[_csi].type === 'star' && !game.pizzaPickups[_csi].collected) {
+                _hasActiveStar = true; break;
+            }
+        }
+        if (!_hasActiveStar && ROAD_GRID) {
+            // Spawn near the kill location
+            var _csTx = Math.floor(worldX / TILE_SIZE), _csTy = Math.floor(worldY / TILE_SIZE);
+            for (var _csa = 0; _csa < 30; _csa++) {
+                var _csrx = _csTx + Math.floor((Math.random() - 0.5) * 10);
+                var _csry = _csTy + Math.floor((Math.random() - 0.5) * 10);
+                if (_csrx < 0 || _csry < 0 || _csrx >= WORLD_WIDTH || _csry >= WORLD_HEIGHT) continue;
+                if (!ROAD_GRID[_csry * WORLD_WIDTH + _csrx]) continue;
+                var _csId = 'star_' + _pizzaSessionToken + '_' + (++_pizzaIdCounter);
+                var _csStar = { id: _csId, x: _csrx * TILE_SIZE, y: _csry * TILE_SIZE, type: 'star', spawnTime: Date.now(), collected: false, collectedTime: 0 };
+                game.pizzaPickups.push(_csStar);
+                if (typeof MP !== 'undefined' && MP.isConnected() && MP.sendPizzaSpawn) MP.sendPizzaSpawn(_csStar);
+                console.log('[pizza] COMBO x' + game.owComboCount + ' → STAR spawned near kill');
+                break;
+            }
+        }
+    }
 
     game.progress.score += pts;
     if (game.progress.score > (game.progress.bestScore || 0)) {
@@ -9388,6 +9986,7 @@ function _tickEnemyArray(arr, dt) {
         var e = arr[i];
         if (e.state === 'dead' || e.state === 'dying') continue;
         if (e.aiState && e.aiState !== 'patrol') continue;  // AI-controlled enemies updated per-frame
+        if (e.type !== 'car') continue; // walkers run at full frame-rate in updateRegionEnemies
 
         if (e.type === 'car') {
             // ── CarAI Module handles smart behavior ──
@@ -9440,43 +10039,7 @@ function _tickEnemyArray(arr, dt) {
                 e.dirChangeTimer = 2 + e._rng() * 4;
             }
 
-        } else { // walker — land roaming (no road constraint, but must stay on land)
-            var wndx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
-            var wndy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
-            var wnx  = e.x + wndx * e.speed * dt;
-            var wny  = e.y + wndy * e.speed * dt;
-            // Bounce off world edges
-            if (wnx < 0 || wnx + REGION_ENEMY_WALK_W > worldPxW) {
-                e.direction = (e.direction === 'left') ? 'right' : 'left';
-                wnx = Math.max(0, Math.min(worldPxW - REGION_ENEMY_WALK_W, wnx));
-            }
-            if (wny < 0 || wny + REGION_ENEMY_WALK_H > worldPxH) {
-                e.direction = (e.direction === 'up') ? 'down' : 'up';
-                wny = Math.max(0, Math.min(worldPxH - REGION_ENEMY_WALK_H, wny));
-            }
-            // Bounce off water/coast/river tiles
-            if (TERRAIN_GRID) {
-                var _wcx = Math.floor((wnx + REGION_ENEMY_WALK_W / 2) / TILE_SIZE);
-                var _wcy = Math.floor((wny + REGION_ENEMY_WALK_H / 2) / TILE_SIZE);
-                if (_wcy >= 0 && _wcy < TERRAIN_GRID.length && TERRAIN_GRID[_wcy]) {
-                    var _wtt = TERRAIN_GRID[_wcy][_wcx] || 0;
-                    if (_wtt === 0 || _wtt === 1 || _wtt === 4) {
-                        // Water — reverse direction and stay put
-                        e.direction = (wndx !== 0)
-                            ? (e.direction === 'left' ? 'right' : 'left')
-                            : (e.direction === 'up'   ? 'down'  : 'up');
-                        wnx = e.x; wny = e.y;
-                    }
-                }
-            }
-            e.x = wnx; e.y = wny;
-            e.wanderTimer -= dt;
-            if (e.wanderTimer <= 0) {
-                var wrng = e._rng;
-                e.wanderTimer = 1.5 + wrng() * 3;
-                e.direction = ['left','right','up','down'][Math.floor(wrng() * 4)];
-            }
-        }
+        } // walkers handled per-frame in updateRegionEnemies patrol case
     }
 }
 
@@ -9555,8 +10118,69 @@ function _updateEnemyAI(e, dt, targetX, targetY) {
                 if (isCar) {
                     e.direction = _carChaseDirection(e, targetX, targetY, false);
                     e._chasePath = null;
-                    e._chaseRepath = 0; // compute path immediately on next frame
+                    e._chaseRepath = 0;
                 }
+                break;
+            }
+            // Walker patrol: full 60fps smooth movement (same style as chase)
+            if (!isCar) {
+                // Wander timer — pick a new random direction periodically
+                if (!e.wanderTimer || e.wanderTimer <= 0) {
+                    var _wpRng = e._rng || Math.random;
+                    e.wanderTimer = 1.5 + _wpRng() * 3;
+                    e.direction = ['left','right','up','down'][Math.floor(_wpRng() * 4)];
+                }
+                e.wanderTimer -= dt;
+
+                var _wpdx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+                var _wpdy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+                var _wpnx = e.x + _wpdx * e.speed * dt;
+                var _wpny = e.y + _wpdy * e.speed * dt;
+                var _wpW  = WORLD_WIDTH * TILE_SIZE;
+                var _wpH  = WORLD_HEIGHT * TILE_SIZE;
+                _wpnx = Math.max(0, Math.min(_wpW - REGION_ENEMY_WALK_W, _wpnx));
+                _wpny = Math.max(0, Math.min(_wpH - REGION_ENEMY_WALK_H, _wpny));
+
+                // Block on water — try all other directions before staying put
+                if (TERRAIN_GRID) {
+                    var _wptx = Math.floor((_wpnx + REGION_ENEMY_WALK_W / 2) / TILE_SIZE);
+                    var _wpty = Math.floor((_wpny + REGION_ENEMY_WALK_H / 2) / TILE_SIZE);
+                    var _wpBlocked = false;
+                    if (_wpty >= 0 && _wpty < TERRAIN_GRID.length && TERRAIN_GRID[_wpty]) {
+                        var _wptt = TERRAIN_GRID[_wpty][_wptx] || 0;
+                        _wpBlocked = (_wptt === 0 || _wptt === 1 || _wptt === 4);
+                    }
+                    if (_wpBlocked) {
+                        var _wpDirs = ['right','left','up','down'];
+                        var _wpOk = false;
+                        for (var _wpdi = 0; _wpdi < _wpDirs.length; _wpdi++) {
+                            var _wpd = _wpDirs[_wpdi];
+                            if (_wpd === e.direction) continue;
+                            var _wpdx2 = _wpd === 'right' ? 1 : _wpd === 'left' ? -1 : 0;
+                            var _wpdy2 = _wpd === 'down'  ? 1 : _wpd === 'up'   ? -1 : 0;
+                            var _wptnx = e.x + _wpdx2 * e.speed * dt;
+                            var _wptny = e.y + _wpdy2 * e.speed * dt;
+                            var _wpttx = Math.floor((_wptnx + REGION_ENEMY_WALK_W / 2) / TILE_SIZE);
+                            var _wptty = Math.floor((_wptny + REGION_ENEMY_WALK_H / 2) / TILE_SIZE);
+                            if (_wptty < 0 || _wptty >= TERRAIN_GRID.length || !TERRAIN_GRID[_wptty]) continue;
+                            var _wpttt = TERRAIN_GRID[_wptty][_wpttx] || 0;
+                            if (_wpttt !== 0 && _wpttt !== 1 && _wpttt !== 4) {
+                                e.direction = _wpd;
+                                _wpnx = _wptnx; _wpny = _wptny;
+                                e.wanderTimer = 1.0 + (e._rng ? e._rng() * 2 : Math.random() * 2);
+                                _wpOk = true;
+                                break;
+                            }
+                        }
+                        if (!_wpOk) { _wpnx = e.x; _wpny = e.y; }
+                    }
+                }
+                e.x = _wpnx; e.y = _wpny;
+
+                // Animation — same interval as chase
+                if (!e.animTimer) e.animTimer = 0;
+                e.animTimer += dt;
+                if (e.animTimer >= 0.18) { e.animTimer -= 0.18; e.frame = (e.frame + 1) % 2; }
             }
             break;
 
@@ -9578,13 +10202,17 @@ function _updateEnemyAI(e, dt, targetX, targetY) {
                 if (e._carBrain && typeof CarAI !== 'undefined') {
                     // Let CarAI handle chase pathfinding
                     e.direction = CarAI.update(e, e._carBrain, dt, targetX, targetY, detectR, true);
-                    var cSpeed = CarAI.getSpeed(e._carBrain);
-                    var cDx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
-                    var cDy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
-                    var cnx = e.x + cDx * cSpeed * dt;
-                    var cny = e.y + cDy * cSpeed * dt;
-                    if (_carCenterOnRoad(cnx, cny)) {
-                        e.x = cnx; e.y = cny;
+                    // holdPosition: player is off-road; car has reached the nearest road
+                    // edge and is waiting. Don't move — prevents the rapid left/right flash.
+                    if (!e._carBrain.holdPosition) {
+                        var cSpeed = CarAI.getSpeed(e._carBrain);
+                        var cDx = e.direction === 'right' ? 1 : e.direction === 'left' ? -1 : 0;
+                        var cDy = e.direction === 'down'  ? 1 : e.direction === 'up'   ? -1 : 0;
+                        var cnx = e.x + cDx * cSpeed * dt;
+                        var cny = e.y + cDy * cSpeed * dt;
+                        if (_carCenterOnRoad(cnx, cny)) {
+                            e.x = cnx; e.y = cny;
+                        }
                     }
                 } else {
                     // Fallback to simple chase
@@ -9684,6 +10312,10 @@ function _updateEnemyAI(e, dt, targetX, targetY) {
 // current wall-clock time, then appends them to game.regionEnemies.
 function _spawnSectorEnemies(sx, sy) {
     if (!ROAD_GRID || typeof WORLD_WIDTH !== 'number') return;
+    // Enforce global cap: if we already have enough live enemies, skip this sector.
+    // Because zone-wide position syncs are in play, enemies from other sectors will
+    // appear via the cache when this player walks there, without adding more bodies.
+    if (game.regionEnemies && game.regionEnemies.length >= MAX_REGION_ENEMIES) return;
     var regionId = game.currentRegionId || 'na';
     var epochMs  = game._enemyEpochMs;
     var epochSec = epochMs / 1000.0;
@@ -9758,14 +10390,14 @@ function _spawnSectorEnemies(sx, sy) {
         });
     }
 
-    // Fast-forward from epoch to the global sim clock so new enemies are
-    // already at the same position as the ones already running.
-    var targetSec = game._enemySimClock != null ? game._enemySimClock : Date.now() / 1000.0;
-    var t = epochSec;
-    while (t + REGION_ENEMY_SIM_STEP <= targetSec) {
-        t += REGION_ENEMY_SIM_STEP;
-        _tickEnemyArray(newEnemies, REGION_ENEMY_SIM_STEP);
-    }
+    // Fast-forward enemies from epoch toward the current sim clock so they
+    // appear spread out rather than at their spawn tile.  The epoch can be up
+    // to an hour long, which would cause a browser-freezing loop, so we cap
+    // the fast-forward at 60 seconds.  Zone-wide host position syncs correct
+    // any remaining divergence within 0.5 s of the sector loading anyway.
+    // Fast-forward disabled — enemies start at spawn positions and spread out naturally.
+    // The live sim clock and zone-wide position syncs correct any divergence within
+    // a few frames anyway, and skipping the FF eliminates the sector-load hitch entirely.
 
     // After fast-forward, orient cars to match the road at their current position.
     // Done OUTSIDE the deterministic sim so it doesn't shift the RNG sequence.
@@ -9814,8 +10446,41 @@ function _spawnSectorEnemies(sx, sy) {
 
     var killedIds = game._killedEnemyIds;
     for (var ni = 0; ni < newEnemies.length; ni++) {
-        if (killedIds && killedIds.has(newEnemies[ni].id)) continue;  // don't re-spawn killed enemies
-        game.regionEnemies.push(newEnemies[ni]);
+        var _ne = newEnemies[ni];
+        if (killedIds && killedIds.has(_ne.id)) continue;
+
+        // Skip if an entry with this ID already exists — it was likely created
+        // from a peer's sync broadcast before this sector finished loading.
+        // Duplicates cause doubled enemies that never clean up properly.
+        var _neExists = false;
+        for (var _nei = 0; _nei < game.regionEnemies.length; _nei++) {
+            if (game.regionEnemies[_nei].id === _ne.id) {
+                // Upgrade the existing entry with proper fields it may be missing
+                // (e.g. _rng, _carBrain, _sectorKey) from the deterministic spawn.
+                var _ex = game.regionEnemies[_nei];
+                if (!_ex._rng  && _ne._rng)      _ex._rng      = _ne._rng;
+                if (!_ex._carBrain && _ne._carBrain) _ex._carBrain = _ne._carBrain;
+                if (!_ex._patrolRoute && _ne._patrolRoute) {
+                    _ex._patrolRoute = _ne._patrolRoute;
+                    _ex._patrolIdx   = _ne._patrolIdx;
+                }
+                _ex._sectorKey = _ne._sectorKey;
+                _neExists = true;
+                break;
+            }
+        }
+        if (_neExists) continue;
+
+        // Apply cached position so the enemy appears at its current live location
+        // rather than the epoch fast-forward position.
+        if (game._owEnemyPosCache) {
+            var _nc = game._owEnemyPosCache[_ne.id];
+            if (_nc && (Date.now() - _nc.t) < 10000) {
+                _ne.x = _nc.x; _ne.y = _nc.y;
+                if (_nc.s) _ne.aiState = _nc.s;
+            }
+        }
+        game.regionEnemies.push(_ne);
     }
 }
 
@@ -9829,18 +10494,31 @@ function _refreshEnemySectors() {
     var playerSX = Math.floor(Math.floor((px + 32) / TILE_SIZE) / ENEMY_SECTOR_SIZE);
     var playerSY = Math.floor(Math.floor((py + 32) / TILE_SIZE) / ENEMY_SECTOR_SIZE);
 
-    if (game._lastEnemySX === playerSX && game._lastEnemySY === playerSY) return;
-    game._lastEnemySX = playerSX;
-    game._lastEnemySY = playerSY;
-
-    var R = ENEMY_SECTOR_RADIUS;
+    // Always compute active sectors so the per-frame spawn tick can run.
     var active = {};
-    for (var sy = playerSY - R; sy <= playerSY + R; sy++) {
-        for (var sx = playerSX - R; sx <= playerSX + R; sx++) {
+    for (var sy = playerSY - ENEMY_SECTOR_RADIUS; sy <= playerSY + ENEMY_SECTOR_RADIUS; sy++) {
+        for (var sx = playerSX - ENEMY_SECTOR_RADIUS; sx <= playerSX + ENEMY_SECTOR_RADIUS; sx++) {
             if (sx < 0 || sy < 0) continue;
             active[sx + ',' + sy] = true;
         }
     }
+
+    // Spawn one pending sector per frame — runs every frame so the queue drains
+    // smoothly without hitching even when the player hasn't moved to a new sector.
+    for (var key in active) {
+        if (!game._spawnedSectors[key]) {
+            game._spawnedSectors[key] = true;
+            var parts = key.split(',');
+            _spawnSectorEnemies(parseInt(parts[0]), parseInt(parts[1]));
+            break; // one per frame
+        }
+    }
+
+    // The rest (enemy pruning, sector cleanup) only needs to run when the player
+    // has moved into a new sector — it's correct but not urgent every frame.
+    if (game._lastEnemySX === playerSX && game._lastEnemySY === playerSY) return;
+    game._lastEnemySX = playerSX;
+    game._lastEnemySY = playerSY;
 
     // Drop enemies that are currently outside the active sector range.
     // Use the enemy's CURRENT position (not spawn sector) so routed cars
@@ -9857,14 +10535,6 @@ function _refreshEnemySectors() {
         if (!active[_eCurKey]) game.regionEnemies.splice(i, 1);
     }
 
-    // Spawn any newly-needed sectors
-    for (var key in active) {
-        if (!game._spawnedSectors[key]) {
-            game._spawnedSectors[key] = true;
-            var parts = key.split(',');
-            _spawnSectorEnemies(parseInt(parts[0]), parseInt(parts[1]));
-        }
-    }
     // Clean up spawned-sector registry for sectors now out of range
     for (var k in game._spawnedSectors) {
         if (!active[k]) delete game._spawnedSectors[k];
@@ -9875,11 +10545,12 @@ function _refreshEnemySectors() {
 // Entry point: called when entering a region.  Initialises the sector system
 // and spawns the first batch of sectors near the player.
 function spawnRegionEnemies() {
-    game.regionEnemies   = [];
-    game._spawnedSectors = {};
-    game._killedEnemyIds = new Set();  // persists for this region session; prevents re-spawn of killed enemies
-    game._lastEnemySX    = null;
-    game._lastEnemySY    = null;
+    game.regionEnemies    = [];
+    game._spawnedSectors  = {};
+    game._killedEnemyIds  = new Set();
+    game._lastEnemySX     = null;
+    game._lastEnemySY     = null;
+    game._regionHostReady = false;   // set to true once the server confirms host status
     if (game.mode !== 'REGION') return;
     if (!ROAD_GRID || typeof WORLD_WIDTH !== 'number' || typeof WORLD_HEIGHT !== 'number') return;
 
@@ -9895,11 +10566,11 @@ function spawnRegionEnemies() {
     var epochSec = game._enemyEpochMs / 1000.0;
     game._enemySimClock  = epochSec + Math.floor((nowSec - epochSec) / REGION_ENEMY_SIM_STEP) * REGION_ENEMY_SIM_STEP;
 
-    // Spawn sectors near the player immediately (forces _lastEnemySX reset)
+    // Spawn initial sectors around the player immediately
     _refreshEnemySectors();
     console.log('[regionEnemies] sector system init, enemies:', game.regionEnemies.length);
 
-    // Ask server for enemies already killed this hour so they don't respawn locally
+    // Ask server for dead-enemy list, pizza state, host assignment
     if (typeof MP !== 'undefined' && MP.isConnected()) {
         MP.sendOwJoin(game.currentRegionId || 'na');
     }
@@ -10029,19 +10700,23 @@ function updateVanProjectiles(dt) {
         if (game.regionEnemies) {
             for (var wi = 0; wi < game.regionEnemies.length; wi++) {
                 var we = game.regionEnemies[wi];
-                if (we.type !== 'walker') continue;
                 if (we.state === 'dead' || we.state === 'dying') continue;
-                var wx2 = we.x + REGION_ENEMY_WALK_W, wy2 = we.y + REGION_ENEMY_WALK_H;
+                var _isWalker = (we.type === 'walker');
+                var _isCar    = (we.type === 'car');
+                // Walkers always get run over; cars only die during pizza-star
+                if (!_isWalker && !(_isCar && game.pizzaStar > 0)) continue;
+                var _ew = _isCar ? REGION_ENEMY_CAR_W : REGION_ENEMY_WALK_W;
+                var _eh = _isCar ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H;
+                var wx2 = we.x + _ew, wy2 = we.y + _eh;
                 if (vx1 < wx2 && vx2 > we.x && vy1 < wy2 && vy2 > we.y) {
-                    // Roadkill!
                     we.hp = 0;
                     we.state = 'dying';
                     we.deathTimer = REGION_ENEMY_DEATH_TIME;
                     we.stunTimer = 0;
                     we.deathFlash = 0.25;
                     if (game._killedEnemyIds) game._killedEnemyIds.add(we.id);
-                    var wecx = we.x + REGION_ENEMY_WALK_W / 2;
-                    var wecy = we.y + REGION_ENEMY_WALK_H / 2;
+                    var wecx = we.x + _ew / 2;
+                    var wecy = we.y + _eh / 2;
                     _owAddKillScore(we.type, wecx, wecy);
                     game.owHitSparks.push({ x: wecx, y: wecy, life: 0.18, maxLife: 0.18 });
                     if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendEnemyKill(we.id, wecx, wecy);
@@ -10073,17 +10748,136 @@ function updateRegionEnemies(dt) {
             }
         }
 
-        // ── Apply enemy positions broadcast by nearby players ────────────────
+        // ── Apply server enemy snapshot (positions on join) ───────────────────
+        // Seeds the position cache so _spawnSectorEnemies snaps newly spawned
+        // enemies to their current live positions instead of epoch positions.
+        // Also creates any enemies from host-controlled sectors the guest hasn't
+        // loaded locally yet.
+        var _owJoinEnemies = MP.drainOwJoinEnemies ? MP.drainOwJoinEnemies() : null;
+        if (_owJoinEnemies && _owJoinEnemies.length > 0) {
+            if (!game._owEnemyPosCache) game._owEnemyPosCache = {};
+            for (var _jei = 0; _jei < _owJoinEnemies.length; _jei++) {
+                var _je = _owJoinEnemies[_jei];
+                if (!_je || !_je.id) continue;
+                game._owEnemyPosCache[_je.id] = { x: _je.x, y: _je.y, s: _je.s, tp: _je.tp, t: Date.now() };
+                // Snap any already-loaded matching enemy to the host position
+                for (var _jei2 = 0; _jei2 < game.regionEnemies.length; _jei2++) {
+                    var _jeLocal = game.regionEnemies[_jei2];
+                    if (_jeLocal.id === _je.id && _jeLocal.state !== 'dying' && _jeLocal.state !== 'dead') {
+                        _jeLocal.x = _je.x; _jeLocal.y = _je.y;
+                        if (_je.s) _jeLocal.aiState = _je.s;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // ── Process remote pizza events ─────────────────────────────────────
+        // On region join, server sends the full current pizza list so this player
+        // sees exactly what everyone else sees from the moment they arrive.
+        var _owPizzaState = MP.drainOwPizzaState ? MP.drainOwPizzaState() : null;
+        if (_owPizzaState) {
+            for (var _opsi = 0; _opsi < _owPizzaState.length; _opsi++) {
+                _handleRemotePizzaSpawn(_owPizzaState[_opsi]);
+            }
+        }
+        var _pizzaSpawns = MP.drainPizzaSpawns();
+        if (_pizzaSpawns) {
+            for (var _psi = 0; _psi < _pizzaSpawns.length; _psi++) {
+                _handleRemotePizzaSpawn(_pizzaSpawns[_psi]);
+            }
+        }
+        var _pizzaCollects = MP.drainPizzaCollects();
+        if (_pizzaCollects) {
+            for (var _pci = 0; _pci < _pizzaCollects.length; _pci++) {
+                _handleRemotePizzaCollect(_pizzaCollects[_pci]);
+            }
+        }
+
+        // ── Apply enemy positions from the host (zone-wide sync) ─────────────
         var _owPosSyncs = MP.drainOwEnemySyncs();
-        if (_owPosSyncs) {
+        if (_owPosSyncs && _owPosSyncs.length > 0) {
+            if (!game._owEnemyPosCache) game._owEnemyPosCache = {};
+            var _nowMs = Date.now();
             for (var _ops = 0; _ops < _owPosSyncs.length; _ops++) {
                 var _op = _owPosSyncs[_ops];
+                if (!_op || !_op.id) continue;
+                game._owEnemyPosCache[_op.id] = { x: _op.x, y: _op.y, s: _op.s, tp: _op.tp, t: _nowMs };
+
+                var _opFound = false;
                 for (var _opei = 0; _opei < game.regionEnemies.length; _opei++) {
                     var _ope = game.regionEnemies[_opei];
-                    if (_ope.id === _op.id && _ope.state !== 'dying' && _ope.state !== 'dead') {
-                        _ope.x = _op.x; _ope.y = _op.y;
-                        if (_op.s) _ope.aiState = _op.s;
+                    if (_ope.id === _op.id) {
+                        if (_ope.state !== 'dying' && _ope.state !== 'dead') {
+                            var _corrDx = _op.x - _ope.x;
+                            var _corrDy = _op.y - _ope.y;
+                            var _corrDist = Math.sqrt(_corrDx * _corrDx + _corrDy * _corrDy);
+
+                            // Skip correction if this enemy is actively chasing the
+                            // local player. Our simulation is authoritative for nearby
+                            // enemies; a remote peer sees them in patrol and will report
+                            // stale positions, causing the ping-pong jump-back effect
+                            // when players are far apart at the edge of each other's AOI.
+                            var _corrChasing = _ope._carBrain && _ope._carBrain.state === 'chase';
+
+                            if (!_corrChasing && _corrDist > TILE_SIZE * 0.5) {
+                                if (_corrDist > TILE_SIZE * 5) {
+                                    // Very large divergence — hard snap (enemy clearly in wrong place)
+                                    _ope.x = _op.x; _ope.y = _op.y;
+                                } else {
+                                    // Gentle nudge toward server position — no visible jump
+                                    var _corrLerp = 0.15;
+                                    _ope.x += _corrDx * _corrLerp;
+                                    _ope.y += _corrDy * _corrLerp;
+                                }
+                            }
+                            if (_op.s) _ope.aiState = _op.s;
+                        }
+                        _opFound = true;
                         break;
+                    }
+                }
+
+                // If not found locally but a peer is broadcasting it, create it —
+                // BUT only if the enemy is within this player's active sector range.
+                // Creating enemies outside that range just causes them to be deleted
+                // immediately by _refreshEnemySectors, causing a blink/pop cycle.
+                if (!_opFound && game.regionEnemies.length < MAX_REGION_ENEMIES) {
+                    var _opInRange = false;
+                    if (game._lastEnemySX !== null) {
+                        var _opHalfW = (_op.tp === 'car') ? REGION_ENEMY_CAR_W / 2 : REGION_ENEMY_WALK_W / 2;
+                        var _opHalfH = (_op.tp === 'car') ? REGION_ENEMY_CAR_H / 2 : REGION_ENEMY_WALK_H / 2;
+                        var _opSX = Math.floor(Math.floor((_op.x + _opHalfW) / TILE_SIZE) / ENEMY_SECTOR_SIZE);
+                        var _opSY = Math.floor(Math.floor((_op.y + _opHalfH) / TILE_SIZE) / ENEMY_SECTOR_SIZE);
+                        _opInRange = Math.abs(_opSX - game._lastEnemySX) <= ENEMY_SECTOR_RADIUS &&
+                                     Math.abs(_opSY - game._lastEnemySY) <= ENEMY_SECTOR_RADIUS;
+                    }
+                    if (_opInRange && (!game._killedEnemyIds || !game._killedEnemyIds.has(_op.id))) {
+                        var _isWalker = (_op.tp === 'walker') ||
+                            (!_op.tp && _op.id && _op.id.indexOf('ew_') === 0);
+                        game.regionEnemies.push(_isWalker ? {
+                            id: _op.id, type: 'walker',
+                            spriteType: (Math.random() < 0.5) ? 'cyborg' : 'demon',
+                            x: _op.x, y: _op.y,
+                            direction: 'right', speed: REGION_ENEMY_WALK_SPEED + 10,
+                            hp: 30, maxHp: 30, state: 'patrol',
+                            deathTimer: 0, animTimer: Math.random() * 0.3, frame: 0,
+                            wanderTimer: 1 + Math.random() * 2, _sectorKey: null,
+                            _rng: _regionEnemyLcg(_regionEnemyStrSeed(_op.id + '#sync')),
+                            aiState: _op.s || 'patrol',
+                            atkCooldown: 0, stunTimer: 0,
+                            kbVx: 0, kbVy: 0, kbTimer: 0, deathFlash: 0
+                        } : {
+                            id: _op.id, type: 'car',
+                            x: _op.x, y: _op.y,
+                            direction: 'right', speed: REGION_ENEMY_CAR_SPEED,
+                            hp: 3, maxHp: 3, state: 'patrol',
+                            deathTimer: 0, _sectorKey: null,
+                            aiState: _op.s || 'patrol',
+                            ramCooldown: 0, stunTimer: 0,
+                            kbVx: 0, kbVy: 0, kbTimer: 0, deathFlash: 0,
+                            _waypoints: [], _waypointIdx: 0
+                        });
                     }
                 }
             }
@@ -10132,33 +10926,41 @@ function updateRegionEnemies(dt) {
 
     if (game._enemySimClock == null) return;
 
-    // 1. Refresh sectors / spawn
+    var _mpConnected = (typeof MP !== 'undefined' && MP.isConnected());
+
+    // ── ALL clients: spawn sectors and run full local AI ──────────────────────
+    // Each client simulates its own nearby enemies. CPU load is distributed
+    // across all player machines rather than concentrated on one host. Enemies
+    // have deterministic IDs so positions broadcast by nearby players can be
+    // matched up and used to correct any local divergence.
     _refreshEnemySectors();
 
-    // ── Broadcast alive enemy positions to nearby players (~2 Hz) ───────────
-    if (typeof MP !== 'undefined' && MP.isConnected()) {
-        if (!game._owEnemySyncTimer) game._owEnemySyncTimer = 0;
-        game._owEnemySyncTimer -= dt;
-        if (game._owEnemySyncTimer <= 0) {
-            game._owEnemySyncTimer = 0.5;
-            var _owSnap = [];
-            for (var _owsi = 0; _owsi < game.regionEnemies.length; _owsi++) {
-                var _owse = game.regionEnemies[_owsi];
-                if (_owse.state !== 'dying' && _owse.state !== 'dead') {
-                    _owSnap.push({ id: _owse.id, x: _owse.x, y: _owse.y, s: _owse.aiState });
-                }
-            }
-            if (_owSnap.length > 0) MP.sendOwEnemySync(_owSnap);
-        }
-    }
-
-    // 2. Fixed-step patrol sim (skips non-patrol enemies)
     var nowSec = Date.now() / 1000.0;
     var steps  = 0;
     while (game._enemySimClock + REGION_ENEMY_SIM_STEP <= nowSec && steps < 8) {
         game._enemySimClock += REGION_ENEMY_SIM_STEP;
         _tickRegionEnemies(REGION_ENEMY_SIM_STEP);
         steps++;
+    }
+
+    // ── ALL clients broadcast their enemies to nearby players (AOI) ──────────
+    // Server routes these only to players within AOI range, keeping bandwidth
+    // proportional to local density. With hundreds of users, a player typically
+    // has only 2–8 neighbours receiving their updates.
+    if (_mpConnected) {
+        if (!game._owEnemySyncTimer) game._owEnemySyncTimer = 0;
+        game._owEnemySyncTimer -= dt;
+        if (game._owEnemySyncTimer <= 0) {
+            game._owEnemySyncTimer = 0.25;
+            var _owSnap = [];
+            for (var _owsi = 0; _owsi < game.regionEnemies.length; _owsi++) {
+                var _owse = game.regionEnemies[_owsi];
+                if (_owse.state !== 'dying' && _owse.state !== 'dead') {
+                    _owSnap.push({ id: _owse.id, x: _owse.x, y: _owse.y, s: _owse.aiState, tp: _owse.type });
+                }
+            }
+            if (_owSnap.length > 0) MP.sendOwEnemySync(_owSnap);
+        }
     }
 
     // Determine controlled entity and its world-space center
@@ -10271,6 +11073,8 @@ function updateRegionEnemies(dt) {
                 var wdist = Math.sqrt(wdx * wdx + wdy * wdy);
                 if (wdist <= OW_ATTACK_WALK) {
                     t.hp -= OW_MELEE_DAMAGE;
+                    if (t.hp <= 0) t.hp = 0;
+                    game.party.hp[game.activeTurtle] = t.hp; // sync party HP
                     we.atkCooldown = 1.2;
                     // Spawn hit spark at contact point
                     game.owHitSparks.push({ x: (wecx + wtcx) / 2, y: (wecy + wtcy) / 2, life: 0.12, maxLife: 0.12 });
@@ -10280,14 +11084,13 @@ function updateRegionEnemies(dt) {
                     t.kbVy = (wdy / wkd) * OW_KB_SPEED;
                     t.kbTimer = OW_KB_TIME;
                     t.invTimer = OW_INV_TIME;
-                    if (t.hp <= 0) t.hp = 0;
                 }
             }
         }
     }
 
     // ── C: Car → van ───────────────────────────────────────────────────────
-    if (!isOnFoot) {
+    if (!isOnFoot && game.van.respawnInv <= 0) {
         var van = game.player;
         var vanCx = van.x + van.width  / 2;
         var vanCy = van.y + van.height / 2;
@@ -10303,7 +11106,20 @@ function updateRegionEnemies(dt) {
             if (Math.sqrt(cdx * cdx + cdy * cdy) <= OW_ATTACK_CAR) {
                 van.hp -= OW_RAM_DAMAGE;
                 ce.ramCooldown = 1.0;
-                if (van.hp < 0) van.hp = 0;
+                if (van.hp <= 0) {
+                    van.hp = 0;
+                    // Van explodes — spawn sparks then trigger immediate game over
+                    var _vCx = van.x + van.width / 2, _vCy = van.y + van.height / 2;
+                    for (var _xi = 0; _xi < 12; _xi++) {
+                        game.owHitSparks.push({
+                            x: _vCx + (Math.random() - 0.5) * 80,
+                            y: _vCy + (Math.random() - 0.5) * 80,
+                            life: 0.5 + Math.random() * 0.4, maxLife: 0.9
+                        });
+                    }
+                    game.owScreenShake = 12;
+                    _triggerGameOver();
+                }
             }
         }
     }
@@ -10477,39 +11293,7 @@ function drawTownProps(startX, startY, endX, endY) {
     } // end row loop
 }
 
-function drawHighwayDressing(startX, startY, endX, endY) {
-    if (!ROAD_GRID || !ROAD_TYPE_GRID) return;
-
-    for (var y = startY; y < endY; y++) {
-        if (y < 0 || y >= WORLD_HEIGHT) continue;
-        for (var x = startX; x < endX; x++) {
-            if (x < 0 || x >= WORLD_WIDTH) continue;
-            var key = y * WORLD_WIDTH + x;
-            if (ROAD_TYPE_GRID[key] !== 2) continue;
-
-            var h = tileHash(x, y);
-            if (h % HW_DRESSING_INTERVAL !== 0) continue;
-
-            var sx = x * TILE_SIZE - game.camera.x;
-            var sy = y * TILE_SIZE - game.camera.y;
-            if (sx < -TILE_SIZE || sx > CANVAS_WIDTH || sy < -TILE_SIZE || sy > CANVAS_HEIGHT) continue;
-
-            var dType = HW_DRESSING_TYPES[h % HW_DRESSING_TYPES.length];
-            var side = (h >> 4) & 1;
-            var ox = side ? TILE_SIZE + 2 : -20;
-
-            if (dType === 'billboard') {
-                drawRoadsideBillboard(sx + ox, sy + 4, h);
-            } else if (dType === 'gas') {
-                drawRoadsideGas(sx + ox, sy + 8);
-            } else if (dType === 'rest_stop') {
-                drawRoadsideRestStop(sx + ox, sy + 6);
-            } else if (dType === 'mile_marker') {
-                drawRoadsideMileMarker(sx + ox + 4, sy + 10, h);
-            }
-        }
-    }
-}
+function drawHighwayDressing() { /* roadside signs removed */ }
 
 function drawRoadsideBillboard(x, y, hash) {
     var bw = 28, bh = 18;
@@ -10542,17 +11326,6 @@ function drawRoadsideGas(x, y) {
     ctx.fillRect(x + 8, y + 14, 2, 8);
 }
 
-function drawRoadsideRestStop(x, y) {
-    ctx.fillStyle = NES.PAL.B;
-    ctx.fillRect(x, y, 18, 12);
-    ctx.fillStyle = NES.PAL.W;
-    ctx.font = '5px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('REST', x + 9, y + 8);
-    ctx.textAlign = 'left';
-    ctx.fillStyle = NES.PAL.G;
-    ctx.fillRect(x + 8, y + 12, 2, 6);
-}
 
 function drawRoadsideMileMarker(x, y, hash) {
     ctx.fillStyle = NES.PAL.C;
@@ -10568,9 +11341,9 @@ function drawRoadsideMileMarker(x, y, hash) {
 
 // ── Roadside POI system ─────────────────────────────────────────
 // Deterministic POIs reuse the same tileHash placement as dressing.
-// Types: 'gas' (heal to full HP in next level), 'rest_stop' (speed boost), 'billboard' used as 'view' (postcard).
-const POI_TYPES = { rest_stop: true };
-const POI_PROMPTS = { rest_stop: 'SPEED BOOTS (A)' };
+// Types: 'gas' (heal to full HP in next level), 'billboard' used as 'view' (postcard).
+const POI_TYPES = {};
+const POI_PROMPTS = {};
 
 function updatePOIProximity() {
     if (!ROAD_GRID || !ROAD_TYPE_GRID) { game.activePOI = null; return; }
@@ -10605,10 +11378,6 @@ function interactWithPOI() {
     if (poi.type === 'gas') {
         game.poiHealReady = true;
         showPOIFlash('SUPPLIES READY! +2 HP next level');
-    } else if (poi.type === 'rest_stop') {
-        game.speedBoost = 20;
-        game.player.pxPerSecond = 600;
-        showPOIFlash('SPEED BOOST! 20s');
     } else if (poi.type === 'billboard') {
         var h = tileHash(poi.x, poi.y);
         var cards = ['Welcome to the open road!', 'Scenic view ahead', 'Home of the world\'s largest pizza',
@@ -11271,16 +12040,20 @@ function draw() {
             // so buildings at/below the player render ON TOP (closer to camera)
             if (!_playerDrawn && ry >= _playerSortY) {
                 _playerDrawn = true;
-                if (game.controllerEntity === 'foot') {
-                    drawParkedVan();
-                    drawParkedTechnodrone();
-                    drawOnFootTurtle();
-                } else if (game.controllerEntity === 'technodrone') {
-                    drawParkedVan();
-                    drawTechnodrone();
-                } else {
-                    drawParkedTechnodrone();
-                    drawPartyWagon();
+                // Hide local player while inside a building overlay — they've already
+                // "entered" the building during the fade-to-black transition.
+                if (game.state !== 'BUILDING') {
+                    if (game.controllerEntity === 'foot') {
+                        drawParkedVan();
+                        drawParkedTechnodrone();
+                        drawOnFootTurtle();
+                    } else if (game.controllerEntity === 'technodrone') {
+                        drawParkedVan();
+                        drawTechnodrone();
+                    } else {
+                        drawParkedTechnodrone();
+                        drawPartyWagon();
+                    }
                 }
             }
 
@@ -11323,7 +12096,7 @@ function draw() {
         }
 
         // If player wasn't drawn (below all buildings), draw now
-        if (!_playerDrawn) {
+        if (!_playerDrawn && game.state !== 'BUILDING') {
             if (game.controllerEntity === 'foot') {
                 drawParkedVan();
                 drawParkedTechnodrone();
@@ -11429,6 +12202,9 @@ function draw() {
         if (typeof MP !== 'undefined') { var _all = MP.getRemotePlayers(); for (var _ci = 0; _ci < _all.length; _ci++) _activeRemoteIds[_all[_ci].id] = true; }
         for (var _sid in _remoteAnimState) { if (!_activeRemoteIds[_sid]) delete _remoteAnimState[_sid]; }
 
+        // Pizza pickups
+        _drawPizzaPickups();
+
         // Overworld point popups (world-space, drawn on top like level popups)
         if (game.owPointPopups && game.owPointPopups.length > 0) {
             ctx.font = 'bold 8px monospace';
@@ -11494,6 +12270,7 @@ function draw() {
     // Draw UI (on top, no camera offset)
     drawUI();
 
+
     // Mode indicator
     if (game.mode === 'WORLD') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
@@ -11557,12 +12334,13 @@ function draw() {
     // POI interaction prompt + postcard overlay
     if (game.mode === 'REGION') {
         drawPOIPrompt();
-        if (game.speedBoost > 0) {
-            ctx.fillStyle = 'rgba(0,80,200,0.6)';
-            ctx.fillRect(CANVAS_WIDTH - 100, CANVAS_HEIGHT - 30, 92, 18);
-            ctx.fillStyle = '#ffffff';
+        if (game.pizzaStar > 0) {
+            var _sh = Math.round((Date.now() / 5) % 360);
+            ctx.fillStyle = 'hsla(' + _sh + ',100%,40%,0.75)';
+            ctx.fillRect(CANVAS_WIDTH - 112, CANVAS_HEIGHT - 30, 104, 18);
+            ctx.fillStyle = 'hsl(' + ((_sh + 180) % 360) + ',100%,85%)';
             ctx.font = 'bold 8px monospace';
-            ctx.fillText('BOOST ' + Math.ceil(game.speedBoost) + 's', CANVAS_WIDTH - 94, CANVAS_HEIGHT - 17);
+            ctx.fillText('\u2605 STAR ' + Math.ceil(game.pizzaStar) + 's', CANVAS_WIDTH - 106, CANVAS_HEIGHT - 17);
         }
     }
     drawPostcard();
@@ -11601,22 +12379,61 @@ function draw() {
         ctx.fillText('ITEMS: ' + itemCount + '/10', CANVAS_WIDTH - 14, _itemsY + 11);
         ctx.textAlign = 'left';
 
-        // Turtle team selector (top-left, below header)
+        // Turtle team selector (top-left, below header) with HP bars
         var tNames = ['leo', 'raph', 'donnie', 'mikey'];
         var tLabels = ['LEO', 'RAPH', 'DON', 'MIKE'];
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(8, 32, 112, 28);
+        ctx.fillRect(8, 32, 112, 36);
         for (var ti = 0; ti < 4; ti++) {
             var tx = 12 + ti * 27;
-            var isActive = (game.activeTurtle === tNames[ti]);
+            var turtleId = tNames[ti];
+            var isActive = (game.activeTurtle === turtleId);
+            var isDead = (game.party.status[turtleId] === 'dead');
+            var turtleHp = game.party.hp[turtleId] || 0;
+            var maxHp = game.party.maxHp || 100;
+            
+            // Active highlight
             if (isActive) {
                 ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
-                ctx.fillRect(tx - 2, 33, 26, 26);
+                ctx.fillRect(tx - 2, 33, 26, 34);
             }
-            NES.drawTurtleSprite(ctx, tx, 35, 'down', 0, tNames[ti], 1.2);
-            ctx.fillStyle = isActive ? '#fcfc00' : '#666666';
+            
+            // Draw sprite (greyed out if dead)
+            if (isDead) {
+                ctx.globalAlpha = 0.3;
+            }
+            NES.drawTurtleSprite(ctx, tx, 35, 'down', 0, turtleId, 1.2);
+            ctx.globalAlpha = 1.0;
+            
+            // Dead X overlay
+            if (isDead) {
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(tx, 35);
+                ctx.lineTo(tx + 20, 55);
+                ctx.moveTo(tx + 20, 35);
+                ctx.lineTo(tx, 55);
+                ctx.stroke();
+            }
+            
+            // HP bar under sprite
+            var hpBarW = 22;
+            var hpBarH = 3;
+            var hpBarX = tx;
+            var hpBarY = 58;
+            ctx.fillStyle = '#440000';
+            ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
+            if (!isDead && turtleHp > 0) {
+                var hpPct = Math.max(0, Math.min(1, turtleHp / maxHp));
+                ctx.fillStyle = hpPct > 0.5 ? '#00cc00' : hpPct > 0.25 ? '#cccc00' : '#cc0000';
+                ctx.fillRect(hpBarX, hpBarY, Math.round(hpBarW * hpPct), hpBarH);
+            }
+            
+            // Label with number key
+            ctx.fillStyle = isDead ? '#444444' : (isActive ? '#fcfc00' : '#888888');
             ctx.font = '5px monospace';
-            ctx.fillText(tLabels[ti], tx + 1, 57);
+            ctx.fillText((ti + 1) + '', tx + 8, 66);
         }
 
         // On-foot / vehicle mode indicator
@@ -11928,10 +12745,21 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Turtle selection: 1=Leo, 2=Raph, 3=Donnie, 4=Mikey
+    // Turtle selection: 1=Leo, 2=Raph, 3=Donnie, 4=Mikey (only alive turtles)
     var turtleKeys = { 'Digit1': 'leo', 'Digit2': 'raph', 'Digit3': 'donnie', 'Digit4': 'mikey' };
     if (turtleKeys[e.code]) {
-        game.activeTurtle = turtleKeys[e.code];
+        var requestedTurtle = turtleKeys[e.code];
+        if (game.party.status[requestedTurtle] === 'alive' && requestedTurtle !== game.activeTurtle) {
+            // Save current turtle's HP before switching
+            game.party.hp[game.activeTurtle] = game.turtle.hp;
+            // Switch to new turtle
+            game.activeTurtle = requestedTurtle;
+            // Load new turtle's HP
+            game.turtle.hp = game.party.hp[requestedTurtle] || game.party.maxHp;
+            console.log('[party] Manual switch to ' + requestedTurtle + ' (HP: ' + game.turtle.hp + ')');
+        } else if (game.party.status[requestedTurtle] === 'dead') {
+            console.log('[party] Cannot switch to ' + requestedTurtle + ' - dead!');
+        }
         return;
     }
 
@@ -12076,6 +12904,7 @@ if (overlayEnterBtn) {
             game.activeBuildingId = bid;
             var _retEntity = (game.controllerEntity === 'foot') ? game.turtle : game.player;
             game.levelReturnPos = { x: _retEntity.x, y: _retEntity.y };
+            game.lastEnteredBuilding = { x: _retEntity.x, y: _retEntity.y };
             var levelCtx = getLevelForContext();
             if (levelCtx) {
                 startEnterLevelFromContext(levelCtx);
@@ -12376,6 +13205,13 @@ async function completeEnterRegion(regionId) {
     if (typeof MP !== 'undefined' && MP.sendRegion) MP.sendRegion(regionId);
     updateMobileActionVisibility();
     spawnRegionEnemies();
+    // Clear old pizzas; delay the first local spawn so the ow_join response
+    // (carrying the server's current pizza list) arrives before we add our own.
+    // Without this delay every player spawns a pizza the instant they enter,
+    // stacking up extras before the shared state is known.
+    game.pizzaPickups = [];
+    _pizzaSpawnTimer = 3; // 3-second grace period before spawning
+    console.log('[pizza] Region entered, pizzas reset');
     // Ensure technodrone is findable: if this region has dimension_x and state is lost, reset to building
     if (game.technodrone.x == null) {
         for (var _dxi = 0; _dxi < BUILDINGS.length; _dxi++) {
@@ -13304,6 +14140,7 @@ function _finishRoomTransition(L) {
     // Switch room
     L.currentRoomId = tr.toRoomId;
     _loadDungeonRoom(L, toRoom);
+    if (typeof MP !== 'undefined' && MP.setChatRoomId) MP.setChatRoomId(tr.toRoomId);
 
     // Place player at the opposite door entrance
     var p = L.player;
@@ -13634,6 +14471,8 @@ async function startEnterLevelWithData(levelData) {
         // Results screen
         showResults: false,
         resultsTimer: 0,
+        // Pizza pickups in level
+        pizzaPickups: [],
         // Boss tracking
         isBossLevel: levelData.isBossLevel || false,
         bossDefeated: false,
@@ -13668,6 +14507,9 @@ async function startEnterLevelWithData(levelData) {
     // Join co-op level room (multiplayer)
     if (game.level._instanceId && typeof MP !== 'undefined' && MP.isConnected()) {
         MP.sendJoinLevel(game.level._instanceId);
+        MP.setChatContext(game.level._instanceId);
+        // For dungeons, set the initial room; single-room levels use null.
+        MP.setChatRoomId(game.level.currentRoomId !== undefined ? game.level.currentRoomId : null);
     } else {
         console.log('[level] no instanceId or MP not connected — coop disabled', game.level._instanceId, typeof MP !== 'undefined' ? MP.isConnected() : 'MP_UNDEF');
     }
@@ -13854,6 +14696,8 @@ function exitLevel() {
     // Leave co-op level room
     if (game.level && game.level._instanceId && typeof MP !== 'undefined' && MP.isConnected()) {
         MP.sendLeaveLevel(game.level._instanceId);
+        MP.setChatContext(null);  // back to overworld context
+        MP.setChatRoomId(null);   // clear any dungeon/gallery room filter
     }
     game.mode = 'REGION';
     game.levelState = null;
@@ -14014,6 +14858,31 @@ function updateLevel(dt) {
     if (L.specialItemPos && !L.specialItemCollected) {
         if (levelRectsOverlap(p.x, p.y, p.w, p.h, L.specialItemPos.x, L.specialItemPos.y, L.specialItemPos.w, L.specialItemPos.h)) {
             collectSpecialItem();
+        }
+    }
+
+    // Level pizza pickup collision
+    var pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
+    for (var lpzi = L.pizzaPickups.length - 1; lpzi >= 0; lpzi--) {
+        var lpz = L.pizzaPickups[lpzi];
+        var ldx = lpz.x - pcx, ldy = lpz.y - pcy;
+        if (Math.sqrt(ldx * ldx + ldy * ldy) < L.tileSize * 0.6) {
+            if (lpz.type === 'slice') {
+                p.hp = Math.min(p.hp + 1, p.maxHp);
+                game.party.hp[game.activeTurtle] = Math.min((game.party.hp[game.activeTurtle] || 0) + PIZZA_SLICE_HEAL, game.party.maxHp);
+                L.pointPopups.push({ text: '+HP', x: lpz.x, y: lpz.y - 10, life: 1.0, color: '#00ff00' });
+            } else {
+                var deadT = _getDeadTurtles();
+                if (deadT.length > 0) {
+                    _reviveTurtle(deadT[0]);
+                    L.pointPopups.push({ text: 'REVIVE ' + deadT[0].toUpperCase(), x: lpz.x, y: lpz.y - 10, life: 1.5, color: '#ffaa00' });
+                } else {
+                    p.hp = p.maxHp;
+                    game.party.hp[game.activeTurtle] = game.party.maxHp;
+                    L.pointPopups.push({ text: 'FULL HP', x: lpz.x, y: lpz.y - 10, life: 1.0, color: '#00ff00' });
+                }
+            }
+            L.pizzaPickups.splice(lpzi, 1);
         }
     }
 
@@ -14498,6 +15367,15 @@ function updateLevel(dt) {
                 if (e.hp <= 0) {
                     e.alive = false;
                     addKillScore(e.type, ecx, ecy);
+                    // Pizza drop chance: 15% slice, 5% whole for normal enemies
+                    // Boss always drops whole pizza
+                    if (e.boss) {
+                        L.pizzaPickups.push({ id: 'lpz_' + Date.now(), x: ecx, y: ecy, type: 'whole' });
+                    } else if (Math.random() < 0.15) {
+                        L.pizzaPickups.push({ id: 'lpz_' + Date.now() + '_' + Math.random(), x: ecx, y: ecy, type: 'slice' });
+                    } else if (Math.random() < 0.05) {
+                        L.pizzaPickups.push({ id: 'lpz_' + Date.now() + '_w' + Math.random(), x: ecx, y: ecy, type: 'whole' });
+                    }
                     // Boss defeat check
                     if (e.boss) {
                         L.bossDefeated = true;
@@ -14505,6 +15383,14 @@ function updateLevel(dt) {
                         game.progress.technodromeClear = true;
                         game.progress.score += 10000;
                         saveGame();
+                    }
+                } else {
+                    // Non-fatal hit: buffer it so we can broadcast to the host.
+                    // The host syncs enemy HP back to guests at 20 Hz — without this
+                    // the host resets guest-applied damage and guests appear to deal 0 dmg.
+                    if (typeof MP !== 'undefined' && MP.isConnected() && L._instanceId) {
+                        if (!L._hitBuffer) L._hitBuffer = [];
+                        L._hitBuffer.push({ id: e.id, hp: e.hp });
                     }
                 }
                 } // end !blocked
@@ -14720,7 +15606,8 @@ function updateLevel(dt) {
             }
         }
 
-        // Apply enemy kills / item pickups broadcast by OTHER players via level_sync
+        // Apply enemy kills and damage hits broadcast by OTHER players via level_sync.
+        // hits use Math.min so HP can only decrease from remote damage — never reset upward.
         var _lvlSyncs = MP.drainLevelSyncs();
         if (_lvlSyncs) {
             for (var _si2 = 0; _si2 < _lvlSyncs.length; _si2++) {
@@ -14730,10 +15617,25 @@ function updateLevel(dt) {
                         var _kid = _sync.kills[_ski];
                         for (var _ei = 0; _ei < L.enemies.length; _ei++) {
                             var _te = L.enemies[_ei];
-                            if (_te.id === _kid && _te.state !== 'dying' && _te.state !== 'dead' && _te.alive) {
+                            if (_te.id === _kid && _te.alive) {
                                 _te.hp = 0;
                                 _te.alive = false;
                                 _te._syncedKill = true;
+                            }
+                        }
+                    }
+                }
+                // Non-fatal hits from remote players. Math.min ensures a stale host
+                // position sync cannot silently undo damage a guest already dealt.
+                if (_sync.hits && _sync.hits.length > 0 && L.enemies) {
+                    for (var _shi = 0; _shi < _sync.hits.length; _shi++) {
+                        var _hit = _sync.hits[_shi];
+                        for (var _hei = 0; _hei < L.enemies.length; _hei++) {
+                            var _he = L.enemies[_hei];
+                            if (_he.id === _hit.id && _he.alive) {
+                                _he.hp = Math.min(_he.hp, _hit.hp);
+                                if (_he.hp <= 0) { _he.alive = false; _he._syncedKill = true; }
+                                break;
                             }
                         }
                     }
@@ -14756,10 +15658,12 @@ function updateLevel(dt) {
                     L._killBuffer.push(_kbe.id);
                 }
             }
+            if (!L._hitBuffer) L._hitBuffer = [];
             L._killSyncTimer -= dt;
-            if (L._killBuffer.length > 0 && L._killSyncTimer <= 0) {
-                MP.sendLevelSync(L._instanceId, L._killBuffer, null);
+            if ((L._killBuffer.length > 0 || L._hitBuffer.length > 0) && L._killSyncTimer <= 0) {
+                MP.sendLevelSync(L._instanceId, L._killBuffer, null, L._hitBuffer);
                 L._killBuffer = [];
+                L._hitBuffer = [];
                 L._killSyncTimer = 0.1;
             }
         }
@@ -15812,6 +16716,28 @@ function drawLevel() {
         }
 
         _drawDungeonEnemies(L, cx, cy, ts);
+
+        // Level pizza pickups
+        for (var _lpzi = 0; _lpzi < L.pizzaPickups.length; _lpzi++) {
+            var _lpz = L.pizzaPickups[_lpzi];
+            var _lpzx = _lpz.x - cx, _lpzy = _lpz.y - cy;
+            var _lpzSize = _lpz.type === 'whole' ? ts * 0.6 : ts * 0.4;
+            var _lpzBob = Math.sin(Date.now() / 300 + _lpzi) * 2;
+            ctx.fillStyle = _lpz.type === 'whole' ? '#ff8800' : '#ffcc00';
+            ctx.beginPath();
+            ctx.arc(_lpzx, _lpzy + _lpzBob, _lpzSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#cc4400';
+            if (_lpz.type === 'whole') {
+                for (var _ppi = 0; _ppi < 4; _ppi++) {
+                    var _ppa = (_ppi / 4) * Math.PI * 2;
+                    ctx.beginPath();
+                    ctx.arc(_lpzx + Math.cos(_ppa) * _lpzSize * 0.25, _lpzy + _lpzBob + Math.sin(_ppa) * _lpzSize * 0.25, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
         // Remote co-op players in dungeon (only those in the same room)
         if (typeof MP !== 'undefined' && MP.isConnected()) {
             var _dLvlMap = MP.getLevelRemotes();
@@ -16257,6 +17183,27 @@ function drawLevel() {
         }
     }
 
+    // ── Level pizza pickups ─────────────────────────────────────
+    for (var _lpzi2 = 0; _lpzi2 < L.pizzaPickups.length; _lpzi2++) {
+        var _lpz2 = L.pizzaPickups[_lpzi2];
+        var _lpzx2 = _lpz2.x - cx, _lpzy2 = _lpz2.y - cy;
+        var _lpzSize2 = _lpz2.type === 'whole' ? ts * 0.6 : ts * 0.4;
+        var _lpzBob2 = Math.sin(Date.now() / 300 + _lpzi2) * 2;
+        ctx.fillStyle = _lpz2.type === 'whole' ? '#ff8800' : '#ffcc00';
+        ctx.beginPath();
+        ctx.arc(_lpzx2, _lpzy2 + _lpzBob2, _lpzSize2 / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#cc4400';
+        if (_lpz2.type === 'whole') {
+            for (var _ppi2 = 0; _ppi2 < 4; _ppi2++) {
+                var _ppa2 = (_ppi2 / 4) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.arc(_lpzx2 + Math.cos(_ppa2) * _lpzSize2 * 0.25, _lpzy2 + _lpzBob2 + Math.sin(_ppa2) * _lpzSize2 * 0.25, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
     // ── Special item pickup ─────────────────────────────────────
     if (L.specialItemPos && !L.specialItemCollected) {
         var sip = L.specialItemPos;
@@ -16452,12 +17399,14 @@ function drawLevel() {
             var _lsy = _lsp.y - L.camera.y;
             drawSpeechBubble(ctx, _lvlBubbles['__self__'].text, _lsx - _lsp.w / 2, _lsy, _lsp.w, '#58d8f8');
         }
-        // Remote players bubbles
+        // Remote players bubbles — only for players in the same dungeon room
         var _lvlRems = MP.getLevelRemotes();
         for (var _lrBk in _lvlRems) {
             if (!_lvlBubbles[_lrBk]) continue;
             var _lrB = _lvlRems[_lrBk];
             if (!_lrB._posReceived) continue;
+            // Skip players in a different dungeon room
+            if (L.dungeon && _lrB.roomId !== undefined && _lrB.roomId !== null && _lrB.roomId !== L.currentRoomId) continue;
             var _lrBx = (_lrB._rpx !== undefined ? _lrB._rpx : _lrB.px) - L.camera.x;
             var _lrBy = (_lrB._rpy !== undefined ? _lrB._rpy : _lrB.py) - L.camera.y;
             var _lrBw = L.player ? L.player.w : 24;
@@ -16711,6 +17660,21 @@ function cleanStaleRegionCache() {
     }
 }
 
+// Grant all items to privileged accounts (e.g. test@test.com) on login
+if (typeof MP !== 'undefined') {
+    MP.onGrantItems = function(items) {
+        if (!Array.isArray(items)) return;
+        var changed = false;
+        for (var _gi = 0; _gi < items.length; _gi++) {
+            if (!game.progress.collectedItems[items[_gi]]) {
+                game.progress.collectedItems[items[_gi]] = true;
+                changed = true;
+            }
+        }
+        if (changed) saveGame();
+    };
+}
+
 // Wire up technodrone state from server
 if (typeof MP !== 'undefined') {
     MP.onTechnodroneState = function(state) {
@@ -16753,6 +17717,8 @@ async function init() {
             game.van.direction = _sp.vanDir || 'down';
         }
         if (_sp.activeTurtle) game.activeTurtle = _sp.activeTurtle;
+        // Restore live turtle HP from the party snapshot
+        game.turtle.hp = game.party.hp[game.activeTurtle] || game.party.maxHp;
         console.log('Restored saved position:', Math.round(_sp.x), Math.round(_sp.y), 'region:', _restoreRegion);
     } else {
         var spawnPos = findSpawnOnRoad();
