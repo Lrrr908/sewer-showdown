@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const config = require('../config');
 const { verifyToken } = require('../auth/auth_tokens');
 const { isValidZoneId } = require('../zones/zone_id');
@@ -202,6 +204,72 @@ function autoParktechnodrone(lastEntityId) {
   }
 }
 
+// ── Global High Score Leaderboard ─────────────────────────────────────────────
+// Persists across server restarts via a JSON file. Top 10 unique players by score.
+const SCORES_FILE = path.join(__dirname, '..', '..', 'data', 'highscores.json');
+const LEADERBOARD_MAX = 10;
+const SCORE_MAX_VALUE = 9_999_999;
+
+// In-memory leaderboard: [{ name, score, date }] sorted by score desc
+let globalLeaderboard = [];
+
+function _loadLeaderboard() {
+    try {
+        const dir = path.dirname(SCORES_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        if (fs.existsSync(SCORES_FILE)) {
+            const raw = fs.readFileSync(SCORES_FILE, 'utf8');
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+                globalLeaderboard = parsed
+                    .filter(e => e && typeof e.name === 'string' && typeof e.score === 'number' && e.score > 0)
+                    .sort((a, b) => b.score - a.score)
+                    .slice(0, LEADERBOARD_MAX);
+            }
+        }
+    } catch (e) {
+        console.warn('[leaderboard] failed to load scores file:', e.message);
+    }
+}
+
+function _saveLeaderboard() {
+    try {
+        fs.writeFileSync(SCORES_FILE, JSON.stringify(globalLeaderboard, null, 2), 'utf8');
+    } catch (e) {
+        console.warn('[leaderboard] failed to save scores file:', e.message);
+    }
+}
+
+function leaderboardSubmit(playerName, score) {
+    if (typeof score !== 'number' || score <= 0 || score > SCORE_MAX_VALUE) return false;
+    if (typeof playerName !== 'string' || playerName.length < 1 || playerName.length > 24) return false;
+
+    const existing = globalLeaderboard.find(e => e.name === playerName);
+    if (existing) {
+        if (score <= existing.score) return false; // no improvement
+        existing.score = score;
+        existing.date = new Date().toISOString().slice(0, 10);
+    } else {
+        globalLeaderboard.push({ name: playerName, score, date: new Date().toISOString().slice(0, 10) });
+    }
+
+    globalLeaderboard.sort((a, b) => b.score - a.score);
+    if (globalLeaderboard.length > LEADERBOARD_MAX) globalLeaderboard.length = LEADERBOARD_MAX;
+    _saveLeaderboard();
+    return true;
+}
+
+function broadcastLeaderboard(excludeWs) {
+    const payload = JSON.stringify({ t: 'leaderboard', scores: globalLeaderboard });
+    for (const [, pws] of connByAccount) {
+        if (pws === excludeWs || pws.readyState !== 1) continue;
+        try { pws.send(payload); } catch {}
+    }
+}
+
+_loadLeaderboard();
+console.log(`[leaderboard] loaded ${globalLeaderboard.length} entries from disk`);
+
 function initWsServer(wss) {
   wss.on('connection', (ws) => {
     let authenticated = false;
@@ -351,6 +419,11 @@ function initWsServer(wss) {
               driverId: technodroneState.driverId
             }));
           } catch {}
+        }
+
+        // Send current global leaderboard so the client displays up-to-date scores immediately
+        if (globalLeaderboard.length > 0) {
+          try { ws.send(JSON.stringify({ t: 'leaderboard', scores: globalLeaderboard })); } catch {}
         }
 
         console.log(`[ws] ${entityId} (${accountId}) joined ${zoneId} (resume: ${resumeResult.reason}) instance=${require('../config').INSTANCE_ID}`);
@@ -787,6 +860,29 @@ function initWsServer(wss) {
             zonePizzaCollect(zoneId, msg.id);
             const collectPayload = JSON.stringify({ t: 'pizza_collect', id: msg.id });
             broadcastToZone(zone4, collectPayload, ws);
+          }
+          break;
+        }
+
+        case 'score_submit': {
+          // Rate-limit: max one submission every 10 seconds per connection
+          const _now_ss = Date.now();
+          if (_now_ss - (_rl.scoreSubmit || 0) < 10000) break;
+          _rl.scoreSubmit = _now_ss;
+
+          const _ssScore = msg.score;
+          const _ssName  = msg.name;
+          if (!isSafeNumber(_ssScore) || _ssScore <= 0 || _ssScore > SCORE_MAX_VALUE) break;
+          if (!isSafeString(_ssName, 24)) break;
+
+          const _changed = leaderboardSubmit(_ssName, Math.floor(_ssScore));
+          if (_changed) {
+              // Send current leaderboard to everyone (the submitter gets it too)
+              broadcastLeaderboard(null);
+              console.log(`[leaderboard] ${_ssName} posted ${Math.floor(_ssScore)}`);
+          } else {
+              // Still send the current leaderboard back to just the submitter so they're in sync
+              try { ws.send(JSON.stringify({ t: 'leaderboard', scores: globalLeaderboard })); } catch {}
           }
           break;
         }

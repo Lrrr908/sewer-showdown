@@ -87,7 +87,20 @@ function loadSave() {
             }
             game.progress.score = blob.progress.score || 0;
             game.progress.bestScore = blob.progress.bestScore || 0;
-            game.progress.scoreHistory = blob.progress.scoreHistory || [];
+            // Load history and deduplicate — keep only the best score per player name
+            var _rawHist = blob.progress.scoreHistory || [];
+            var _dedupMap = {};
+            for (var _dhi = 0; _dhi < _rawHist.length; _dhi++) {
+                var _dhe = _rawHist[_dhi];
+                if (!_dhe || !_dhe.name || !(_dhe.score > 0)) continue;
+                if (!_dedupMap[_dhe.name] || _dhe.score > _dedupMap[_dhe.name].score) {
+                    _dedupMap[_dhe.name] = _dhe;
+                }
+            }
+            var _deduped = Object.values(_dedupMap);
+            _deduped.sort(function(a, b) { return b.score - a.score; });
+            if (_deduped.length > 10) _deduped.length = 10;
+            game.progress.scoreHistory = _deduped;
             game.progress.collectedItems = blob.progress.collectedItems || {};
             game.progress.galleriesVisited = blob.progress.galleriesVisited || {};
             game.progress.technodromeClear = blob.progress.technodromeClear || false;
@@ -14671,20 +14684,50 @@ function finalizeLevelScore() {
     }
 }
 
+// Server-authoritative global leaderboard (populated via MP.onLeaderboard)
+var _globalLeaderboard = [];
+
 function recordHighScore() {
+    var _score = game.progress.score;
+    if (_score <= 0) return; // nothing to record
+
     var _hsName = (typeof MP !== 'undefined' && MP.displayName) ? MP.displayName : (game.activeTurtle || 'Player');
-    var entry = {
-        score: game.progress.score,
-        name: _hsName,
-        date: new Date().toISOString().slice(0, 10),
-        galleriesVisited: Object.keys(game.progress.galleriesVisited).length,
-        levelsCleared: Object.keys(game.progress.levelWins).length,
-        itemsCollected: Object.keys(game.progress.collectedItems).length
-    };
     var hist = game.progress.scoreHistory;
-    hist.push(entry);
+
+    // Find existing entry for this player
+    var existing = null;
+    for (var _hi = 0; _hi < hist.length; _hi++) {
+        if (hist[_hi].name === _hsName) { existing = hist[_hi]; break; }
+    }
+
+    if (existing) {
+        // Only update if this run beats their personal best
+        if (_score > existing.score) {
+            existing.score  = _score;
+            existing.date   = new Date().toISOString().slice(0, 10);
+            existing.galleriesVisited = Object.keys(game.progress.galleriesVisited).length;
+            existing.levelsCleared    = Object.keys(game.progress.levelWins).length;
+            existing.itemsCollected   = Object.keys(game.progress.collectedItems).length;
+        }
+    } else {
+        hist.push({
+            score: _score,
+            name:  _hsName,
+            date:  new Date().toISOString().slice(0, 10),
+            galleriesVisited: Object.keys(game.progress.galleriesVisited).length,
+            levelsCleared:    Object.keys(game.progress.levelWins).length,
+            itemsCollected:   Object.keys(game.progress.collectedItems).length
+        });
+    }
+
+    // Sort by score descending, keep top 10 unique players
     hist.sort(function(a, b) { return b.score - a.score; });
     if (hist.length > 10) hist.length = 10;
+
+    // Submit to server so ALL players see a shared global leaderboard
+    if (typeof MP !== 'undefined' && MP.sendScoreSubmit) {
+        MP.sendScoreSubmit(_hsName, _score);
+    }
 }
 
 // ============================================
@@ -17584,33 +17627,42 @@ function drawScoreBoard() {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
     ctx.fillRect(bx2 + 2, by2 + 2, bw2 - 4, bh2 - 4);
 
+    // Use server-side global leaderboard when available, fall back to local history
+    var _useGlobal = _globalLeaderboard && _globalLeaderboard.length > 0;
+    var _dispHist  = _useGlobal ? _globalLeaderboard : game.progress.scoreHistory;
+
     ctx.fillStyle = '#fcfc00';
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('HIGH SCORES', cx2, by2 + 22);
 
+    // Source label
+    ctx.font = '7px monospace';
+    ctx.fillStyle = _useGlobal ? '#44ff44' : '#888888';
+    ctx.fillText(_useGlobal ? 'GLOBAL - ALL PLAYERS' : 'LOCAL ONLY', cx2, by2 + 34);
+
     ctx.font = '9px monospace';
-    var hist = game.progress.scoreHistory;
-    if (hist.length === 0) {
+    if (_dispHist.length === 0) {
         ctx.fillStyle = '#666666';
-        ctx.fillText('NO SCORES YET', cx2, by2 + 60);
+        ctx.fillText('NO SCORES YET', cx2, by2 + 68);
     } else {
-        for (var si4 = 0; si4 < Math.min(hist.length, 10); si4++) {
-            var entry = hist[si4];
-            var ey = by2 + 44 + si4 * 20;
-            var rowColor = si4 === 0 ? '#fcfc00' : '#ffffff';
+        var _myName = (typeof MP !== 'undefined' && MP.displayName) ? MP.displayName : (game.activeTurtle || 'Player');
+        for (var si4 = 0; si4 < Math.min(_dispHist.length, 10); si4++) {
+            var entry = _dispHist[si4];
+            var ey = by2 + 50 + si4 * 19;
+            var _isMe = entry.name === _myName;
+            var rowColor = si4 === 0 ? '#fcfc00' : (_isMe ? '#44ff44' : '#ffffff');
             // Rank
             ctx.textAlign = 'left';
             ctx.fillStyle = rowColor;
             var rank = (si4 + 1) + '.';
             if (si4 + 1 < 10) rank = ' ' + rank;
             ctx.fillText(rank, bx2 + 14, ey);
-            // Player name — use saved name, fall back to current display name for old entries
-            var _fallbackName = (typeof MP !== 'undefined' && MP.displayName) ? MP.displayName : (game.activeTurtle || 'Player');
-            var eName = (entry.name || _fallbackName).substring(0, 16);
-            ctx.fillStyle = si4 === 0 ? '#fcfc00' : '#aaddff';
+            // Player name
+            var eName = (entry.name || _myName).substring(0, 16);
+            ctx.fillStyle = si4 === 0 ? '#fcfc00' : (_isMe ? '#44ff44' : '#aaddff');
             ctx.fillText(eName, bx2 + 38, ey);
-            // Score (right-aligned at far edge)
+            // Score (right-aligned)
             ctx.textAlign = 'right';
             ctx.fillStyle = rowColor;
             ctx.fillText(entry.score.toLocaleString(), bx2 + bw2 - 10, ey);
@@ -17721,6 +17773,13 @@ function cleanStaleRegionCache() {
             localStorage.removeItem(key);
         }
     }
+}
+
+// Keep the global leaderboard in sync whenever the server pushes an update
+if (typeof MP !== 'undefined') {
+    MP.onLeaderboard = function(scores) {
+        if (Array.isArray(scores)) _globalLeaderboard = scores;
+    };
 }
 
 // Grant all items to privileged accounts (e.g. test@test.com) on login

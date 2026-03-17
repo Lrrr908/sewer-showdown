@@ -121,6 +121,7 @@ var MP = (function () {
     var onTransferCommit = null;
     var onChatReceived = null;
     var onTechnodroneState = null;
+    var onLeaderboard = null;
 
     var chatBubbles = {};
     var CHAT_MAX_LEN = 60;
@@ -1127,6 +1128,10 @@ var MP = (function () {
                 }
                 break;
 
+            case 'leaderboard':
+                if (Array.isArray(msg.scores) && onLeaderboard) onLeaderboard(msg.scores);
+                break;
+
             case 'pizza_spawn':
                 if (msg.pizza) _pizzaSpawnQueue.push(msg.pizza);
                 break;
@@ -1314,6 +1319,12 @@ var MP = (function () {
     var _pizzaSpawnQueue = [];
     var _pizzaCollectQueue = [];
 
+    function sendScoreSubmit(name, score) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        if (typeof score !== 'number' || score <= 0) return;
+        ws.send(JSON.stringify({ t: 'score_submit', name: String(name).substring(0, 24), score: Math.floor(score) }));
+    }
+
     function sendPizzaSpawn(pizza) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
         ws.send(JSON.stringify({ t: 'pizza_spawn', pizza: pizza }));
@@ -1461,6 +1472,10 @@ var MP = (function () {
         getAllowedVehicles: getAllowedVehicles,
         requestTechnodroneEnter: requestTechnodroneEnter,
         sendTechnodronePark: sendTechnodronePark,
+
+        // Global leaderboard
+        sendScoreSubmit: sendScoreSubmit,
+        set onLeaderboard(fn) { onLeaderboard = fn; },
 
         // Pizza sync
         sendPizzaSpawn: sendPizzaSpawn,
