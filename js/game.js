@@ -9069,10 +9069,12 @@ var OW_VAN_MAX_HP       = 300;
 var PIZZA_SLICE_HEAL    = 25;   // HP restored by pizza slice (turtle on foot)
 var VAN_PIZZA_SLICE     = 75;   // HP restored to van by a pizza slice
 var VAN_PIZZA_WHOLE     = 200;  // HP restored to van by a whole pizza
-var PIZZA_SPAWN_MIN     = 8;    // seconds between pizza spawns (min) — slightly rarer
+var PIZZA_SPAWN_MIN     = 10;   // seconds between pizza spawns (min)
 var PIZZA_SPAWN_MAX     = 22;   // seconds between pizza spawns (max)
 var PIZZA_RESPAWN_TIME  = 300;  // seconds until collected pizza respawns (5 min)
-var PIZZA_MAX_COUNT     = 8;    // max pizzas on map at once
+var PIZZA_MAX_COUNT     = 100;  // hard global cap across the whole map
+var PIZZA_PER_PLAYER    = 2;    // max uncollected pizzas allowed within the local spawn radius
+var PIZZA_LOCAL_RADIUS  = 20;   // tile radius counted as "near this player"
 var PIZZA_COLLECT_DIST  = 40;   // pixels - pickup radius
 var PIZZA_STAR_DURATION = 12;   // seconds the pizza-star power-up lasts
 var PIZZA_STAR_SPEED    = 620;  // van speed while star-powered (px/sec)
@@ -9118,6 +9120,53 @@ function _switchToTurtle(turtleId) {
     game.activeTurtle = turtleId;
     game.turtle.hp = game.party.hp[turtleId];
     return true;
+}
+
+// ── Level turtle switching ────────────────────────────────────────────────────
+// Switch the level player to a specific turtle (manual or auto on death).
+function _levelSwitchToTurtle(turtleId) {
+    var L = game.level;
+    if (!L || !L.player) return false;
+    if (game.party.status[turtleId] !== 'alive') return false;
+    if (L.partyKnockedOut && L.partyKnockedOut[turtleId]) return false;
+    var p = L.player;
+    // Save current turtle's level HP
+    if (!L.partyLevelHp) L.partyLevelHp = {};
+    L.partyLevelHp[p.turtleId] = p.hp;
+    // Load new turtle
+    p.turtleId = turtleId;
+    p.hp = L.partyLevelHp[turtleId] != null ? L.partyLevelHp[turtleId] : p.maxHp;
+    p.invTimer = 0.6; // brief mercy invincibility on switch
+    p.atkPhase = 'IDLE'; p.atkTimer = 0; p.atkCooldown = 0;
+    p.kbVx = 0; p.kbVy = 0; p.kbTimer = 0;
+    game.activeTurtle = turtleId;
+    game.turtle.hp = game.party.hp[turtleId] || game.party.maxHp;
+    console.log('[level] Switched to ' + turtleId + ' (level HP: ' + p.hp + ')');
+    return true;
+}
+
+// Called when the active turtle's HP hits 0 in a level.
+// Tries to auto-switch to the next available turtle.
+// Returns true if a switch happened (level continues), false if all out (level fails).
+function _levelSwitchOnDeath() {
+    var L = game.level;
+    if (!L || !L.player) return false;
+    var p = L.player;
+    if (!L.partyKnockedOut) L.partyKnockedOut = {};
+    // Mark current turtle as knocked out for this level run
+    L.partyKnockedOut[p.turtleId] = true;
+    // Find the next available alive turtle
+    var turtles = game.party.turtles;
+    for (var i = 0; i < turtles.length; i++) {
+        var tid = turtles[i];
+        if (!L.partyKnockedOut[tid] && game.party.status[tid] === 'alive') {
+            // Respawn at current position so the switch feels seamless
+            if (!L.partyLevelHp) L.partyLevelHp = {};
+            L.partyLevelHp[tid] = L.partyLevelHp[tid] != null ? L.partyLevelHp[tid] : p.maxHp;
+            return _levelSwitchToTurtle(tid);
+        }
+    }
+    return false; // no turtles left — level should fail
 }
 
 function _reviveAllTurtles() {
@@ -9211,23 +9260,28 @@ var _pizzaIdCounter = 0;
 var _pizzaSessionToken = Math.random().toString(36).slice(2, 7);
 
 function _spawnPizza() {
-    if (!ROAD_GRID) {
-        console.log('[pizza] No ROAD_GRID, cannot spawn');
-        return;
-    }
-    if (game.pizzaPickups.length >= PIZZA_MAX_COUNT) {
-        console.log('[pizza] Max count reached:', game.pizzaPickups.length);
-        return;
-    }
-    
-    // Find a random road tile near the camera center (within ~30 tiles)
+    if (!ROAD_GRID) return;
+
+    // Hard global cap
+    if (game.pizzaPickups.length >= PIZZA_MAX_COUNT) return;
+
+    // Find a random road tile near the camera center (within PIZZA_LOCAL_RADIUS tiles)
     var camCenterX = game.camera.x + CANVAS_WIDTH / 2;
     var camCenterY = game.camera.y + CANVAS_HEIGHT / 2;
     var playerTx = Math.floor(camCenterX / TILE_SIZE);
     var playerTy = Math.floor(camCenterY / TILE_SIZE);
-    var spawnRadius = 20;
-    console.log('[pizza] Trying to spawn near camera at tile', playerTx, playerTy);
-    
+    var spawnRadius = PIZZA_LOCAL_RADIUS;
+
+    // Count active (uncollected) pizzas already within this player's local area
+    var localCount = 0;
+    var localRangePx = PIZZA_LOCAL_RADIUS * TILE_SIZE;
+    for (var _lci = 0; _lci < game.pizzaPickups.length; _lci++) {
+        var _lcp = game.pizzaPickups[_lci];
+        if (_lcp.collected) continue;
+        var _ldx = _lcp.x - camCenterX, _ldy = _lcp.y - camCenterY;
+        if (Math.abs(_ldx) <= localRangePx && Math.abs(_ldy) <= localRangePx) localCount++;
+    }
+    if (localCount >= PIZZA_PER_PLAYER) return; // enough nearby already
     var attempts = 0;
     var maxAttempts = 100;
     while (attempts < maxAttempts) {
@@ -12837,20 +12891,29 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Turtle selection: 1=Leo, 2=Raph, 3=Donnie, 4=Mikey (only alive turtles)
+    // Turtle selection: 1=Leo, 2=Raph, 3=Donnie, 4=Mikey (works in overworld AND levels)
     var turtleKeys = { 'Digit1': 'leo', 'Digit2': 'raph', 'Digit3': 'donnie', 'Digit4': 'mikey' };
     if (turtleKeys[e.code]) {
         var requestedTurtle = turtleKeys[e.code];
-        if (game.party.status[requestedTurtle] === 'alive' && requestedTurtle !== game.activeTurtle) {
-            // Save current turtle's HP before switching
-            game.party.hp[game.activeTurtle] = game.turtle.hp;
-            // Switch to new turtle
-            game.activeTurtle = requestedTurtle;
-            // Load new turtle's HP
-            game.turtle.hp = game.party.hp[requestedTurtle] || game.party.maxHp;
-            console.log('[party] Manual switch to ' + requestedTurtle + ' (HP: ' + game.turtle.hp + ')');
-        } else if (game.party.status[requestedTurtle] === 'dead') {
-            console.log('[party] Cannot switch to ' + requestedTurtle + ' - dead!');
+        if (game.mode === 'LEVEL' && game.level) {
+            // Level mode: switch level player turtle if available and not knocked out
+            var _L = game.level;
+            if (requestedTurtle !== _L.player.turtleId &&
+                game.party.status[requestedTurtle] === 'alive' &&
+                !(_L.partyKnockedOut && _L.partyKnockedOut[requestedTurtle])) {
+                _levelSwitchToTurtle(requestedTurtle);
+            }
+        } else {
+            // Overworld mode
+            if (game.party.status[requestedTurtle] === 'alive' && requestedTurtle !== game.activeTurtle) {
+                // Save current turtle's HP before switching
+                game.party.hp[game.activeTurtle] = game.turtle.hp;
+                game.activeTurtle = requestedTurtle;
+                game.turtle.hp = game.party.hp[requestedTurtle] || game.party.maxHp;
+                console.log('[party] Manual switch to ' + requestedTurtle + ' (HP: ' + game.turtle.hp + ')');
+            } else if (game.party.status[requestedTurtle] === 'dead') {
+                console.log('[party] Cannot switch to ' + requestedTurtle + ' - dead!');
+            }
         }
         return;
     }
@@ -14487,6 +14550,15 @@ async function startEnterLevelWithData(levelData) {
             moving: false,
             turtleId: game.activeTurtle || 'leo'
         },
+        // Per-turtle level HP and knocked-out tracking (reset fresh each level entry)
+        partyLevelHp: (function() {
+            var _lhp = {}, _lmax = game.poiHealReady ? 5 : 3;
+            for (var _ti = 0; _ti < game.party.turtles.length; _ti++) {
+                _lhp[game.party.turtles[_ti]] = _lmax;
+            }
+            return _lhp;
+        })(),
+        partyKnockedOut: {},
         enemies: levelData.enemies.map(function(e, idx) {
             var isRanged = e.type === 'foot_ranged';
             var isShield = e.type === 'foot_shield';
@@ -15447,10 +15519,12 @@ function updateLevel(dt) {
                         p.kbVy = Math.sin(kDir) * KB_PLAYER_DIST / KB_DURATION;
                         p.kbTimer = KB_DURATION;
                         if (p.hp <= 0) {
-                            L.failed = true;
-                            game.levelState = 'FAIL';
-                            setTimeout(exitLevel, 1500);
-                            return;
+                            if (!_levelSwitchOnDeath()) {
+                                L.failed = true;
+                                game.levelState = 'FAIL';
+                                setTimeout(exitLevel, 1500);
+                                return;
+                            }
                         }
                     }
                 }
@@ -15546,10 +15620,12 @@ function updateLevel(dt) {
             p.kbVy = Math.sin(cDir) * KB_PLAYER_DIST / KB_DURATION;
             p.kbTimer = KB_DURATION;
             if (p.hp <= 0) {
-                L.failed = true;
-                game.levelState = 'FAIL';
-                setTimeout(exitLevel, 1500);
-                return;
+                if (!_levelSwitchOnDeath()) {
+                    L.failed = true;
+                    game.levelState = 'FAIL';
+                    setTimeout(exitLevel, 1500);
+                    return;
+                }
             }
         }
     }
@@ -15579,10 +15655,12 @@ function updateLevel(dt) {
             L.screenShake = 2;
             L.projectiles.splice(pi, 1);
             if (p.hp <= 0) {
-                L.failed = true;
-                game.levelState = 'FAIL';
-                setTimeout(exitLevel, 1500);
-                return;
+                if (!_levelSwitchOnDeath()) {
+                    L.failed = true;
+                    game.levelState = 'FAIL';
+                    setTimeout(exitLevel, 1500);
+                    return;
+                }
             }
             continue;
         }
