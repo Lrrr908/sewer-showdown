@@ -4901,6 +4901,17 @@ const SPRITE_MANIFEST = {
     enemyShield:       'sprites/extracted/enemy_shield.png',
     enemyRunner:       'sprites/extracted/enemy_runner.png',
 
+    // Boss: Puff (SNZ Toys building)
+    puffFront1:        'img/puff/pufffront1.png',
+    puffFront2:        'img/puff/pufffront2.png',
+    puffFront3:        'img/puff/pufffront3.png',
+    puffSide1:         'img/puff/puffside1.png',
+    puffSide2:         'img/puff/puffside2.png',
+    puffSide3:         'img/puff/puffside3.png',
+    puffBack1:         'img/puff/puffback1.png',
+    puffBack2:         'img/puff/puffback2.png',
+    puffBack3:         'img/puff/puffback3.png',
+
     // Hazard tiles (optional)
     hazardSludge:      'sprites/extracted/hazard_sludge.png',
     hazardCone:        'sprites/extracted/hazard_cone.png',
@@ -13587,6 +13598,10 @@ function getLevelForContext() {
     // 2. Active building type check
     if (game.activeBuildingId) {
         var building = BUILDING_BY_ID[game.activeBuildingId];
+        // SNZ Toys: gallery dungeon with Puff injected as boss in the last room
+        if (building && building.id === 'b_snztoys') {
+            return resolveRoute({ kind: 'generated', theme: 'gallery' }, game.activeBuildingId);
+        }
         if (building && building.buildingType) {
             var route = LEVEL_ROUTES.buildingType[building.buildingType];
             if (route) return resolveRoute(route, game.activeBuildingId);
@@ -14230,34 +14245,41 @@ function _loadDungeonRoom(L, room) {
         var isRanged = e.type === 'foot_ranged';
         var isShield = e.type === 'foot_shield';
         var isRunner = e.type === 'foot_runner';
+        var isBoss   = e.type === 'boss_technodrome' || e.type === 'boss_puff';
         return {
-            id:           'e_r' + room.id + '_' + idx,
-            type:         e.type,
-            ranged:       isRanged,
-            shield:       isShield,
-            runner:       isRunner,
-            boss:         false,
-            x:            e.x * lts,
-            y:            e.y * lts,
-            w:            lts * (isRunner ? 0.6 : 0.7),
-            h:            lts * (isRunner ? 0.6 : 0.7),
-            hp:           e.hp || 1,
-            maxHp:        e.hp || 1,
-            alive:        true,
-            patrolLeft:   e.patrol ? e.patrol.left  * lts : e.x * lts - lts * 3,
-            patrolRight:  e.patrol ? e.patrol.right * lts : e.x * lts + lts * 3,
-            patrolCx:     e.patrol ? (e.patrol.left + e.patrol.right) * lts / 2 : e.x * lts,
-            patrolCy:     e.y * lts,
-            facingDir:    1,
-            animTimer:    0,
-            state:        'PATROL',
-            stateTimer:   0,
-            stunTimer:    0,
+            id:              'e_r' + room.id + '_' + idx,
+            type:            e.type,
+            ranged:          isRanged,
+            shield:          isShield,
+            runner:          isRunner,
+            boss:            isBoss,
+            x:               e.x * lts,
+            y:               e.y * lts,
+            w:               isBoss ? lts * 3 : lts * (isRunner ? 0.6 : 0.7),
+            h:               isBoss ? lts * 3 : lts * (isRunner ? 0.6 : 0.7),
+            hp:              e.hp || (isBoss ? 30 : 1),
+            maxHp:           e.hp || (isBoss ? 30 : 1),
+            alive:           true,
+            patrolLeft:      e.patrol ? e.patrol.left  * lts : e.x * lts - lts * 3,
+            patrolRight:     e.patrol ? e.patrol.right * lts : e.x * lts + lts * 3,
+            patrolCx:        e.patrol ? (e.patrol.left + e.patrol.right) * lts / 2 : e.x * lts,
+            patrolCy:        e.y * lts,
+            facingDir:       1,
+            animTimer:       0,
+            state:           isBoss ? 'BOSS_PHASE1' : 'PATROL',
+            stateTimer:      0,
+            stunTimer:       0,
             kbVx: 0, kbVy: 0, kbTimer: 0,
-            chaseRadius:  isRanged ? lts * 7 : isRunner ? lts * 8 : lts * 5,
-            attackRadius: isRanged ? lts * 4.5 : isShield ? lts * 1.0 : lts * 1.2,
-            attackCooldown: 0,
-            shieldUp:     isShield
+            chaseRadius:     isRanged ? lts * 7 : isRunner ? lts * 8 : isBoss ? lts * 20 : lts * 5,
+            attackRadius:    isRanged ? lts * 4.5 : isShield ? lts * 1.0 : isBoss ? lts * 6 : lts * 1.2,
+            attackCooldown:  0,
+            shieldUp:        isShield,
+            bossPhase:       isBoss ? 1 : 0,
+            bossSpawnTimer:  isBoss ? 3.0 : 0,
+            bossFireTimer:   isBoss ? 1.5 : 0,
+            weakPointVisible: false,
+            weakPointTimer:  0,
+            bossDir:         'front'
         };
     });
 
@@ -14454,6 +14476,31 @@ async function startEnterLevelFromContext(ctx) {
         var levelData = generateDungeon(ctx.theme, ctx.seed, diff, artistId, artistName);
         levelData.contextId  = ctx.contextId;
         levelData.instanceId = ctx.instanceId;
+
+        // SNZ Toys: replace boss room enemies with Puff
+        if (artistId === 'snztoys' && levelData.rooms && levelData.itemRoomId != null) {
+            var _bossRoom = levelData.rooms[levelData.itemRoomId];
+            var _bMidX = Math.floor(levelData.roomW / 2);
+            var _bMidY = Math.floor(levelData.roomH / 2);
+            var _pL = 2, _pR = levelData.roomW - 3;
+            _bossRoom.enemies = [
+                { type: 'boss_puff', x: _bMidX, y: _bMidY - 1, hp: 30,
+                  patrol: { left: _pL, right: _pR } }
+            ];
+            // Prevent random pedestal item — Power Cell only drops when Puff is defeated
+            _bossRoom.itemSpawn = null;
+            // Make boss room feel bigger: expand interior by removing inner ring of walls
+            var _tm = _bossRoom.tilemap;
+            var _rW = levelData.roomW, _rH = levelData.roomH;
+            for (var _br = 2; _br < _rH - 2; _br++) {
+                for (var _bc = 2; _bc < _rW - 2; _bc++) {
+                    // clear any solid pillars/obstacles in interior (keep floor/carpet/pedestal)
+                    if (_tm[_br][_bc] === 3) _tm[_br][_bc] = 4; // pillar → carpet
+                }
+            }
+            console.log('[snztoys] Puff boss injected into room ' + levelData.itemRoomId);
+        }
+
         await startEnterLevelWithData(levelData);
     }
 }
@@ -14563,7 +14610,7 @@ async function startEnterLevelWithData(levelData) {
             var isRanged = e.type === 'foot_ranged';
             var isShield = e.type === 'foot_shield';
             var isRunner = e.type === 'foot_runner';
-            var isBoss = e.type === 'boss_technodrome';
+            var isBoss = e.type === 'boss_technodrome' || e.type === 'boss_puff';
             return {
                 id: 'enemy_' + idx,
                 type: e.type,
@@ -14597,7 +14644,8 @@ async function startEnterLevelWithData(levelData) {
                 bossSpawnTimer: isBoss ? 3.0 : 0,
                 bossFireTimer: isBoss ? 1.5 : 0,
                 weakPointVisible: false,
-                weakPointTimer: 0
+                weakPointTimer: 0,
+                bossDir: 'front'
             };
         }),
         projectiles: [],
@@ -14692,7 +14740,7 @@ async function startEnterLevelWithData(levelData) {
 // SCORING SYSTEM (Phase 2)
 // ============================================
 
-var SCORE_KILL = { foot: 100, foot_ranged: 150, foot_shield: 200, foot_runner: 120, boss_technodrome: 10000 };
+var SCORE_KILL = { foot: 100, foot_ranged: 150, foot_shield: 200, foot_runner: 120, boss_technodrome: 10000, boss_puff: 8000 };
 var SCORE_LEVEL_CLEAR = 500;
 var SCORE_SPECIAL_ITEM = 1000;
 var SCORE_SPEED_BONUS_PER_SEC = 50;
@@ -14843,7 +14891,7 @@ var SPECIAL_ITEMS = [
     { id: 'pizza_box',        name: 'Pizza Box',            color: '#ff8800', shape: 'box',       themes: ['gallery'] },
     { id: 'helmet_shard',     name: "Shredder's Helmet",    color: '#cc44cc', shape: 'shard',     themes: ['street'] },
     { id: 'shell_fragment',   name: 'Turtle Shell Fragment', color: '#44aa44', shape: 'fragment',  themes: ['dock'] },
-    { id: 'power_cell',       name: "Krang's Power Cell",   color: '#ff44ff', shape: 'cell',      themes: ['sewer'] },
+    { id: 'power_cell',       name: "Krang's Power Cell",   color: '#ff44ff', shape: 'cell',      themes: ['boss_puff_exclusive'] },
     { id: 'microphone',       name: "April's Microphone",   color: '#ffdd44', shape: 'mic',       themes: ['gallery'] },
     { id: 'staff_piece',      name: "Splinter's Staff",     color: '#aa8844', shape: 'staff',     themes: ['street'] },
     { id: 'foot_scroll',      name: 'Foot Clan Scroll',     color: '#ff2222', shape: 'scroll',    themes: ['dock'] },
@@ -15096,6 +15144,68 @@ function updateLevel(dt) {
         }
     }
 
+    // ── Toy pickup collection ────────────────────────────────────
+    if (L.toyPickups && L.toyPickups.length > 0) {
+        for (var _tpi = L.toyPickups.length - 1; _tpi >= 0; _tpi--) {
+            var _tp = L.toyPickups[_tpi];
+            var _tdx = _tp.x - pcx, _tdy = _tp.y - pcy;
+            if (Math.sqrt(_tdx * _tdx + _tdy * _tdy) < lts * 0.7) {
+                p.heldToys = (p.heldToys || 0) + 1;
+                L.toyPickups.splice(_tpi, 1);
+                L.pointPopups.push({ text: 'TOY!', x: _tp.x, y: _tp.y - 10, life: 1.0, color: '#ffff00' });
+            }
+        }
+    }
+
+    // ── Toy projectile update (move + hit Puff) ─────────────────
+    if (L.toyProjectiles && L.toyProjectiles.length > 0) {
+        for (var _tpj = L.toyProjectiles.length - 1; _tpj >= 0; _tpj--) {
+            var _tproj = L.toyProjectiles[_tpj];
+            _tproj.x += _tproj.vx * dt;
+            _tproj.y += _tproj.vy * dt;
+            _tproj.life -= dt;
+            // Wall collision
+            if (levelTileCollision(L, _tproj.x - 4, _tproj.y - 4, 8, 8)) { L.toyProjectiles.splice(_tpj, 1); continue; }
+            if (_tproj.life <= 0) { L.toyProjectiles.splice(_tpj, 1); continue; }
+            // Hit Puff
+            var _hitPuff = false;
+            for (var _tei = 0; _tei < L.enemies.length; _tei++) {
+                var _te = L.enemies[_tei];
+                if (!_te.alive || _te.type !== 'boss_puff') continue;
+                if (_tproj.x > _te.x && _tproj.x < _te.x + _te.w && _tproj.y > _te.y && _tproj.y < _te.y + _te.h) {
+                    _te.hp -= 4;
+                    L.screenShake = 4;
+                    L.hitSparks.push({ x: _tproj.x, y: _tproj.y, life: 0.15 });
+                    L.pointPopups.push({ text: '-4', x: _tproj.x, y: _tproj.y - 12, life: 0.8, color: '#ff88ff' });
+                    if (_te.hp <= 0) {
+                        _te.alive = false;
+                        addKillScore(_te.type, _te.x + _te.w / 2, _te.y + _te.h / 2);
+                        addLevelScore(SCORE_KILL['boss_puff'] || 8000, "PUFF DEFEATED");
+                        game.progress.score += SCORE_KILL['boss_puff'] || 8000;
+                        saveGame();
+                        // Drop Krang's Power Cell — always spawns on Puff's defeat
+                        var _pcItem = null;
+                        for (var _sii = 0; _sii < SPECIAL_ITEMS.length; _sii++) {
+                            if (SPECIAL_ITEMS[_sii].id === 'power_cell') { _pcItem = SPECIAL_ITEMS[_sii]; break; }
+                        }
+                        if (_pcItem) {
+                            L.specialItem = _pcItem;
+                            L.specialItemCollected = game.progress.collectedItems['power_cell'] ? true : false;
+                            L.specialItemPos = { x: _te.x + _te.w / 2 - lts * 0.4, y: _te.y + _te.h / 2 - lts * 0.4, w: lts * 0.8, h: lts * 0.8 };
+                            if (!L.specialItemCollected) {
+                                L.pointPopups.push({ text: "KRANG'S POWER CELL!", x: _te.x + _te.w / 2, y: _te.y - lts, life: 2.5, color: '#ff44ff' });
+                            }
+                        }
+                        // Victory door opens via the all-enemies-dead check (no bossDefeated needed for dungeon)
+                    }
+                    _hitPuff = true;
+                    break;
+                }
+            }
+            if (_hitPuff) { L.toyProjectiles.splice(_tpj, 1); }
+        }
+    }
+
     // ── Player attack state machine ─────────────────────────────
     if (p.atkCooldown > 0) p.atkCooldown -= dt;
     if (p.invTimer > 0) p.invTimer -= dt;
@@ -15107,6 +15217,21 @@ function updateLevel(dt) {
                 p.atkPhase = 'ACTIVE';
                 p.atkTimer = ATK_ACTIVE;
                 p.atkHitIds = new Set();
+                // If holding a toy, throw it toward the boss
+                if ((p.heldToys || 0) > 0) {
+                    p.heldToys--;
+                    var _td = p.direction;
+                    var _tvx = _td === 'right' ? 1 : _td === 'left' ? -1 : 0;
+                    var _tvy = _td === 'down' ? 1 : _td === 'up' ? -1 : 0;
+                    if (_tvx === 0 && _tvy === 0) { _tvx = p.facingDir || 1; }
+                    var _tspd = lts * 9;
+                    if (!L.toyProjectiles) L.toyProjectiles = [];
+                    L.toyProjectiles.push({
+                        x: pcx, y: pcy,
+                        vx: _tvx * _tspd, vy: _tvy * _tspd,
+                        life: 1.8, id: 'tp_' + Date.now()
+                    });
+                }
             } else if (p.atkPhase === 'ACTIVE') {
                 p.atkPhase = 'RECOVERY';
                 p.atkTimer = ATK_RECOVERY;
@@ -15381,23 +15506,28 @@ function updateLevel(dt) {
                 L.screenShake = 5;
             }
 
-            // Weak point visibility cycling
+            // Weak point visibility cycling — generous durations so the boss is hittable
             e.weakPointTimer += dt;
-            var wpCycle = e.bossPhase >= 3 ? 2.0 : e.bossPhase >= 2 ? 3.0 : 4.0;
-            var wpDuration = e.bossPhase >= 3 ? 1.5 : e.bossPhase >= 2 ? 1.0 : 0.8;
+            var wpCycle    = e.bossPhase >= 3 ? 2.0 : e.bossPhase >= 2 ? 2.5 : 3.0;
+            var wpDuration = e.bossPhase >= 3 ? 1.5 : e.bossPhase >= 2 ? 1.5 : 1.8;
             e.weakPointVisible = (e.weakPointTimer % wpCycle) < wpDuration;
 
-            // Boss movement (phase 2+)
-            if (e.bossPhase >= 2) {
-                var bmSpeed = lts * (e.bossPhase >= 3 ? 1.2 : 0.6);
-                var btDx = _nearTcx - ecx, btDy = _nearTcy - ecy;
-                var btLen = Math.hypot(btDx, btDy);
-                if (btLen > lts * 3) {
-                    btDx /= btLen; btDy /= btLen;
-                    var bnx2 = e.x + btDx * bmSpeed * dt;
-                    var bny2 = e.y + btDy * bmSpeed * dt;
-                    if (!levelTileCollision(L, bnx2, e.y, e.w, e.h)) e.x = bnx2;
-                    if (!levelTileCollision(L, e.x, bny2, e.w, e.h)) e.y = bny2;
+            // Boss movement — all phases chase the player (speed scales with phase)
+            var bmSpeed = lts * (e.bossPhase >= 3 ? 1.2 : e.bossPhase >= 2 ? 0.65 : 0.28);
+            var btDx = _nearTcx - ecx, btDy = _nearTcy - ecy;
+            var btLen = Math.hypot(btDx, btDy);
+            if (btLen > lts * 3) {
+                btDx /= btLen; btDy /= btLen;
+                var bnx2 = e.x + btDx * bmSpeed * dt;
+                var bny2 = e.y + btDy * bmSpeed * dt;
+                if (!levelTileCollision(L, bnx2, e.y, e.w, e.h)) e.x = bnx2;
+                if (!levelTileCollision(L, e.x, bny2, e.w, e.h)) e.y = bny2;
+                // Update direction so sprite faces the right way
+                if (Math.abs(btDx) >= Math.abs(btDy)) {
+                    e.bossDir = 'side';
+                    e.facingDir = btDx > 0 ? 1 : -1;
+                } else {
+                    e.bossDir = btDy > 0 ? 'front' : 'back';
                 }
             }
 
@@ -15549,9 +15679,9 @@ function updateLevel(dt) {
             var ay = p.y + p.h / 2 + aDy;
             var hitRange = e.boss ? lts * 2 : lts;
             if (Math.abs(ax - ecx) < hitRange && Math.abs(ay - ecy) < hitRange) {
-                // Boss weak point check: can only damage when weak point visible
+                // Puff is immune to normal attacks — only toy throws can hurt him
                 var blocked = false;
-                if (e.boss && !e.weakPointVisible) {
+                if (e.boss && e.type === 'boss_puff') {
                     blocked = true;
                     p.atkHitIds.add(e.id);
                     L.hitSparks.push({ x: (ax + ecx) / 2, y: (ay + ecy) / 2, life: 0.06 });
@@ -15587,6 +15717,12 @@ function updateLevel(dt) {
                         L.pizzaPickups.push({ id: 'lpz_' + Date.now() + '_' + Math.random(), x: ecx, y: ecy, type: 'slice' });
                     } else if (Math.random() < 0.05) {
                         L.pizzaPickups.push({ id: 'lpz_' + Date.now() + '_w' + Math.random(), x: ecx, y: ecy, type: 'whole' });
+                    }
+                    // In Puff's dungeon: walkers drop a throwable toy
+                    var _hasPuff = L.enemies.some(function(en) { return en.alive && en.type === 'boss_puff'; });
+                    if (!e.boss && _hasPuff) {
+                        if (!L.toyPickups) L.toyPickups = [];
+                        L.toyPickups.push({ id: 'toy_' + Date.now() + '_' + Math.random(), x: ecx - lts * 0.25, y: ecy - lts * 0.25 });
                     }
                     // Boss defeat check
                     if (e.boss) {
@@ -16007,6 +16143,43 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
         if (!e.alive) continue;
         var esx = e.x - cx, esy = e.y - cy;
         if (e.stunTimer > 0 && Math.floor(e.stunTimer * 10) % 2 === 0) continue;
+
+        // ── Boss (Puff or Technodrome) ──────────────────────────────
+        if (e.boss) {
+            var bossGlow = Math.sin(Date.now() / 150) * 0.2 + 0.6;
+            var bossHpW  = e.w * 1.2;
+            if (e.type === 'boss_puff') {
+                var puffFrame = (Math.floor(e.animTimer / 0.22) % 3) + 1;
+                var puffDir   = (e.bossDir === 'back') ? 'Back' : (e.bossDir === 'front') ? 'Front' : 'Side';
+                var puffKey   = 'puff' + puffDir + puffFrame;
+                var puffSpr   = game.sprites[puffKey] || game.sprites['puffFront1'];
+                ctx.save();
+                if (e.bossPhase >= 3) { ctx.filter = 'hue-rotate(0deg) saturate(2.5) brightness(1.4)'; }
+                else if (e.bossPhase >= 2) { ctx.filter = 'hue-rotate(180deg) saturate(1.8) brightness(1.1)'; }
+                if (puffDir === 'Side' && e.facingDir < 0) {
+                    ctx.translate(esx + e.w, esy); ctx.scale(-1, 1);
+                    if (puffSpr) ctx.drawImage(puffSpr, 0, 0, e.w, e.h);
+                } else {
+                    if (puffSpr) ctx.drawImage(puffSpr, esx, esy, e.w, e.h);
+                }
+                ctx.restore();
+                ctx.fillStyle = NES.PAL.K; ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW, 6);
+                ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? '#ff8800' : '#ff44dd';
+                ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW * (e.hp / e.maxHp), 6);
+            } else {
+                // Technodrome circle rendering
+                ctx.fillStyle = NES.PAL.G; ctx.beginPath(); ctx.arc(esx + e.w/2, esy + e.h/2, e.w*0.45, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = NES.PAL.N; ctx.beginPath(); ctx.arc(esx + e.w/2, esy + e.h/2, e.w*0.38, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = NES.PAL.K; ctx.fillRect(esx + e.w/2 - bossHpW/2, esy - 12, bossHpW, 6);
+                ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? NES.PAL.P : NES.PAL.C;
+                ctx.fillRect(esx + e.w/2 - bossHpW/2, esy - 12, bossHpW * (e.hp/e.maxHp), 6);
+                ctx.fillStyle = NES.PAL.W; ctx.font = 'bold 8px "Press Start 2P", monospace'; ctx.textAlign = 'center';
+                ctx.fillText('TECHNODROME', esx + e.w/2, esy - 16); ctx.textAlign = 'left';
+            }
+            continue;
+        }
+
+        // ── Regular enemies ─────────────────────────────────────────
         var bodyColor = e.ranged ? NES.PAL.N : e.shield ? NES.PAL.G : e.runner ? NES.PAL.C : NES.PAL.R;
         if (e.state === 'ATTACK') bodyColor = e.ranged ? NES.PAL.B : e.shield ? NES.PAL.L : NES.PAL.P;
         var enemySpriteKey = e.ranged ? 'enemyRanged' : e.shield ? 'enemyShield' : e.runner ? 'enemyRunner' : 'enemyFoot';
@@ -16097,6 +16270,13 @@ function _drawDungeonHUD(L, ts) {
         var itId = SPECIAL_ITEMS[iti].id;
         ctx.fillStyle = game.progress.collectedItems[itId] ? SPECIAL_ITEMS[iti].color : '#333333';
         ctx.fillRect(12 + iti * 11, itemY + 3, 8, 8);
+    }
+    // Toy count (when player holds throwables)
+    if ((p.heldToys || 0) > 0) {
+        var toyHudY = itemY + 18;
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(8, toyHudY, 110, 16);
+        ctx.fillStyle = '#ffee00'; ctx.font = 'bold 9px monospace';
+        ctx.fillText('\u25a0 TOYS: ' + p.heldToys + '  [ATK to throw]', 12, toyHudY + 11);
     }
     // Locked-room message
     if (L.dungeonRoomMsg && L.dungeonMsgTimer > 0) {
@@ -17012,6 +17192,60 @@ function drawLevel() {
             }
         }
 
+        // ── Toy pickups on the floor ─────────────────────────────────
+        if (L.toyPickups) {
+            for (var _trnd = 0; _trnd < L.toyPickups.length; _trnd++) {
+                var _tpu = L.toyPickups[_trnd];
+                var _tpux = _tpu.x - cx, _tpuy = _tpu.y - cy;
+                var _tpuBob = Math.sin(Date.now() / 280 + _trnd) * 3;
+                var _tsz = ts * 0.35;
+                ctx.fillStyle = '#ffee00';
+                ctx.fillRect(_tpux - _tsz / 2, _tpuy - _tsz / 2 + _tpuBob, _tsz, _tsz);
+                ctx.fillStyle = '#ff4400';
+                ctx.fillRect(_tpux - _tsz * 0.15, _tpuy - _tsz * 0.7 + _tpuBob, _tsz * 0.3, _tsz * 0.4);
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+                ctx.strokeRect(_tpux - _tsz / 2, _tpuy - _tsz / 2 + _tpuBob, _tsz, _tsz);
+            }
+        }
+
+        // ── Thrown toy projectiles ────────────────────────────────────
+        if (L.toyProjectiles) {
+            for (var _ttr = 0; _ttr < L.toyProjectiles.length; _ttr++) {
+                var _ttproj = L.toyProjectiles[_ttr];
+                var _ttx = _ttproj.x - cx, _tty = _ttproj.y - cy;
+                var _tspinAngle = (Date.now() / 80 + _ttr * 1.3);
+                ctx.save();
+                ctx.translate(_ttx, _tty);
+                ctx.rotate(_tspinAngle);
+                ctx.fillStyle = '#ffee00';
+                ctx.fillRect(-6, -6, 12, 12);
+                ctx.fillStyle = '#ff4400';
+                ctx.fillRect(-2, -6, 4, 5);
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+                ctx.strokeRect(-6, -6, 12, 12);
+                ctx.restore();
+            }
+        }
+
+        // ── Boss projectiles in dungeon rooms ───────────────────────
+        for (var _dpi = 0; _dpi < L.projectiles.length; _dpi++) {
+            var _dproj = L.projectiles[_dpi];
+            if (_dproj.life <= 0) continue;
+            var _dprx = _dproj.x - cx, _dpry = _dproj.y - cy;
+            var _speed = Math.hypot(_dproj.vx, _dproj.vy);
+            if (_speed > 0) {
+                var _ndx = -_dproj.vx / _speed, _ndy = -_dproj.vy / _speed;
+                for (var _ti2 = 1; _ti2 <= 3; _ti2++) {
+                    ctx.fillStyle = 'rgba(255,80,255,' + (0.3 - _ti2 * 0.08) + ')';
+                    ctx.beginPath(); ctx.arc(_dprx + _ndx * _ti2 * 4, _dpry + _ndy * _ti2 * 4, PROJ_RADIUS - 1, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            ctx.fillStyle = '#ff88ff';
+            ctx.beginPath(); ctx.arc(_dprx, _dpry, PROJ_RADIUS, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,100,255,0.35)';
+            ctx.beginPath(); ctx.arc(_dprx, _dpry, PROJ_RADIUS * 2, 0, Math.PI * 2); ctx.fill();
+        }
+
         // ── Sewer art gallery: hover preview in black margin ─────────
         if (L._nearArtSlot && !L.sewerArtPopup) {
             _drawSewerArtHover(ctx, L, cx, cy, ts);
@@ -17114,6 +17348,34 @@ function drawLevel() {
 
         if (e.boss) {
             var bossGlow = Math.sin(Date.now() / 150) * 0.2 + 0.6;
+            var bossHpW = e.w * 1.2;
+
+            if (e.type === 'boss_puff') {
+                // ── Puff (SNZ Toys boss) — PNG sprite rendering ──
+                var puffFrame = (Math.floor(e.animTimer / 0.22) % 3) + 1;
+                var puffDir = (e.bossDir === 'back') ? 'Back' : (e.bossDir === 'front') ? 'Front' : 'Side';
+                var puffKey = 'puff' + puffDir + puffFrame;
+                var puffSprite = game.sprites[puffKey] || game.sprites['puffFront1'];
+                ctx.save();
+                if (e.bossPhase >= 3) {
+                    ctx.filter = 'hue-rotate(0deg) saturate(2.5) brightness(1.4)';
+                } else if (e.bossPhase >= 2) {
+                    ctx.filter = 'hue-rotate(180deg) saturate(1.8) brightness(1.1)';
+                }
+                if (puffDir === 'Side' && e.facingDir < 0) {
+                    ctx.translate(esx + e.w, esy);
+                    ctx.scale(-1, 1);
+                    if (puffSprite) ctx.drawImage(puffSprite, 0, 0, e.w, e.h);
+                } else {
+                    if (puffSprite) ctx.drawImage(puffSprite, esx, esy, e.w, e.h);
+                }
+                ctx.restore();
+                ctx.fillStyle = NES.PAL.K;
+                ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW, 6);
+                ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? '#ff8800' : '#ff44dd';
+                ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW * (e.hp / e.maxHp), 6);
+            } else {
+            // ── Technodrome boss — original circle rendering ──
             ctx.fillStyle = NES.PAL.G;
             ctx.beginPath();
             ctx.arc(esx + e.w / 2, esy + e.h / 2, e.w * 0.45, 0, Math.PI * 2);
@@ -17144,7 +17406,6 @@ function drawLevel() {
             ctx.beginPath();
             ctx.arc(esx + e.w / 2, esy + e.h / 2, e.w * 0.08, 0, Math.PI * 2);
             ctx.fill();
-            var bossHpW = e.w * 1.2;
             ctx.fillStyle = NES.PAL.K;
             ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 12, bossHpW, 6);
             ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? NES.PAL.P : NES.PAL.C;
@@ -17159,6 +17420,7 @@ function drawLevel() {
                 ctx.fillText('WEAK POINT!', esx + e.w / 2, esy - 24);
             }
             ctx.textAlign = 'left';
+            } // end technodrome
         } else {
         var bodyColor = e.ranged ? NES.PAL.N : e.shield ? NES.PAL.G : e.runner ? NES.PAL.C : NES.PAL.R;
         if (e.state === 'ATTACK') bodyColor = e.ranged ? NES.PAL.B : e.shield ? NES.PAL.L : e.runner ? NES.PAL.C : NES.PAL.P;
