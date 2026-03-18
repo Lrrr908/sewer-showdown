@@ -4859,6 +4859,8 @@ function buildSpriteManifestWithPack(baseManifest, packInfo) {
 const SPRITE_MANIFEST = {
     // Branding
     nesLogo:           'img/logo_nes.png',
+    // Dungeon props
+    greenCouch:        'img/greencouch.png',
     // Reference sheets
     area1:             'sprites/area1.png',
     turtles:           'sprites/turtles.png',
@@ -14363,6 +14365,12 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
             ];
         }
         var artFrames = [];
+        // Entry room gets a couch against the back (north) wall
+        var roomProps = [];
+        if (isEntry) {
+            roomProps.push({ sprite: 'greenCouch', tileX: 3, tileY: 1, tileW: 5, anchor: 'center-top' });
+        }
+
         rooms.push({
             id:             ri,
             tilemap:        tm,
@@ -14372,6 +14380,7 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
             doors:          doors,
             entryPositions: buildEntryPositions(doors, corridorBounds),
             artFrames:      artFrames,
+            props:          roomProps,
             itemSpawn:      (isBoss && !peaceful) ? { x: MID_X, y: MID_Y } : null,
             isEntry:        isEntry,
             isBoss:         isBoss
@@ -14396,6 +14405,7 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         tileTypes:   DUNGEON_TILE_TYPES,
         enemies:     entryRoom.enemies,
         artFrames:   entryRoom.artFrames,
+        props:       entryRoom.props || [],
         itemSpawn:   entryRoom.itemSpawn,
         spawns:      { player: { x: spawnX, y: spawnY }, exit: { x: -100, y: -100 } },
         // Dungeon-specific
@@ -14414,6 +14424,7 @@ function _loadDungeonRoom(L, room) {
     var lts = L.tileSize;
     L.tilemap        = room.tilemap;
     L.corridorBounds = room.corridorBounds || null;
+    L.roomProps      = room.props          || [];
     L.tileTypes      = room.tileTypes || DUNGEON_TILE_TYPES;
     L.width          = L.dungeon.roomW;
     L.height         = L.dungeon.roomH;
@@ -14757,6 +14768,7 @@ async function startEnterLevelWithData(levelData) {
         height: lh,
         tilemap: levelData.tilemap,
         tileTypes: levelData.tileTypes,
+        roomProps: levelData.props || [],
         player: {
             x: levelData.spawns.player.x * lts,
             y: levelData.spawns.player.y * lts,
@@ -15589,6 +15601,7 @@ function updateLevel(dt) {
                         progress:          0,
                         fromTilemap:       _fromTilemap,
                         fromCorridorBounds: L.corridorBounds || null,
+                        fromProps:         L.roomProps || [],
                         fromEnemies:       L.enemies.slice(),
                         fromArtFrames:     _fromArtFrames,
                         playerStartX:      p.x,
@@ -16708,7 +16721,7 @@ function _drawSewerArtPopup(ctx, L) {
 }
 
 // Helper: draw one room's tilemap with an x/y pixel offset
-function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY, corridorBounds) {
+function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY, corridorBounds, roomProps) {
     ctx.imageSmoothingEnabled = false;
     var ts = L.tileSize;
     var cx = L.camera.x - offsetX, cy = L.camera.y - offsetY;
@@ -17233,6 +17246,34 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY, corridorBound
 
     // Restore filter after Dimension X greyscale pass
     if (_dimXFilter) ctx.filter = 'none';
+
+    // Draw decorative props (couch, etc.)
+    if (roomProps && roomProps.length > 0 && game.sprites) {
+        var _ts = L.tileSize;
+        var _cx = L.camera.x - offsetX, _cy = L.camera.y - offsetY;
+        ctx.imageSmoothingEnabled = false;
+        for (var _pi = 0; _pi < roomProps.length; _pi++) {
+            var _prop = roomProps[_pi];
+            var _spr  = game.sprites[_prop.sprite];
+            if (!_spr || !_spr.complete || !_spr.naturalWidth) continue;
+
+            var _pw   = _prop.tileW * _ts;
+            var _ph   = Math.round(_pw * (_spr.naturalHeight / _spr.naturalWidth));
+            var _ptx  = _prop.tileX;
+            var _pty  = _prop.tileY;
+
+            var _px, _py;
+            if (_prop.anchor === 'center-top') {
+                _px = _ptx * _ts - _cx - Math.floor(_pw / 2);
+                _py = _pty * _ts - _cy;
+            } else {
+                _px = _ptx * _ts - _cx;
+                _py = _pty * _ts - _cy;
+            }
+
+            ctx.drawImage(_spr, _px, _py, _pw, _ph);
+        }
+    }
 }
 
 function drawLevel() {
@@ -17267,14 +17308,14 @@ function drawLevel() {
         else if (dir === 'w') { fromOx =  ease * RPXW;  toOx = -(1 - ease) * RPXW; }
 
         // Draw from-room (sliding away)
-        _drawDungeonRoom(L, tr.fromTilemap, tr.fromArtFrames, fromOx, fromOy, tr.fromCorridorBounds || null);
+        _drawDungeonRoom(L, tr.fromTilemap, tr.fromArtFrames, fromOx, fromOy, tr.fromCorridorBounds || null, tr.fromProps || []);
 
         // Temporarily swap in the to-room tilemap for drawing
         var _saveTm = L.tilemap; var _saveAf = L.artFrames;
         var toRoom = L.dungeon.rooms[tr.toRoomId];
         L.tilemap   = toRoom.tilemap;
         L.artFrames = toRoom.artFrames || [];
-        _drawDungeonRoom(L, toRoom.tilemap, toRoom.artFrames || [], toOx, toOy, toRoom.corridorBounds || null);
+        _drawDungeonRoom(L, toRoom.tilemap, toRoom.artFrames || [], toOx, toOy, toRoom.corridorBounds || null, toRoom.props || []);
         L.tilemap   = _saveTm;
         L.artFrames = _saveAf;
 
@@ -17318,7 +17359,7 @@ function drawLevel() {
 
     // ── Dungeon: normal single-room draw ────────────────────────
     if (L.dungeon) {
-        _drawDungeonRoom(L, L.tilemap, L.artFrames, 0, 0, L.corridorBounds || null);
+        _drawDungeonRoom(L, L.tilemap, L.artFrames, 0, 0, L.corridorBounds || null, L.roomProps || []);
 
         // Special item pedestal (if not collected)
         if (L.specialItemPos && !L.specialItemCollected && L.specialItem) {
