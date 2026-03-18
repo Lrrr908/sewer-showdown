@@ -14263,47 +14263,9 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         // dimension_x: no pillars, no carpets — plain walls and floor only
         if (theme === 'dimension_x') return { tm: tm, corridorBounds: corridorBounds };
 
-        // ── Decorations (skip for peaceful hubs — plain open rooms) ──
-        if (!peaceful) {
-            if (isEntry) {
-                tm[1][1]           = DT_PILLAR;
-                tm[1][ROOM_W - 2]  = DT_PILLAR;
-                tm[ROOM_H - 2][1]  = DT_PILLAR;
-                tm[ROOM_H - 2][ROOM_W - 2] = DT_PILLAR;
-                for (r = 2; r < ROOM_H - 2; r++) {
-                    if (tm[r][MID_X] === DT_FLOOR) tm[r][MID_X] = DT_CARPET;
-                    if (tm[r][MID_X - 1] === DT_FLOOR) tm[r][MID_X - 1] = DT_CARPET;
-                    if (tm[r][MID_X + 1] === DT_FLOOR) tm[r][MID_X + 1] = DT_CARPET;
-                }
-            } else if (isBoss) {
-                for (r = 2; r < ROOM_H - 2; r++) {
-                    for (c = 2; c < ROOM_W - 2; c++) {
-                        if (tm[r][c] === DT_FLOOR && (r + c) % 2 === 0) tm[r][c] = DT_CARPET;
-                    }
-                }
-                tm[MID_Y][MID_X] = DT_PEDESTAL;
-                tm[2][2]               = DT_PILLAR;
-                tm[2][ROOM_W - 3]      = DT_PILLAR;
-                tm[ROOM_H - 3][2]      = DT_PILLAR;
-                tm[ROOM_H - 3][ROOM_W - 3] = DT_PILLAR;
-            } else {
-                var seed2 = seedHashRT(seed + '_rm' + ri);
-                var rng2 = mulberry32RT(seed2);
-                var numPillars = 1 + Math.floor(rng2() * 3);
-                for (var pi = 0; pi < numPillars; pi++) {
-                    var pr = 2 + Math.floor(rng2() * (ROOM_H - 5));
-                    var pc = 2 + Math.floor(rng2() * ((ROOM_W - 5) / 2)) * 2;
-                    if (tm[pr][pc] === DT_FLOOR) tm[pr][pc] = DT_PILLAR;
-                    var mirrorC = ROOM_W - 1 - pc;
-                    if (mirrorC !== pc && tm[pr][mirrorC] === DT_FLOOR) tm[pr][mirrorC] = DT_PILLAR;
-                }
-                var hazardCount = Math.floor(rng2() * 3) + (diff > 2 ? 2 : 0);
-                for (var hz = 0; hz < hazardCount; hz++) {
-                    var hr = 2 + Math.floor(rng2() * (ROOM_H - 4));
-                    var hc = 2 + Math.floor(rng2() * (ROOM_W - 4));
-                    if (tm[hr][hc] === DT_FLOOR) tm[hr][hc] = DT_HAZARD;
-                }
-            }
+        // Boss room: keep pedestal so the item can spawn; everything else plain floor
+        if (!peaceful && isBoss) {
+            tm[MID_Y][MID_X] = DT_PEDESTAL;
         }
 
         return { tm: tm, corridorBounds: corridorBounds };
@@ -14400,7 +14362,7 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
                   patrol: { left: MID_X + 2, right: ROOM_W - 3 } }
             ];
         }
-        var artFrames = isBoss || isEntry ? buildArtFrames(tm) : [];
+        var artFrames = [];
         rooms.push({
             id:             ri,
             tilemap:        tm,
