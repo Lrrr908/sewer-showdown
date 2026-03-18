@@ -1512,6 +1512,45 @@ var NES = (function () {
         'GGGGGGGGGGGGGGGG'
     ];
 
+    // ── Level: Dimension X floor (grey checkerboard — gallery structure but grey tones) ──
+    PATTERNS.dimensionXFloor = [
+        'LLLLLLLLaaaaaaaa',
+        'LLLLLLLLaaaaaaaa',
+        'LLLLLLLLaaaaaaaa',
+        'LLLLLLLLaaaaaaaa',
+        'LLLLLLLLaaaaaaaa',
+        'LLLLLLLLaaaaaaaa',
+        'LLLLLLLLaaaaaaaa',
+        'LLLLLLLLaaaaaaaa',
+        'aaaaaaaaLLLLLLLL',
+        'aaaaaaaaLLLLLLLL',
+        'aaaaaaaaLLLLLLLL',
+        'aaaaaaaaLLLLLLLL',
+        'aaaaaaaaLLLLLLLL',
+        'aaaaaaaaLLLLLLLL',
+        'aaaaaaaaLLLLLLLL',
+        'aaaaaaaaLLLLLLLL'
+    ];
+    // ── Level: Dimension X wall (grey — gallery structure but grey tones) ──
+    PATTERNS.dimensionXWall = [
+        'KKKKKKKKKKKKKKKK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KLLLLLLLLLLLLLLK',
+        'KaaaaaaaaaaaaaaK',
+        'K00000000000000K',
+        'KKKKKKKKKKKKKKKK'
+    ];
+
     // ── Level: Street floor (same cobblestone) ──
     PATTERNS.streetFloor = [
         'GWWWWGWWWWWGWWWG',
@@ -4064,14 +4103,16 @@ function buildCollisionGrid() {
 
     // Use TERRAIN_GRID (available now) rather than MAP (populated later by generateMap)
     // Terrain values: 0=ocean, 1=coast, 2=land, 3=mountain, 4=river
-    // Only water (0), coast (1), and river (4) are impassable
+    // Grid values: 0=passable, 1=fully blocked (ocean/river), 2=vehicle-blocked only (coast — walkable on foot)
     if (TERRAIN_GRID) {
         for (var y = 0; y < h; y++) {
             if (!TERRAIN_GRID[y]) continue;
             for (var x = 0; x < w; x++) {
                 var terrain = TERRAIN_GRID[y][x] || 0;
-                if (terrain === 0 || terrain === 1 || terrain === 4) {
-                    COLLISION_GRID[y * w + x] = 1;
+                if (terrain === 0 || terrain === 4) {
+                    COLLISION_GRID[y * w + x] = 1; // ocean / river — fully blocked
+                } else if (terrain === 1) {
+                    COLLISION_GRID[y * w + x] = 2; // coast — vehicles blocked, foot passable
                 }
             }
         }
@@ -6736,7 +6777,9 @@ function drawUI() {
 // GAME LOGIC
 // ============================================
 
-function rectHitsCollisionGrid(rx, ry, rw, rh) {
+// footMode=true: only blocks on value 1 (ocean/river); ignores value 2 (coast — walkable on foot)
+// footMode=false (default): blocks on any non-zero value (vehicles blocked by coast too)
+function rectHitsCollisionGrid(rx, ry, rw, rh, footMode) {
     if (!COLLISION_GRID) return false;
     var txMin = Math.max(0, Math.floor(rx / TILE_SIZE));
     var txMax = Math.min(WORLD_WIDTH - 1, Math.floor((rx + rw - 1) / TILE_SIZE));
@@ -6744,7 +6787,10 @@ function rectHitsCollisionGrid(rx, ry, rw, rh) {
     var tyMax = Math.min(WORLD_HEIGHT - 1, Math.floor((ry + rh - 1) / TILE_SIZE));
     for (var ty = tyMin; ty <= tyMax; ty++) {
         for (var tx = txMin; tx <= txMax; tx++) {
-            if (COLLISION_GRID[ty * WORLD_WIDTH + tx]) return true;
+            var cv = COLLISION_GRID[ty * WORLD_WIDTH + tx];
+            if (!cv) continue;
+            if (footMode && cv === 2) continue; // coast tile — foot can pass
+            return true;
         }
     }
     return false;
@@ -6779,11 +6825,13 @@ function checkCollision(newX, newY) {
     }
 
     var isTD = game.controllerEntity === 'technodrone';
+    var isOnFoot = game.controllerEntity === 'foot';
     var inset = isTD ? 96 : 24;
     var rx = newX + inset, ry = newY + inset;
     var rw = p.width - inset * 2, rh = p.height - inset * 2;
     // Technodrone skips tile grid (manholes, ground features) — only checks buildings
-    if (!isTD && rectHitsCollisionGrid(rx, ry, rw, rh)) return true;
+    // On foot: coast tiles (value 2) are passable; in van: coast tiles block
+    if (!isTD && rectHitsCollisionGrid(rx, ry, rw, rh, isOnFoot)) return true;
     if (rectHitsBuildingCollision(rx, ry, rw, rh)) return true;
     return false;
 }
@@ -7851,7 +7899,7 @@ function checkTurtleCollision(newX, newY) {
     var inset = 4;
     var rx = newX + inset, ry = newY + inset;
     var rw = t.width - inset * 2, rh = t.height - inset * 2;
-    if (rectHitsCollisionGrid(rx, ry, rw, rh)) return true;
+    if (rectHitsCollisionGrid(rx, ry, rw, rh, true)) return true; // turtle is always on foot
     if (rectHitsBuildingCollision(rx, ry, rw, rh)) return true;
     return false;
 }
@@ -13813,10 +13861,11 @@ function verifyLevelIntegrity(levelData, levelId) {
 // ── Runtime level generator (browser-side, seeded) ──────────────
 
 var LEVEL_THEMES = {
-    sewer:   { name: 'Sewer',        obs: 0.08, corW: 3, rmMin: 4, rmMax: 8 },
-    street:  { name: 'Street Fight', obs: 0.04, corW: 5, rmMin: 6, rmMax: 12 },
-    dock:    { name: 'Dock',         obs: 0.10, corW: 3, rmMin: 5, rmMax: 9 },
-    gallery: { name: 'Gallery',      obs: 0.03, corW: 5, rmMin: 6, rmMax: 10 }
+    sewer:       { name: 'Sewer',        obs: 0.08, corW: 3, rmMin: 4, rmMax: 8 },
+    street:      { name: 'Street Fight', obs: 0.04, corW: 5, rmMin: 6, rmMax: 12 },
+    dock:        { name: 'Dock',         obs: 0.10, corW: 3, rmMin: 5, rmMax: 9 },
+    gallery:     { name: 'Gallery',      obs: 0.03, corW: 5, rmMin: 6, rmMax: 10 },
+    dimension_x: { name: 'Dimension X',  obs: 0.06, corW: 3, rmMin: 5, rmMax: 10 }
 };
 var LEVEL_SIZES = { S: { w: 24, h: 12 }, M: { w: 36, h: 15 }, L: { w: 48, h: 18 } };
 var BUDGET_BASE = 30;
@@ -13830,10 +13879,11 @@ var RUNNER_MIN_DIFF_RT = 2;
 
 // Hazard tiles: tile type 2 = hazard; effect from theme
 var THEME_HAZARD = {
-    sewer:   { name: 'sludge',  color: '#3a6030', slowMult: 0.4 },
-    street:  { name: 'cone',    color: '#ff8800', kbForce: 80 },
-    dock:    { name: 'oil',     color: '#2a2a1a', slipMult: 1.8 },
-    gallery: { name: 'paint',   color: '#6644aa', slowMult: 0.6 }
+    sewer:       { name: 'sludge',  color: '#3a6030', slowMult: 0.4 },
+    street:      { name: 'cone',    color: '#ff8800', kbForce: 80 },
+    dock:        { name: 'oil',     color: '#2a2a1a', slipMult: 1.8 },
+    gallery:     { name: 'paint',   color: '#6644aa', slowMult: 0.6 },
+    dimension_x: { name: 'static',  color: '#8844ff', slowMult: 0.5 }
 };
 
 function seedHashRT(str) {
@@ -16640,6 +16690,18 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
         hWallSprites = [sp.dungHWallModernC, sp.dungHWallModernC, sp.dungHWallModernC, sp.dungHWallModernC];
         cornerSprite = sp.dungCornerModern;
         carpetIntSprites = [sp.dungCarpetModern, sp.dungCarpetModernB, sp.dungCarpetModernC];
+    } else if (theme === 'dimension_x') {
+        // Dimension X: same sewer sprites, rendered greyscale
+        floorSprites = [
+            sp.dungFloorA, sp.dungFloorB, sp.dungFloorC, sp.dungFloorD,
+            sp.dungFloorE, sp.dungFloorF, sp.dungFloorG, sp.dungFloorH,
+            sp.dungFloor0, sp.dungFloor1, sp.dungFloor2, sp.dungFloor3,
+            sp.dungFloor4, sp.dungFloor5, sp.dungFloor6, sp.dungFloor7
+        ].filter(Boolean);
+        wallSprites  = [sp.dungWallSewerB,  sp.dungWallSewer,   sp.dungWallSewerC];
+        hWallSprites = [sp.dungHWallSewerA, sp.dungHWallSewerB, sp.dungHWallSewerC, sp.dungHWallSewerD];
+        cornerSprite = sp.dungCornerSewer;
+        carpetIntSprites = [sp.dungCarpetSewer, sp.dungCarpetSewerB, sp.dungCarpetSewerC];
     } else {
         // Sewer (unchanged)
         floorSprites = [
@@ -16705,6 +16767,16 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
             carpet:'#503a2a', carpetBorder:'#6a5040', carpetBorder2:'#8a7060',
             urnBody:'#887060', urnDark:'#3a2818', urnHi:'#ccc0b0', urnMid:'#5e4e40',
         };
+    } else if (theme === 'dimension_x') {
+        // Dimension X: grey version of sewer palette
+        pal = {
+            floorMortar:'#141414', floor:'#808080', floorHi:'#a0a0a0', floorSh:'#505050',
+            wallMortar:'#0c0c0c',  wall:'#3a3a3a',  wallHi:'#585858',  wallSh:'#1a1a1a',
+            borderBase:'#707070', borderHi:'#b0b0b0', borderSh:'#303030',
+            borderScroll:'#c0c0c0',
+            carpet:'#555555', carpetBorder:'#888888', carpetBorder2:'#bbbbbb',
+            urnBody:'#909090', urnDark:'#404040', urnHi:'#d0d0d0', urnMid:'#686868',
+        };
     } else {
         // Sewer / Crypt (unchanged)
         pal = {
@@ -16716,6 +16788,10 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
             urnBody:'#ddaa11', urnDark:'#774400', urnHi:'#ffee88', urnMid:'#bb8800',
         };
     }
+
+    // Apply greyscale filter for Dimension X (reuses sewer sprites but grey)
+    var _dimXFilter = (theme === 'dimension_x');
+    if (_dimXFilter) ctx.filter = 'grayscale(1) brightness(0.9)';
 
     // Per-tile deterministic hash for sprite variant selection
     function th(tx, ty) { return (((tx * 73856093) ^ (ty * 19349663)) >>> 0) % 64; }
@@ -16864,7 +16940,7 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                 // ── TILE OVERLAYS ────────────────────────────────────────────────
                 if (tileId === DT_HAZARD) {
                     var hzA = 0.55 + Math.sin(now / 260) * 0.22;
-                    var hzC = theme === 'sewer' ? 'rgba(80,220,50,' : theme === 'dock' ? 'rgba(40,170,220,' : theme === 'street' ? 'rgba(220,140,40,' : theme === 'gallery' ? 'rgba(120,80,200,' : 'rgba(220,60,40,';
+                    var hzC = theme === 'sewer' ? 'rgba(80,220,50,' : theme === 'dock' ? 'rgba(40,170,220,' : theme === 'street' ? 'rgba(220,140,40,' : theme === 'gallery' ? 'rgba(120,80,200,' : theme === 'dimension_x' ? 'rgba(140,140,200,' : 'rgba(220,60,40,';
                     ctx.fillStyle = hzC + hzA + ')';
                     ctx.fillRect(px + 3, py + 3, ts - 6, ts - 6);
                     ctx.fillStyle = '#ffffff';
@@ -17078,6 +17154,9 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
             ctx.restore();
         }
     }
+
+    // Restore filter after Dimension X greyscale pass
+    if (_dimXFilter) ctx.filter = 'none';
 }
 
 function drawLevel() {
@@ -17353,11 +17432,13 @@ function drawLevel() {
             var nesLevelWall = L.data.theme === 'sewer' ? 'sewerWall' :
                                L.data.theme === 'street' ? 'streetWall' :
                                L.data.theme === 'dock' ? 'dockWall' :
-                               L.data.theme === 'gallery' ? 'galleryWall' : 'sewerWall';
+                               L.data.theme === 'gallery' ? 'galleryWall' :
+                               L.data.theme === 'dimension_x' ? 'dimensionXWall' : 'sewerWall';
             var nesLevelFloor = L.data.theme === 'sewer' ? 'sewerFloor' :
                                 L.data.theme === 'street' ? 'streetFloor' :
                                 L.data.theme === 'dock' ? 'dockFloor' :
-                                L.data.theme === 'gallery' ? 'galleryFloor' : 'sewerFloor';
+                                L.data.theme === 'gallery' ? 'galleryFloor' :
+                                L.data.theme === 'dimension_x' ? 'dimensionXFloor' : 'sewerFloor';
             if (tileId === 1) {
                 var wallSprite = themeKeys ? game.sprites[themeKeys.wall] : null;
                 if (wallSprite) {
@@ -17378,7 +17459,8 @@ function drawLevel() {
                     var hzPulse = 0.4 + Math.sin(Date.now() / 300) * 0.15;
                     var hzNesColor = L.data.theme === 'sewer' ? NES.PAL.C :
                                      L.data.theme === 'dock' ? NES.PAL.N :
-                                     L.data.theme === 'gallery' ? NES.PAL.P : NES.PAL.T;
+                                     L.data.theme === 'gallery' ? NES.PAL.P :
+                                     L.data.theme === 'dimension_x' ? NES.PAL.u : NES.PAL.T;
                     ctx.globalAlpha = hzPulse;
                     ctx.fillStyle = hzNesColor;
                     ctx.fillRect(px + 2, py + 2, ts - 4, ts - 4);
@@ -17904,7 +17986,8 @@ function drawLevel() {
             var titleCard = L.data.theme === 'gallery' ? 'GALLERY OF ' + (L.artistName || '').toUpperCase() :
                            L.data.theme === 'street' ? 'STREET FIGHT' :
                            L.data.theme === 'sewer' ? 'SEWER' :
-                           L.data.theme === 'dock' ? 'DOCK' : L.data.name || '';
+                           L.data.theme === 'dock' ? 'DOCK' :
+                           L.data.theme === 'dimension_x' ? 'DIMENSION X' : L.data.name || '';
             ctx.fillText(titleCard, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
             ctx.textAlign = 'left';
         }
