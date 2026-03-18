@@ -16017,8 +16017,7 @@ function updateLevel(dt) {
         L.tilemap[0][_vMX]     = DT_VICTORY;
         L.tilemap[0][_vMX + 1] = DT_VICTORY;
 
-        L.dungeonRoomMsg  = 'WAY OUT OPENED!';
-        L.dungeonMsgTimer = 3.0;
+        // no flash message when door opens
     }
 
     // ── Exit trigger ────────────────────────────────────────────
