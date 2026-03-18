@@ -1494,6 +1494,32 @@
       "lon": -111.83,
       "city": "Mesa",
       "country": "US"
+    },
+    {
+      "id": "makingamutant",
+      "name": "MAKINGAMUTANT",
+      "bio": "",
+      "instagram": "https://www.instagram.com/makingamutant/",
+      "images": [],
+      "regionId": "na",
+      "regionIdOverride": null,
+      "lat": 29.95,
+      "lon": -90.07,
+      "city": "New Orleans",
+      "country": "US"
+    },
+    {
+      "id": "razor_sharp_lol",
+      "name": "RAZOR SHARP LOL",
+      "bio": "",
+      "instagram": "https://www.instagram.com/razor_sharp_lol/",
+      "images": [],
+      "regionId": "na",
+      "regionIdOverride": null,
+      "lat": 38.04,
+      "lon": -84.5,
+      "city": "Lexington",
+      "country": "US"
     }
   ]
 }

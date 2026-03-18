@@ -689,6 +689,18 @@
       "artistId": "whothefugawe",
       "buildingType": "gallery",
       "priority": 0
+    },
+    {
+      "id": "b_makingamutant",
+      "artistId": "makingamutant",
+      "buildingType": "gallery",
+      "priority": 0
+    },
+    {
+      "id": "b_razor_sharp_lol",
+      "artistId": "razor_sharp_lol",
+      "buildingType": "gallery",
+      "priority": 0
     }
   ]
 }
