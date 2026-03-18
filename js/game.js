@@ -4514,8 +4514,10 @@ const game = {
         frame: 0,
         shotCooldown: 0,      // seconds until next shot is allowed
         hp: 300, maxHp: 300,  // persistent van HP for HUD display
-        respawnInv: 0         // invincibility seconds after game-over respawn
+        respawnInv: 0,        // invincibility seconds after game-over respawn
+        ammo: 30, maxAmmo: 30 // cannonball ammo
     },
+    ammoPickups: [],           // ammo boxes on the overworld
     vanProjectiles: [],        // active cannonball shots from the van
     technodrone: {
         x: null, y: null,      // null until first driven or server sends state
@@ -4580,7 +4582,7 @@ const game = {
     technodromeMsg: null,
     technodromeMsgTimer: 0,
     showScoreBoard: false,
-    debugZones: false,
+    debugZones: false, // debug overlay disabled
     spritesReady: false,
     sprites: {},
     loaded: false,
@@ -6131,16 +6133,6 @@ function drawOnFootTurtle() {
         NES.drawTurtleSprite(ctx, screenX, screenY, t.direction, t.frame, game.activeTurtle, drawScale);
         if (!weaponBehind) NES.drawWeaponOverlay(ctx, screenX, screenY, t.direction, game.activeTurtle, drawScale, t.atkPhase, atkFrame);
 
-        // Red hit flash — fades over the first 0.2 s of the invincibility window
-        if (t.invTimer > 0) {
-            var _hitFlashAlpha = Math.max(0, (t.invTimer - (OW_INV_TIME - 0.2)) / 0.2) * 0.6;
-            if (_hitFlashAlpha > 0) {
-                ctx.globalAlpha = _hitFlashAlpha;
-                ctx.fillStyle = '#ff2020';
-                ctx.fillRect(screenX, screenY, t.width, t.height);
-                ctx.globalAlpha = 1;
-            }
-        }
     }
 }
 
@@ -6695,9 +6687,10 @@ function drawUI() {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
     ctx.fillRect(0, 0, CANVAS_WIDTH, 28);
     
-    drawTitle();
-
     if (game.mode === 'WORLD') {
+        ctx.fillStyle = '#58d8f8';
+        ctx.font = '10px "Press Start 2P", monospace';
+        ctx.fillText(game.hoveredMarker ? 'L/R:Cycle  ENTER:Visit  ARROWS:Fly' : 'ARROWS:Move  ENTER:Region', 10, 18);
         ctx.fillStyle = '#00ff00';
         ctx.font = '8px "Press Start 2P", monospace';
         ctx.textAlign = 'center';
@@ -6709,32 +6702,19 @@ function drawUI() {
         ctx.textAlign = 'left';
     } else {
         const dist = getPlayerDistrict();
-        if (dist) {
-            ctx.fillStyle = '#ff66ff';
-            ctx.font = '8px "Press Start 2P", monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(dist.id.toUpperCase(), CANVAS_WIDTH / 2, 18);
-        }
-        ctx.fillStyle = '#fcfc00';
         ctx.font = '10px "Press Start 2P", monospace';
         ctx.textAlign = 'right';
-        ctx.fillText(BUILDINGS.length + ' GALLERIES', CANVAS_WIDTH - 10, 18);
+        var _galText = BUILDINGS.length + ' GALLERIES' + (dist ? '  ' + dist.id.toUpperCase() : '');
+        ctx.fillStyle = '#fcfc00';
+        ctx.fillText(_galText, CANVAS_WIDTH - 10, 18);
         ctx.textAlign = 'left';
 
-        drawWaypointPips();
-    }
+        var _mpChat = (typeof MP !== 'undefined' && MP.isConnected());
+        ctx.fillStyle = '#58d8f8';
+        ctx.font = '10px "Press Start 2P", monospace';
+        ctx.fillText('ARROWS:Move  ENTER:Visit  SPACE:Weapon  T:Exit/Enter  M:Map' + (_mpChat ? '  C:Chat' : ''), 10, 18);
 
-    // Footer
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(0, CANVAS_HEIGHT - 22, CANVAS_WIDTH, 22);
-    ctx.fillStyle = '#58d8f8';
-    ctx.font = '8px "Press Start 2P", monospace';
-    if (game.mode === 'WORLD') {
-        ctx.fillText(game.hoveredMarker ? 'L/R:Cycle  ENTER:Visit  ARROWS:Fly' : 'ARROWS:Move  ENTER:Region', 10, CANVAS_HEIGHT - 8);
-    } else if (game.controllerEntity === 'foot') {
-        ctx.fillText('ARROWS:Move  ENTER:Visit/Level  T:Van', 10, CANVAS_HEIGHT - 8);
-    } else {
-        ctx.fillText('ARROWS:Move  ENTER:Visit  T:Exit Van  M:World', 10, CANVAS_HEIGHT - 8);
+        drawWaypointPips();
     }
 
     // Game Over message
@@ -7278,6 +7258,7 @@ function requestAttack() {
     // Driving the van: fire a cannonball in the van's facing direction
     if (game.mode === 'REGION' && game.controllerEntity === 'van') {
         if (game.van.shotCooldown > 0) return;
+        if ((game.van.ammo || 0) <= 0) return; // out of ammo
         var vp = game.player;
         var vdx = vp.direction === 'right' ? 1 : vp.direction === 'left' ? -1 : 0;
         var vdy = vp.direction === 'down'  ? 1 : vp.direction === 'up'   ? -1 : 0;
@@ -7294,6 +7275,7 @@ function requestAttack() {
             frame: 0
         });
         game.van.shotCooldown = 0.35;
+        game.van.ammo = Math.max(0, (game.van.ammo || 0) - 1);
         if (typeof MP !== 'undefined' && MP.isConnected()) {
             MP.sendVanShot(projX, projY, vdx * 700, vdy * 700, 1.6);
         }
@@ -8030,6 +8012,8 @@ function update(dt) {
         updateRegionEnemies(dt);
         _updatePizzaSpawns(dt);
         _checkPizzaCollection();
+        _updateAmmoSpawns(dt);
+        _checkAmmoCollection();
         return;
     }
     
@@ -8098,7 +8082,7 @@ function update(dt) {
         if (game.postcard.timer <= 0) game.postcard = null;
     }
 
-    if (game.mode === 'REGION') { _processRemoteAtks(); updateVanProjectiles(dt); updateRegionEnemies(dt); _updatePizzaSpawns(dt); _checkPizzaCollection(); }
+    if (game.mode === 'REGION') { _processRemoteAtks(); updateVanProjectiles(dt); updateRegionEnemies(dt); _updatePizzaSpawns(dt); _checkPizzaCollection(); _updateAmmoSpawns(dt); _checkAmmoCollection(); }
     updateCamera(dt);
     if (game.mode === 'WORLD') {
         updateWorldInteraction();
@@ -9247,8 +9231,9 @@ function _triggerGameOver() {
     t.x = _bestX - (t.width || 32) / 2;
     t.y = _bestY - (t.height || 32) / 2;
 
-    // Reset van HP, give it invincibility, and snap to respawn point
+    // Reset van HP, ammo, give it invincibility, and snap to respawn point
     game.van.hp         = game.van.maxHp || OW_VAN_MAX_HP;
+    game.van.ammo       = VAN_MAX_AMMO;
     game.van.respawnInv = 3.0;  // 3 seconds of invincibility so it can get clear
     game.van.x = _bestX - (game.van.width  || 128) / 2;
     game.van.y = _bestY - (game.van.height || 128) / 2;
@@ -9420,6 +9405,9 @@ _pizzaWholeImg.src = 'img/wholepizza.png';
 _pizzaSliceImg.src = 'img/slicepizza.png';
 _pizzaStarImg.src  = 'img/pizzastar.png';
 
+var _ammoBoxImg = new Image();
+_ammoBoxImg.src = 'img/ammo.png';
+
 // Debug: spawn pizza at player position (call from console: window.debugSpawnPizza())
 window.debugSpawnPizza = function() {
     // Use camera position as reference since that's what we see
@@ -9559,6 +9547,95 @@ function _collectPizza(pizzaId) {
         }
     }
     return false;
+}
+
+// ── Ammo Box System ──────────────────────────────────────────────────────────
+var AMMO_SPAWN_MIN    = 20;
+var AMMO_SPAWN_MAX    = 40;
+var AMMO_MAX_COUNT    = 6;
+var AMMO_PER_BOX      = 10;
+var AMMO_COLLECT_DIST = 90;
+var VAN_MAX_AMMO      = 30;
+
+var _ammoSpawnTimer   = 15;
+var _ammoIdCounter    = 0;
+var _ammoSessionToken = Math.random().toString(36).slice(2, 7);
+
+function _spawnAmmoBox() {
+    if (!ROAD_GRID) return;
+    if (!game.ammoPickups) game.ammoPickups = [];
+    if (game.ammoPickups.length >= AMMO_MAX_COUNT) return;
+    var camCX = game.camera.x + CANVAS_WIDTH / 2;
+    var camCY = game.camera.y + CANVAS_HEIGHT / 2;
+    var ptx = Math.floor(camCX / TILE_SIZE);
+    var pty = Math.floor(camCY / TILE_SIZE);
+    for (var att = 0; att < 100; att++) {
+        var rx = ptx + Math.floor((Math.random() - 0.5) * 40);
+        var ry = pty + Math.floor((Math.random() - 0.5) * 40);
+        if (rx < 0 || rx >= WORLD_WIDTH || ry < 0 || ry >= WORLD_HEIGHT) continue;
+        if (!ROAD_GRID[ry * WORLD_WIDTH + rx]) continue;
+        var ax = rx * TILE_SIZE + TILE_SIZE / 2;
+        var ay = ry * TILE_SIZE + TILE_SIZE / 2;
+        var tooClose = false;
+        for (var ci = 0; ci < game.ammoPickups.length; ci++) {
+            var ddx = game.ammoPickups[ci].x - ax, ddy = game.ammoPickups[ci].y - ay;
+            if (Math.sqrt(ddx * ddx + ddy * ddy) < TILE_SIZE * 4) { tooClose = true; break; }
+        }
+        if (tooClose) continue;
+        var _newAmmo = { id: 'ammo_' + _ammoSessionToken + '_' + (++_ammoIdCounter), x: ax, y: ay, collected: false };
+        game.ammoPickups.push(_newAmmo);
+        if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendAmmoSpawn(_newAmmo);
+        return;
+    }
+}
+
+function _updateAmmoSpawns(dt) {
+    if (game.mode !== 'REGION') return;
+    if (!game.ammoPickups) game.ammoPickups = [];
+    _ammoSpawnTimer -= dt;
+    if (_ammoSpawnTimer <= 0) {
+        _spawnAmmoBox();
+        _ammoSpawnTimer = AMMO_SPAWN_MIN + Math.random() * (AMMO_SPAWN_MAX - AMMO_SPAWN_MIN);
+    }
+    for (var i = game.ammoPickups.length - 1; i >= 0; i--) {
+        if (game.ammoPickups[i].collected) game.ammoPickups.splice(i, 1);
+    }
+}
+
+function _checkAmmoCollection() {
+    if (game.controllerEntity !== 'van') return;
+    if (!game.ammoPickups) return;
+    var vp = game.player;
+    var vcx = vp.x + vp.width / 2, vcy = vp.y + vp.height / 2;
+    for (var i = 0; i < game.ammoPickups.length; i++) {
+        var a = game.ammoPickups[i];
+        if (a.collected) continue;
+        var dx = a.x - vcx, dy = a.y - vcy;
+        if (Math.sqrt(dx * dx + dy * dy) < AMMO_COLLECT_DIST) {
+            a.collected = true;
+            game.van.ammo = Math.min(VAN_MAX_AMMO, (game.van.ammo || 0) + AMMO_PER_BOX);
+            if (typeof MP !== 'undefined' && MP.isConnected()) MP.sendAmmoCollect(a.id);
+            break;
+        }
+    }
+}
+
+function _drawAmmoPickups() {
+    if (!game.ammoPickups) return;
+    for (var i = 0; i < game.ammoPickups.length; i++) {
+        var a = game.ammoPickups[i];
+        if (a.collected) continue;
+        var sx = a.x - game.camera.x, sy = a.y - game.camera.y;
+        if (sx < -64 || sx > CANVAS_WIDTH + 64 || sy < -64 || sy > CANVAS_HEIGHT + 64) continue;
+        var bob = Math.sin(Date.now() / 350 + i * 1.7) * 2;
+        var size = 26;
+        if (_ammoBoxImg.complete && _ammoBoxImg.naturalWidth > 0) {
+            ctx.drawImage(_ammoBoxImg, sx - size / 2, sy - size / 2 + bob, size, size);
+        } else {
+            ctx.fillStyle = '#ffdd00';
+            ctx.fillRect(sx - size / 2, sy - size / 2 + bob, size, size);
+        }
+    }
 }
 
 function _checkPizzaCollection() {
@@ -10914,6 +10991,31 @@ function updateRegionEnemies(dt) {
         if (_pizzaCollects) {
             for (var _pci = 0; _pci < _pizzaCollects.length; _pci++) {
                 _handleRemotePizzaCollect(_pizzaCollects[_pci]);
+            }
+        }
+
+        // ── Ammo box remote sync ─────────────────────────────────────────────
+        var _ammoSpawns = MP.drainAmmoSpawns();
+        if (_ammoSpawns) {
+            for (var _asi = 0; _asi < _ammoSpawns.length; _asi++) {
+                var _ra = _ammoSpawns[_asi];
+                if (!game.ammoPickups) game.ammoPickups = [];
+                var _alreadyHave = false;
+                for (var _aci = 0; _aci < game.ammoPickups.length; _aci++) {
+                    if (game.ammoPickups[_aci].id === _ra.id) { _alreadyHave = true; break; }
+                }
+                if (!_alreadyHave) game.ammoPickups.push({ id: _ra.id, x: _ra.x, y: _ra.y, collected: false });
+            }
+        }
+        var _ammoCollects = MP.drainAmmoCollects();
+        if (_ammoCollects) {
+            for (var _acj = 0; _acj < _ammoCollects.length; _acj++) {
+                var _cid = _ammoCollects[_acj];
+                if (game.ammoPickups) {
+                    for (var _ack = 0; _ack < game.ammoPickups.length; _ack++) {
+                        if (game.ammoPickups[_ack].id === _cid) { game.ammoPickups[_ack].collected = true; break; }
+                    }
+                }
             }
         }
 
@@ -12362,6 +12464,9 @@ function draw() {
         // Pizza pickups
         _drawPizzaPickups();
 
+        // Ammo boxes
+        _drawAmmoPickups();
+
         // Overworld point popups (world-space, drawn on top like level popups)
         if (game.owPointPopups && game.owPointPopups.length > 0) {
             ctx.font = 'bold 8px monospace';
@@ -12382,33 +12487,6 @@ function draw() {
         }
     }
     drawAllChatBubbles();
-    if (typeof MP !== 'undefined') {
-        var _dbgRemote = MP.getRemotePlayers();
-        ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
-        var _mpOn = MP.isConnected();
-        var _line1 = 'MP:' + (_mpOn ? 'CONNECTED' : 'OFFLINE') + ' remote:' + _dbgRemote.length;
-        if (MP.entityId) _line1 += ' eid:' + MP.entityId.substr(0,8);
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(2, CANVAS_HEIGHT - 30, 380, 28);
-        ctx.fillStyle = _mpOn ? '#0f0' : '#f00';
-        ctx.fillText(_line1, 6, CANVAS_HEIGHT - 18);
-        if (_dbgRemote.length > 0) {
-            var _dr = _dbgRemote[0];
-            var _line2 = 'r0: ' + (_dr.displayName||_dr.id||'?').substr(0,12) + ' px:' + Math.round(_dr.px||0) + ',' + Math.round(_dr.py||0) + ' m:' + (_dr.mode||'?');
-            ctx.fillStyle = '#ff0';
-            ctx.fillText(_line2, 6, CANVAS_HEIGHT - 6);
-        } else if (_mpOn) {
-            ctx.fillStyle = '#ff0';
-            ctx.fillText('No remote players in view', 6, CANVAS_HEIGHT - 6);
-        }
-        if (_mpOn && !_chatInputActive) {
-            ctx.font = '8px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillStyle = 'rgba(255,255,255,0.4)';
-            ctx.fillText('[C] Chat', CANVAS_WIDTH - 8, CANVAS_HEIGHT - 8);
-            ctx.textAlign = 'left';
-        }
-    }
     
     // Draw player for WORLD mode only (region player already drawn in y-sort above)
     if (game.mode === 'WORLD') {
@@ -12430,8 +12508,6 @@ function draw() {
 
     // Mode indicator
     if (game.mode === 'WORLD') {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(CANVAS_WIDTH / 2 - 60, 4, 120, 18);
         ctx.fillStyle = '#00ff00';
         ctx.font = 'bold 10px monospace';
         ctx.textAlign = 'center';
@@ -12452,17 +12528,6 @@ function draw() {
             }
         }
     } else if (game.currentRegionId) {
-        const regions = getWorldRegions();
-        const reg = regions.find(function(r) { return r.id === game.currentRegionId; });
-        if (reg) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-            ctx.fillRect(CANVAS_WIDTH / 2 - 60, 4, 120, 18);
-            ctx.fillStyle = '#fcfc00';
-            ctx.font = 'bold 10px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(reg.label, CANVAS_WIDTH / 2, 16);
-            ctx.textAlign = 'left';
-        }
         // Blimp port prompt
         if (game.activeBlimpId && game.state === 'OVERWORLD' && !game.blimpMenu.active) {
             var blimpPrompt = 'ENTER: Use Blimp Port';
@@ -12505,99 +12570,70 @@ function draw() {
     // Blimp menu overlay (on top of everything except fades)
     drawBlimpMenu();
 
-    // ── Overworld HUD: score + items + turtle team (Phase 6c) ──────────────
+    // ── Overworld HUD: consolidated left-side panel ────────────────────────
     if (game.mode === 'REGION') {
-        // Score counter
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(CANVAS_WIDTH - 140, 8, 132, 16);
+        var _hudX = 8, _hudW = 150, _curY = 32;
+
+        // Score
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(_hudX, _curY, _hudW, 16);
         ctx.fillStyle = '#fcfc00';
         ctx.font = 'bold 8px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText('SCORE: ' + game.progress.score.toLocaleString(), CANVAS_WIDTH - 14, 20);
-        ctx.textAlign = 'left';
-        // Overworld combo counter (same style as level)
-        if (game.owComboCount > 1 && game.owComboTimer > 0) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(CANVAS_WIDTH - 140, 27, 132, 16);
-            ctx.fillStyle = game.owComboCount > 3 ? '#ff4444' : '#ffaa00';
-            ctx.font = 'bold 9px monospace';
-            ctx.textAlign = 'right';
-            ctx.fillText('COMBO x' + game.owComboCount, CANVAS_WIDTH - 14, 39);
-            ctx.textAlign = 'left';
-        }
-        // Items counter (shifts down when combo is showing)
-        var itemCount = Object.keys(game.progress.collectedItems).length;
-        var _itemsY = (game.owComboCount > 1 && game.owComboTimer > 0) ? 46 : 28;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(CANVAS_WIDTH - 140, _itemsY, 132, 14);
-        ctx.fillStyle = itemCount >= 10 ? '#ff44ff' : '#ffffff';
-        ctx.font = 'bold 8px monospace';
-        ctx.textAlign = 'right';
-        ctx.fillText('ITEMS: ' + itemCount + '/10', CANVAS_WIDTH - 14, _itemsY + 11);
-        ctx.textAlign = 'left';
+        ctx.fillText('SCORE: ' + game.progress.score.toLocaleString(), _hudX + 4, _curY + 11);
+        _curY += 18;
 
-        // Turtle team selector (top-left, below header) with HP bars
+        // Items counter
+        var itemCount = Object.keys(game.progress.collectedItems).length;
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(_hudX, _curY, _hudW, 14);
+        ctx.fillStyle = itemCount >= 10 ? '#ff44ff' : '#cccccc';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText('ITEMS: ' + itemCount + '/10', _hudX + 4, _curY + 10);
+        _curY += 16;
+
+        // Turtle team panel
+        var _turtlePanelY = _curY;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(_hudX, _turtlePanelY, 112, 36);
         var tNames = ['leo', 'raph', 'donnie', 'mikey'];
-        var tLabels = ['LEO', 'RAPH', 'DON', 'MIKE'];
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(8, 32, 112, 36);
         for (var ti = 0; ti < 4; ti++) {
-            var tx = 12 + ti * 27;
+            var tx = _hudX + 4 + ti * 27;
             var turtleId = tNames[ti];
             var isActive = (game.activeTurtle === turtleId);
             var isDead = (game.party.status[turtleId] === 'dead');
             var turtleHp = game.party.hp[turtleId] || 0;
             var maxHp = game.party.maxHp || 100;
-            
-            // Active highlight
             if (isActive) {
-                ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
-                ctx.fillRect(tx - 2, 33, 26, 34);
+                ctx.fillStyle = 'rgba(255,255,0,0.3)';
+                ctx.fillRect(tx - 2, _turtlePanelY + 1, 26, 34);
             }
-            
-            // Draw sprite (greyed out if dead)
-            if (isDead) {
-                ctx.globalAlpha = 0.3;
-            }
-            NES.drawTurtleSprite(ctx, tx, 35, 'down', 0, turtleId, 1.2);
+            if (isDead) ctx.globalAlpha = 0.3;
+            NES.drawTurtleSprite(ctx, tx, _turtlePanelY + 3, 'down', 0, turtleId, 1.2);
             ctx.globalAlpha = 1.0;
-            
-            // Dead X overlay
             if (isDead) {
-                ctx.strokeStyle = '#ff0000';
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.moveTo(tx, 35);
-                ctx.lineTo(tx + 20, 55);
-                ctx.moveTo(tx + 20, 35);
-                ctx.lineTo(tx, 55);
+                ctx.moveTo(tx, _turtlePanelY + 3); ctx.lineTo(tx + 20, _turtlePanelY + 23);
+                ctx.moveTo(tx + 20, _turtlePanelY + 3); ctx.lineTo(tx, _turtlePanelY + 23);
                 ctx.stroke();
             }
-            
-            // HP bar under sprite
-            var hpBarW = 22;
-            var hpBarH = 3;
-            var hpBarX = tx;
-            var hpBarY = 58;
-            ctx.fillStyle = '#440000';
-            ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
+            var hpBarY = _turtlePanelY + 26;
+            ctx.fillStyle = '#440000'; ctx.fillRect(tx, hpBarY, 22, 3);
             if (!isDead && turtleHp > 0) {
                 var hpPct = Math.max(0, Math.min(1, turtleHp / maxHp));
                 ctx.fillStyle = hpPct > 0.5 ? '#00cc00' : hpPct > 0.25 ? '#cccc00' : '#cc0000';
-                ctx.fillRect(hpBarX, hpBarY, Math.round(hpBarW * hpPct), hpBarH);
+                ctx.fillRect(tx, hpBarY, Math.round(22 * hpPct), 3);
             }
-            
-            // Label with number key
-            ctx.fillStyle = isDead ? '#444444' : (isActive ? '#fcfc00' : '#888888');
+            ctx.fillStyle = isDead ? '#444' : (isActive ? '#fcfc00' : '#888');
             ctx.font = '5px monospace';
-            ctx.fillText((ti + 1) + '', tx + 8, 66);
+            ctx.fillText((ti + 1) + '', tx + 8, _turtlePanelY + 34);
         }
+        _curY = _turtlePanelY + 38;
 
-        // On-foot / vehicle mode indicator
+        // Mode indicator
         if (game.controllerEntity === 'foot') {
-            var footY = 64;
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(8, footY, 140, 16);
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(_hudX, _curY, _hudW, 16);
             var vanDist = getVanReenterDist();
             var nearVan = vanDist <= 102;
             var td = game.technodrone;
@@ -12608,16 +12644,53 @@ function draw() {
                 nearTD = Math.hypot(_htCX - (td.x + td.width / 2), _htCY - (td.y + td.height / 2)) < td.width * 0.6;
             }
             ctx.font = 'bold 7px monospace';
-            if (nearTD) { ctx.fillStyle = '#ff44ff'; ctx.fillText('[T] DRIVE TECHNODRONE', 12, footY + 11); }
-            else if (nearVan) { ctx.fillStyle = '#4ade80'; ctx.fillText('[T] ENTER VAN', 12, footY + 11); }
-            else { ctx.fillStyle = '#fbbf24'; ctx.fillText('ON FOOT — [T] near vehicle', 12, footY + 11); }
+            if (nearTD) { ctx.fillStyle = '#ff44ff'; ctx.fillText('[T] DRIVE TECHNODRONE', _hudX + 4, _curY + 11); }
+            else if (nearVan) { ctx.fillStyle = '#4ade80'; ctx.fillText('[T] ENTER VAN', _hudX + 4, _curY + 11); }
+            else { ctx.fillStyle = '#fbbf24'; ctx.fillText('ON FOOT — [T] near vehicle', _hudX + 4, _curY + 11); }
+            _curY += 18;
         } else if (game.controllerEntity === 'technodrone') {
-            var tdY = 64;
-            ctx.fillStyle = 'rgba(80, 0, 128, 0.8)';
-            ctx.fillRect(8, tdY, 130, 16);
+            ctx.fillStyle = 'rgba(80,0,128,0.8)';
+            ctx.fillRect(_hudX, _curY, 130, 16);
             ctx.fillStyle = '#ff44ff';
             ctx.font = 'bold 7px monospace';
-            ctx.fillText('TECHNODRONE [T] EXIT', 12, tdY + 11);
+            ctx.fillText('TECHNODRONE [T] EXIT', _hudX + 4, _curY + 11);
+            _curY += 18;
+        }
+
+        // Van ammo bar
+        if (game.controllerEntity === 'van') {
+            var _ammo = game.van.ammo || 0;
+            var _maxA = VAN_MAX_AMMO;
+            var _ammoBarW = _hudW - 22;
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(_hudX, _curY, _hudW, 16);
+            if (_ammoBoxImg.complete && _ammoBoxImg.naturalWidth > 0) {
+                ctx.drawImage(_ammoBoxImg, _hudX + 2, _curY + 1, 13, 13);
+            }
+            ctx.fillStyle = '#333';
+            ctx.fillRect(_hudX + 18, _curY + 4, _ammoBarW, 8);
+            var _ammoFrac = _ammo / _maxA;
+            ctx.fillStyle = _ammoFrac > 0.5 ? '#44dd44' : _ammoFrac > 0.25 ? '#ffcc00' : '#ff3333';
+            ctx.fillRect(_hudX + 18, _curY + 4, Math.round(_ammoBarW * _ammoFrac), 8);
+            ctx.fillStyle = '#ffffff'; ctx.font = 'bold 7px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(_ammo + '/' + _maxA, _hudX + 18 + _ammoBarW - 2, _curY + 11);
+            ctx.textAlign = 'left';
+            _curY += 18;
+            if (_ammo === 0) {
+                ctx.fillStyle = 'rgba(255,50,50,0.85)';
+                ctx.fillRect(_hudX, _curY, _hudW, 14);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 7px monospace';
+                ctx.fillText('NO AMMO — find a box!', _hudX + 4, _curY + 10);
+                _curY += 16;
+            }
+        }
+
+        // Combo — plain text, no background
+        if (game.owComboCount > 1 && game.owComboTimer > 0) {
+            ctx.fillStyle = game.owComboCount > 3 ? '#ff4444' : '#ffaa00';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillText('COMBO x' + game.owComboCount, _hudX + 4, _curY + 14);
         }
     }
 
@@ -12758,10 +12831,6 @@ function drawDebugZones() {
     ctx.textAlign = 'left';
     const tileX = Math.floor(game.player.x / TILE_SIZE);
     const tileY = Math.floor(game.player.y / TILE_SIZE);
-    ctx.fillText('active: ' + (game.activeBuildingId || 'none'), 10, CANVAS_HEIGHT - 46);
-    ctx.fillText('district: ' + (dist ? dist.id : 'none'), 10, CANVAS_HEIGHT - 34);
-    ctx.fillText('nearest: ' + (nearestLm ? nearestLm.label + ' (' + Math.round(nearestDist / TILE_SIZE) + ' tiles)' : 'none'), 10, CANVAS_HEIGHT - 22);
-    ctx.fillText('tile: ' + tileX + ',' + tileY, 10, CANVAS_HEIGHT - 10);
 
     // Pack coverage badge (top-right)
     if (game._packInfo) {
@@ -12931,11 +13000,6 @@ document.addEventListener('keydown', (e) => {
 
     if (e.code === 'KeyT') {
         attemptToggleVanFoot();
-        return;
-    }
-
-    if (e.code === 'Backquote') {
-        game.debugZones = !game.debugZones;
         return;
     }
 

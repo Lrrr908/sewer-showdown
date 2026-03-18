@@ -1141,6 +1141,14 @@ var MP = (function () {
                 if (msg.id) _pizzaCollectQueue.push(msg.id);
                 break;
 
+            case 'ammo_spawn':
+                if (msg.ammo) _ammoSpawnQueue.push(msg.ammo);
+                break;
+
+            case 'ammo_collect':
+                if (msg.id) _ammoCollectQueue.push(msg.id);
+                break;
+
             case 'error':
                 console.error('[mp] SERVER ERROR:', msg.code, msg.msg, msg.fatal ? '(FATAL)' : '(non-fatal)');
                 if (msg.fatal) {
@@ -1319,6 +1327,8 @@ var MP = (function () {
     // --- Pizza sync ---
     var _pizzaSpawnQueue = [];
     var _pizzaCollectQueue = [];
+    var _ammoSpawnQueue = [];
+    var _ammoCollectQueue = [];
 
     function sendScoreSubmit(name, score) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
@@ -1346,6 +1356,28 @@ var MP = (function () {
     function drainPizzaCollects() {
         var q = _pizzaCollectQueue;
         _pizzaCollectQueue = [];
+        return q;
+    }
+
+    function sendAmmoSpawn(ammo) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        ws.send(JSON.stringify({ t: 'ammo_spawn', ammo: ammo }));
+    }
+
+    function sendAmmoCollect(ammoId) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        ws.send(JSON.stringify({ t: 'ammo_collect', id: ammoId }));
+    }
+
+    function drainAmmoSpawns() {
+        var q = _ammoSpawnQueue;
+        _ammoSpawnQueue = [];
+        return q;
+    }
+
+    function drainAmmoCollects() {
+        var q = _ammoCollectQueue;
+        _ammoCollectQueue = [];
         return q;
     }
 
@@ -1484,6 +1516,10 @@ var MP = (function () {
         sendPizzaCollect: sendPizzaCollect,
         drainPizzaSpawns: drainPizzaSpawns,
         drainPizzaCollects: drainPizzaCollects,
+        sendAmmoSpawn: sendAmmoSpawn,
+        sendAmmoCollect: sendAmmoCollect,
+        drainAmmoSpawns: drainAmmoSpawns,
+        drainAmmoCollects: drainAmmoCollects,
 
         updateRender: updateRender,
 
