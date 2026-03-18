@@ -13739,15 +13739,6 @@ function resolveRoute(route, contextId) {
     // UTC day number — same for all clients worldwide in a given UTC day
     var _dateKey = Math.floor(Date.now() / 86400000);
     if (route.kind === 'static') {
-        // Dimension X: block entry unless all 10 items collected
-        if (route.levelId === 'level_technodrome') {
-            var collected = Object.keys(game.progress.collectedItems).length;
-            if (collected < 10) {
-                game.technodromeMsg = collected + '/10 ITEMS COLLECTED';
-                game.technodromeMsgTimer = 2.0;
-                return null;
-            }
-        }
         return { type: 'static', levelId: route.levelId, contextId: contextId,
                  instanceId: 'static:' + route.levelId + ':' + _dateKey };
     }
