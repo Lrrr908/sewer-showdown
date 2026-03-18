@@ -10470,7 +10470,8 @@ function _updateEnemyAI(e, dt, targetX, targetY) {
             // Zero movement; wait out stunTimer
             e.stunTimer -= dt;
             if (e.stunTimer <= 0) {
-                e.aiState = 'attack';
+                e.aiState = (e.hp <= 0) ? 'dying' : 'attack';
+                if (e.hp <= 0) { e.state = 'dying'; e.stateTimer = 0.4; }
             }
             break;
         }
@@ -11140,7 +11141,15 @@ function updateRegionEnemies(dt) {
                     for (var _phei = 0; _phei < game.regionEnemies.length; _phei++) {
                         var _phe = game.regionEnemies[_phei];
                         if (_phe.id === _phd.id && _phe.state !== 'dying' && _phe.state !== 'dead') {
-                            _phe.hp = _phd.hp; _phe.aiState = 'stunned'; _phe.stunTimer = OW_STUN_TIME;
+                            _phe.hp = _phd.hp;
+                            if (_phe.hp <= 0) {
+                                // Killing blow — go straight to dying, never zombie-chase
+                                _phe.state = 'dying'; _phe.aiState = 'dying';
+                                _phe.stateTimer = 0.4;
+                                if (game._killedEnemyIds) game._killedEnemyIds.add(_phe.id);
+                            } else {
+                                _phe.aiState = 'stunned'; _phe.stunTimer = OW_STUN_TIME;
+                            }
                             break;
                         }
                     }

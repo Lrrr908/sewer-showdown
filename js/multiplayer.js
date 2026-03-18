@@ -547,6 +547,8 @@ var MP = (function () {
                 }
                 delete remotePlayers[_gid];
                 delete remoteRenderPx[_gid];
+                // Force enemy sector refresh so peer-synced enemies are pruned immediately
+                if (typeof game !== 'undefined' && game) game._lastEnemySX = null;
             }
         }
 
