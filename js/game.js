@@ -4857,6 +4857,8 @@ function buildSpriteManifestWithPack(baseManifest, packInfo) {
 
 // Authoritative sprite manifest — every engine key mapped to its file
 const SPRITE_MANIFEST = {
+    // Branding
+    nesLogo:           'img/logo_nes.png',
     // Reference sheets
     area1:             'sprites/area1.png',
     turtles:           'sprites/turtles.png',
@@ -14118,6 +14120,24 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         }
         doorConfigs[0].s = -1;
         itemRoomId = 6; // top-center room
+    } else if (theme === 'dimension_x') {
+        // Dimension X maze: entry → N corridor → big chamber → E/W forks
+        //   East: E corridor → side chamber → N corridor → BOSS
+        //   West: W corridor → dead-end chamber
+        numRooms = 8;
+        doorConfigs = [];
+        for (var di0 = 0; di0 < numRooms; di0++) doorConfigs.push({ n: null, s: null, e: null, w: null });
+        // 0 = entry, 1 = N-S corridor, 2 = hub chamber, 3 = E-W corridor (east),
+        // 4 = E-W corridor (west dead-end), 5 = east chamber, 6 = dead-end chamber, 7 = boss
+        doorConfigs[0].n = 1;  doorConfigs[0].s = -1;
+        doorConfigs[1].s = 0;  doorConfigs[1].n = 2;
+        doorConfigs[2].s = 1;  doorConfigs[2].e = 3;  doorConfigs[2].w = 4;
+        doorConfigs[3].w = 2;  doorConfigs[3].e = 5;
+        doorConfigs[4].e = 2;  doorConfigs[4].w = 6;
+        doorConfigs[5].w = 3;  doorConfigs[5].n = 7;
+        doorConfigs[6].e = 4;
+        doorConfigs[7].s = 5;
+        itemRoomId = 7;
     } else {
         // Normal dungeon: hub layout with east/west branches
         numRooms = Math.max(4, 2 + Math.min(3, diff));
@@ -14138,26 +14158,41 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         itemRoomId = numRooms - 1;
     }
 
+    // dimension_x: rooms 1, 3, 4 are narrow corridors; others are open chambers
+    var _dimXCorridors = (theme === 'dimension_x') ? new Set([1, 3, 4]) : new Set();
+
     // ── Construct each room ─────────────────────────────────────
-    function buildTilemap(isEntry, isBoss, doors) {
+    function buildTilemap(isEntry, isBoss, doors, roomIdx) {
+        var isCorridor = _dimXCorridors.has(roomIdx);
         var tm = [];
-        var r, c;
+        var r, c, i;
         for (r = 0; r < ROOM_H; r++) {
             tm[r] = new Array(ROOM_W).fill(DT_WALL);
         }
-        // Carve inner floor
-        for (r = 1; r < ROOM_H - 1; r++) {
-            for (c = 1; c < ROOM_W - 1; c++) {
-                tm[r][c] = DT_FLOOR;
+
+        if (isCorridor) {
+            // Narrow hallway: carve only a 3-tile-wide path in the direction of doors
+            var hasNS = (doors.n !== null || doors.s !== null);
+            var hasEW = (doors.e !== null || doors.w !== null);
+            if (hasNS) {
+                for (r = 0; r < ROOM_H; r++)
+                    for (i = -1; i <= 1; i++) tm[r][MID_X + i] = DT_FLOOR;
             }
+            if (hasEW) {
+                for (c = 0; c < ROOM_W; c++)
+                    for (i = -1; i <= 1; i++) tm[MID_Y + i][c] = DT_FLOOR;
+            }
+        } else {
+            // Open chamber — full floor
+            for (r = 1; r < ROOM_H - 1; r++)
+                for (c = 1; c < ROOM_W - 1; c++)
+                    tm[r][c] = DT_FLOOR;
         }
 
         // Cut door openings (3 tiles wide)
         function cutDoor(side, tileId) {
-            var i;
             if (side === 'n') {
                 for (i = -1; i <= 1; i++) tm[0][MID_X + i] = tileId;
-                // also clear the tile just inside (wall row 0 + floor row 1)
             } else if (side === 's') {
                 for (i = -1; i <= 1; i++) tm[ROOM_H - 1][MID_X + i] = tileId;
             } else if (side === 'e') {
@@ -14171,6 +14206,9 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         if (doors.s !== null) cutDoor('s', isEntry ? DT_EXIT : DT_DOOR);
         if (doors.e !== null) cutDoor('e', DT_DOOR);
         if (doors.w !== null) cutDoor('w', DT_DOOR);
+
+        // dimension_x: no pillars, no carpets — plain walls and floor only
+        if (theme === 'dimension_x') return tm;
 
         // ── Decorations (skip for peaceful hubs — plain open rooms) ──
         if (!peaceful) {
@@ -14294,8 +14332,19 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         var doors   = doorConfigs[ri];
         var isEntry = (ri === 0);
         var isBoss  = (ri === itemRoomId);
-        var tm = buildTilemap(isEntry, isBoss, doors);
+        var tm = buildTilemap(isEntry, isBoss, doors, ri);
         var enemies = peaceful ? [] : buildEnemies(ri, isEntry, isBoss, tm);
+        // dimension_x boss room: inject boss_puff + guards, clear pedestal
+        if (theme === 'dimension_x' && isBoss) {
+            enemies = [
+                { type: 'boss_puff', x: MID_X, y: MID_Y - 1, hp: 30,
+                  patrol: { left: 2, right: ROOM_W - 3 } },
+                { type: 'foot', x: MID_X - 4, y: MID_Y + 1, hp: 2,
+                  patrol: { left: 2, right: MID_X - 2 } },
+                { type: 'foot', x: MID_X + 4, y: MID_Y + 1, hp: 2,
+                  patrol: { left: MID_X + 2, right: ROOM_W - 3 } }
+            ];
+        }
         var artFrames = isBoss || isEntry ? buildArtFrames(tm) : [];
         rooms.push({
             id:             ri,
@@ -18046,16 +18095,26 @@ function drawResultsScreen(L) {
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     var cx2 = CANVAS_WIDTH / 2;
-    var y = 30;
+    var y = 12;
 
-    ctx.fillStyle = '#00ff00';
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(BRAND.title, cx2, y);
-    y += 24;
+    var logo = game.sprites && game.sprites.nesLogo;
+    if (logo && logo.complete && logo.naturalWidth > 0) {
+        var logoW = 180, logoH = Math.round(180 * logo.naturalHeight / logo.naturalWidth);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(logo, Math.floor(cx2 - logoW / 2), y, logoW, logoH);
+        ctx.imageSmoothingEnabled = true;
+        y += logoH + 8;
+    } else {
+        ctx.fillStyle = '#00ff00';
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(BRAND.title, cx2, y + 14);
+        y += 24;
+    }
 
     ctx.fillStyle = '#fcfc00';
     ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
     ctx.fillText('LEVEL COMPLETE!', cx2, y);
     y += 30;
 

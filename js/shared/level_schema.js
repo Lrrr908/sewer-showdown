@@ -75,7 +75,7 @@ var LEVEL_ROUTES = Object.freeze({
         'arcade':      { kind: 'generated', theme: 'street' },
         'warehouse':   { kind: 'generated', theme: 'dock' },
         'gallery':     { kind: 'generated', theme: 'gallery' },
-        'dimension_x': { kind: 'static', levelId: 'level_technodrome' }
+        'dimension_x': { kind: 'generated', theme: 'dimension_x' }
     }
 });
 
