@@ -14365,9 +14365,9 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
             ];
         }
         var artFrames = [];
-        // Entry room gets a couch against the back (north) wall
+        // Entry room gets a couch against the back (north) wall (not in Technodrome)
         var roomProps = [];
-        if (isEntry) {
+        if (isEntry && theme !== 'dimension_x') {
             roomProps.push({ sprite: 'greenCouch', tileX: 3, tileY: 1, tileW: 5, anchor: 'center-top' });
         }
 
