@@ -16933,13 +16933,11 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
                         if (tx === RW-1) { ctx.fillStyle = pal.borderSh; ctx.fillRect(px + ts - 3, py, 3, ts); }
                     }
                 } else {
-                    // ── Inner obstacle wall: use floor sprite tinted dark ───────
-                    if (hasFloor) {
-                        var iSpr = floorSprites[h % floorSprites.length];
-                        if (!iSpr) iSpr = floorSprites[0];
-                        ctx.drawImage(iSpr, px, py, ts, ts);
-                        ctx.fillStyle = 'rgba(0,0,0,0.52)';
-                        ctx.fillRect(px, py, ts, ts);
+                    // ── Inner obstacle wall: render with actual wall sprite ──────
+                    if (hasWall) {
+                        var iWallSpr = wallSprites[h % wallSprites.length];
+                        if (!iWallSpr) iWallSpr = wallSprites[0];
+                        ctx.drawImage(iWallSpr, px, py, ts, ts);
                     } else {
                         drawSlab(px, py, pal.wall, pal.wallHi, pal.wallSh);
                         var bH = Math.max(5, Math.round(ts / 4));
