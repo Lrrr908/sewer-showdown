@@ -299,70 +299,70 @@
 
 
         /* Overlay action buttons */
-        #buildingOverlay .overlay-ig {
-            display: inline-block;
-            background: #4ade80;
-            color: #000;
-            padding: 10px 20px;
-            text-decoration: none;
-            font-size: 10px;
-            border-radius: 6px;
-            flex-shrink: 0;
-            transition: background 0.15s;
-        }
-
-        #buildingOverlay .overlay-ig:hover {
-            background: #22c55e;
-        }
-
-        #buildingOverlay .overlay-close {
-            background: none;
-            border: 2px solid #fff;
-            color: #fff;
-            padding: 8px 20px;
-            font-size: 10px;
-            font-family: 'Press Start 2P', monospace;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-bottom: 10px;
-            flex-shrink: 0;
-        }
-
-        #buildingOverlay .overlay-close:hover {
-            background: rgba(255, 255, 255, 0.15);
-        }
-
         .overlay-sidebar {
-            display: flex;
+            display: inline-flex;
             flex-direction: row;
-            flex-wrap: wrap;
             align-items: center;
             justify-content: center;
-            gap: 10px;
+            gap: 8px;
+            max-width: 560px;
             width: 100%;
-            max-width: 900px;
             flex-shrink: 0;
+        }
+
+        /* Shared base for all three sidebar buttons */
+        #buildingOverlay .overlay-ig,
+        #buildingOverlay .overlay-enter-level,
+        #buildingOverlay .overlay-close {
+            flex: 1;
+            min-width: 0;
+            padding: 10px 8px;
+            font-size: 9px;
+            font-family: 'Press Start 2P', monospace;
+            text-align: center;
+            text-decoration: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            box-sizing: border-box;
+            transition: background 0.15s, box-shadow 0.15s;
+        }
+
+        #buildingOverlay .overlay-ig {
+            background: #4ade80;
+            color: #000;
+            border: none;
+        }
+        #buildingOverlay .overlay-ig:hover,
+        #buildingOverlay .overlay-ig:focus {
+            background: #22c55e;
+            outline: 2px solid #4ade80;
         }
 
         #buildingOverlay .overlay-enter-level {
             background: #fcfc00;
             color: #000;
             border: none;
-            padding: 14px 32px;
-            font-size: 13px;
-            font-family: 'Press Start 2P', monospace;
-            border-radius: 6px;
-            cursor: pointer;
-            flex-shrink: 0;
-            text-transform: uppercase;
-            letter-spacing: 1px;
             box-shadow: 0 0 20px rgba(252, 252, 0, 0.3);
-            transition: background 0.15s, box-shadow 0.15s;
         }
-
-        #buildingOverlay .overlay-enter-level:hover {
+        #buildingOverlay .overlay-enter-level:hover,
+        #buildingOverlay .overlay-enter-level:focus {
             background: #e0e000;
             box-shadow: 0 0 30px rgba(252, 252, 0, 0.5);
+            outline: 2px solid #fcfc00;
+        }
+
+        #buildingOverlay .overlay-close {
+            background: none;
+            border: 2px solid #fff;
+            color: #fff;
+        }
+        #buildingOverlay .overlay-close:hover,
+        #buildingOverlay .overlay-close:focus {
+            background: rgba(255, 255, 255, 0.15);
+            outline: 2px solid #fff;
         }
 
 
@@ -554,7 +554,7 @@
         <div id="overlayThumbs" class="thumbs hidden"></div>
 
         <div class="overlay-sidebar">
-            <a class="overlay-ig" id="overlayIgLink" href="#" target="_blank">VISIT INSTAGRAM →</a>
+            <a class="overlay-ig" id="overlayIgLink" href="#" target="_blank">INSTAGRAM</a>
             <button class="overlay-enter-level" id="overlayEnterLevelBtn" style="display:none;">ENTER BUILDING</button>
             <button class="overlay-close" id="overlayCloseBtn">← BACK TO MAP</button>
         </div>
@@ -594,7 +594,7 @@
     </script>
     <script src="js/building_pixels.js?v=3"></script>
     <script src="js/car-ai.js?v=1"></script>
-    <script src="js/game.js?v=517"></script>
+    <script src="js/game.js?v=526"></script>
     <script src="js/world_popup.js?v=1"></script>
     <script>
     // Login overlay wiring

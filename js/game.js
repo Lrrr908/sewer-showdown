@@ -7461,6 +7461,9 @@ function openBuildingOverlay(buildingId) {
 
     renderOverlayForBuilding(buildingId);
     overlay.classList.remove('hidden');
+    // Auto-focus the primary action button so Enter key works immediately
+    var focusTarget = (enterBtn && enterBtn.style.display !== 'none') ? enterBtn : document.getElementById('overlayCloseBtn');
+    if (focusTarget) setTimeout(function() { focusTarget.focus(); }, 0);
     return true;
 }
 
@@ -12964,6 +12967,37 @@ document.addEventListener('keydown', (e) => {
     var _ae = document.activeElement;
     if (_ae && (_ae.tagName === 'INPUT' || _ae.tagName === 'TEXTAREA' || _ae.tagName === 'SELECT')) return;
     if (document.getElementById('loginOverlay') && document.getElementById('loginOverlay').style.display !== 'none') return;
+
+    // Building overlay intercepts all input while open
+    var _bOverlay = document.getElementById('buildingOverlay');
+    if (_bOverlay && !_bOverlay.classList.contains('hidden')) {
+        e.preventDefault();
+        var _enterBtn = document.getElementById('overlayEnterLevelBtn');
+        var _igLink   = document.getElementById('overlayIgLink');
+        var _closeBtn = document.getElementById('overlayCloseBtn');
+        var _btns = [_enterBtn, _igLink, _closeBtn].filter(function(b) { return b && b.style.display !== 'none' && b.style.visibility !== 'hidden'; });
+        var _focused = document.activeElement;
+        if (e.code === 'Enter') {
+            // Enter always triggers whichever button is currently focused
+            if (_focused && _btns.indexOf(_focused) !== -1) {
+                _focused.click();
+            } else if (_enterBtn && _enterBtn.style.display !== 'none') {
+                _enterBtn.click();
+            }
+        } else if (e.code === 'ArrowRight' || e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'KeyD') {
+            var _fi = _btns.indexOf(_focused);
+            var _prev = (_fi <= 0 ? _btns.length - 1 : _fi - 1);
+            if (_btns[_prev]) _btns[_prev].focus();
+        } else if (e.code === 'ArrowLeft' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'KeyA') {
+            var _fi2 = _btns.indexOf(_focused);
+            var _next = (_fi2 >= _btns.length - 1 ? 0 : _fi2 + 1);
+            if (_btns[_next]) _btns[_next].focus();
+        } else if (e.code === 'Escape' || e.code === 'Backspace') {
+            if (_closeBtn) _closeBtn.click();
+        }
+        return;
+    }
+
     // Blimp menu intercepts all input while active
     if (game.blimpMenu.active) {
         e.preventDefault();
@@ -13988,15 +14022,12 @@ function generateLevelRT(theme, size, seed, difficulty) {
         // Pick enemy type based on difficulty + rng
         var roll = rng();
         var eType = 'foot';
-        if (diff >= SHIELD_MIN_DIFF_RT && roll < 0.15 && spent + ENEMY_COST_RT.foot_shield <= budget) {
-            eType = 'foot_shield';
-        } else if (diff >= RANGED_MIN_DIFF_RT && roll < 0.4 && spent + ENEMY_COST_RT.foot_ranged <= budget) {
+        if (diff >= RANGED_MIN_DIFF_RT && roll < 0.4 && spent + ENEMY_COST_RT.foot_ranged <= budget) {
             eType = 'foot_ranged';
         } else if (diff >= RUNNER_MIN_DIFF_RT && roll < 0.55 && spent + ENEMY_COST_RT.foot_runner <= budget) {
             eType = 'foot_runner';
         }
         var eHp = enemyHp;
-        if (eType === 'foot_shield') eHp = enemyHp + 1;
         if (eType === 'foot_runner') eHp = Math.max(1, enemyHp - 1);
         enemies.push({ type: eType, x: pos.x, y: pos.y, hp: eHp, patrol: { left: pL, right: pR } });
         spent += ENEMY_COST_RT[eType];
@@ -14121,22 +14152,28 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         doorConfigs[0].s = -1;
         itemRoomId = 6; // top-center room
     } else if (theme === 'dimension_x') {
-        // Dimension X maze: entry → N corridor → big chamber → E/W forks
-        //   East: E corridor → side chamber → N corridor → BOSS
-        //   West: W corridor → dead-end chamber
-        numRooms = 8;
+        // Dimension X maze:
+        //   entry(0) → lower corridor(1) [side rooms 9,10] → upper corridor(8) [side rooms 11,12]
+        //   → hub(2) → E fork: E-corridor(3) → east chamber(5) → BOSS(7)
+        //              W fork: W-corridor(4) → dead-end(6)
+        numRooms = 13;
         doorConfigs = [];
         for (var di0 = 0; di0 < numRooms; di0++) doorConfigs.push({ n: null, s: null, e: null, w: null });
-        // 0 = entry, 1 = N-S corridor, 2 = hub chamber, 3 = E-W corridor (east),
-        // 4 = E-W corridor (west dead-end), 5 = east chamber, 6 = dead-end chamber, 7 = boss
-        doorConfigs[0].n = 1;  doorConfigs[0].s = -1;
-        doorConfigs[1].s = 0;  doorConfigs[1].n = 2;
-        doorConfigs[2].s = 1;  doorConfigs[2].e = 3;  doorConfigs[2].w = 4;
-        doorConfigs[3].w = 2;  doorConfigs[3].e = 5;
-        doorConfigs[4].e = 2;  doorConfigs[4].w = 6;
-        doorConfigs[5].w = 3;  doorConfigs[5].n = 7;
+        // Main path
+        doorConfigs[0].n = 1;   doorConfigs[0].s = -1;
+        doorConfigs[1].s = 0;   doorConfigs[1].n = 8;   doorConfigs[1].e = 10;  doorConfigs[1].w = 9;
+        doorConfigs[8].s = 1;   doorConfigs[8].n = 2;   doorConfigs[8].e = 12;  doorConfigs[8].w = 11;
+        doorConfigs[2].s = 8;   doorConfigs[2].e = 3;   doorConfigs[2].w = 4;
+        doorConfigs[3].w = 2;   doorConfigs[3].e = 5;
+        doorConfigs[4].e = 2;   doorConfigs[4].w = 6;
+        doorConfigs[5].w = 3;   doorConfigs[5].n = 7;
         doorConfigs[6].e = 4;
         doorConfigs[7].s = 5;
+        // Side rooms (each has exactly one door back to its corridor)
+        doorConfigs[9].e  = 1;   // west of lower corridor
+        doorConfigs[10].w = 1;   // east of lower corridor
+        doorConfigs[11].e = 8;   // west of upper corridor
+        doorConfigs[12].w = 8;   // east of upper corridor
         itemRoomId = 7;
     } else {
         // Normal dungeon: hub layout with east/west branches
@@ -14158,12 +14195,13 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         itemRoomId = numRooms - 1;
     }
 
-    // dimension_x: rooms 1, 3, 4 are narrow corridors; others are open chambers
-    var _dimXCorridors = (theme === 'dimension_x') ? new Set([1, 3, 4]) : new Set();
+    // dimension_x: rooms 1, 3, 4, 8 are narrow corridors; others are open chambers
+    var _dimXCorridors = (theme === 'dimension_x') ? new Set([1, 3, 4, 8]) : new Set();
 
     // ── Construct each room ─────────────────────────────────────
     function buildTilemap(isEntry, isBoss, doors, roomIdx) {
         var isCorridor = _dimXCorridors.has(roomIdx);
+        var corridorBounds = null;
         var tm = [];
         var r, c, i;
         for (r = 0; r < ROOM_H; r++) {
@@ -14171,23 +14209,36 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         }
 
         if (isCorridor) {
-            // Narrow hallway: carve only a 3-tile-wide path in the direction of doors
+            // Narrow room: same border/corners as a regular room, just smaller width or height.
+            // Half-width = 3 tiles either side of centre → 7-tile-wide room (1 wall + 5 floor + 1 wall).
             var hasNS = (doors.n !== null || doors.s !== null);
-            var hasEW = (doors.e !== null || doors.w !== null);
+            var NL, NR, NT, NB;
             if (hasNS) {
-                for (r = 0; r < ROOM_H; r++)
-                    for (i = -1; i <= 1; i++) tm[r][MID_X + i] = DT_FLOOR;
+                // Tall narrow room — full height, narrow width
+                NL = MID_X - 3; NR = MID_X + 3;
+                NT = 0;         NB = ROOM_H - 1;
+                for (r = 1; r < ROOM_H - 1; r++)
+                    for (c = NL + 1; c <= NR - 1; c++)
+                        tm[r][c] = DT_FLOOR;
+            } else {
+                // Wide short room — full width, narrow height (EW corridor)
+                NL = 0;         NR = ROOM_W - 1;
+                NT = MID_Y - 3; NB = MID_Y + 3;
+                for (c = 1; c < ROOM_W - 1; c++)
+                    for (r = NT + 1; r <= NB - 1; r++)
+                        tm[r][c] = DT_FLOOR;
             }
-            if (hasEW) {
-                for (c = 0; c < ROOM_W; c++)
-                    for (i = -1; i <= 1; i++) tm[MID_Y + i][c] = DT_FLOOR;
-            }
+            corridorBounds = { left: NL, right: NR, top: NT, bottom: NB };
         } else {
             // Open chamber — full floor
             for (r = 1; r < ROOM_H - 1; r++)
                 for (c = 1; c < ROOM_W - 1; c++)
                     tm[r][c] = DT_FLOOR;
         }
+
+        // For NS corridors the E/W doors sit in the corridorBounds side walls, not the tilemap edge
+        var _isNScorridor = corridorBounds && (doors.n !== null || doors.s !== null) &&
+                            corridorBounds.left > 0 && corridorBounds.right < ROOM_W - 1;
 
         // Cut door openings (3 tiles wide)
         function cutDoor(side, tileId) {
@@ -14196,9 +14247,11 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
             } else if (side === 's') {
                 for (i = -1; i <= 1; i++) tm[ROOM_H - 1][MID_X + i] = tileId;
             } else if (side === 'e') {
-                for (i = -1; i <= 1; i++) tm[MID_Y + i][ROOM_W - 1] = tileId;
+                var eCol = _isNScorridor ? corridorBounds.right : ROOM_W - 1;
+                for (i = -1; i <= 1; i++) tm[MID_Y + i][eCol] = tileId;
             } else if (side === 'w') {
-                for (i = -1; i <= 1; i++) tm[MID_Y + i][0] = tileId;
+                var wCol = _isNScorridor ? corridorBounds.left : 0;
+                for (i = -1; i <= 1; i++) tm[MID_Y + i][wCol] = tileId;
             }
         }
 
@@ -14208,7 +14261,7 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         if (doors.w !== null) cutDoor('w', DT_DOOR);
 
         // dimension_x: no pillars, no carpets — plain walls and floor only
-        if (theme === 'dimension_x') return tm;
+        if (theme === 'dimension_x') return { tm: tm, corridorBounds: corridorBounds };
 
         // ── Decorations (skip for peaceful hubs — plain open rooms) ──
         if (!peaceful) {
@@ -14253,7 +14306,7 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
             }
         }
 
-        return tm;
+        return { tm: tm, corridorBounds: corridorBounds };
     }
 
     function buildEnemies(roomId, isEntry, isBoss, tilemap) {
@@ -14286,15 +14339,12 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
             if (Math.abs(pos.x - MID_X) < 2 && Math.abs(pos.y - MID_Y) < 2) continue;
             var roll = rng();
             var eType = 'foot';
-            if (isBoss && diff >= 3 && roll < 0.4 && spent + ENEMY_COST_RT.foot_shield <= budget) {
-                eType = 'foot_shield';
-            } else if (diff >= RANGED_MIN_DIFF_RT && roll < 0.35 && spent + ENEMY_COST_RT.foot_ranged <= budget) {
+            if (diff >= RANGED_MIN_DIFF_RT && roll < 0.45 && spent + ENEMY_COST_RT.foot_ranged <= budget) {
                 eType = 'foot_ranged';
             } else if (diff >= RUNNER_MIN_DIFF_RT && roll < 0.5 && spent + ENEMY_COST_RT.foot_runner <= budget) {
                 eType = 'foot_runner';
             }
             var eHp = enemyHp + (isBoss ? 1 : 0);
-            if (eType === 'foot_shield') eHp = enemyHp + 2;
             var pL = Math.max(1, pos.x - 5), pR = Math.min(ROOM_W - 2, pos.x + 5);
             enemies.push({ type: eType, x: pos.x, y: pos.y, hp: eHp,
                 patrol: { left: pL, right: pR } });
@@ -14318,12 +14368,15 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
     }
 
     // Compute entry positions for each door side (where player spawns entering through that door)
-    function buildEntryPositions(doors) {
+    function buildEntryPositions(doors, cb) {
         var ep = {};
-        if (doors.n !== null) ep.n = { x: MID_X * TS, y: 2 * TS };                  // entered via north door → near north
-        if (doors.s !== null) ep.s = { x: MID_X * TS, y: (ROOM_H - 3) * TS };       // entered via south door → near south
-        if (doors.e !== null) ep.e = { x: (ROOM_W - 3) * TS, y: MID_Y * TS };        // entered via east door → near east
-        if (doors.w !== null) ep.w = { x: 2 * TS, y: MID_Y * TS };                   // entered via west door → near west
+        // For NS corridors, E/W entry must land inside the narrow floor, not in the void
+        var eX = (cb && cb.left > 0) ? cb.right - 1 : ROOM_W - 3;
+        var wX = (cb && cb.left > 0) ? cb.left  + 1 : 2;
+        if (doors.n !== null) ep.n = { x: MID_X * TS, y: 2 * TS };
+        if (doors.s !== null) ep.s = { x: MID_X * TS, y: (ROOM_H - 3) * TS };
+        if (doors.e !== null) ep.e = { x: eX * TS, y: MID_Y * TS };
+        if (doors.w !== null) ep.w = { x: wX * TS, y: MID_Y * TS };
         return ep;
     }
 
@@ -14332,7 +14385,9 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         var doors   = doorConfigs[ri];
         var isEntry = (ri === 0);
         var isBoss  = (ri === itemRoomId);
-        var tm = buildTilemap(isEntry, isBoss, doors, ri);
+        var _built = buildTilemap(isEntry, isBoss, doors, ri);
+        var tm = _built.tm;
+        var corridorBounds = _built.corridorBounds;
         var enemies = peaceful ? [] : buildEnemies(ri, isEntry, isBoss, tm);
         // dimension_x boss room: inject boss_puff + guards, clear pedestal
         if (theme === 'dimension_x' && isBoss) {
@@ -14349,10 +14404,11 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
         rooms.push({
             id:             ri,
             tilemap:        tm,
+            corridorBounds: corridorBounds,
             tileTypes:      DUNGEON_TILE_TYPES,
             enemies:        enemies,
             doors:          doors,
-            entryPositions: buildEntryPositions(doors),
+            entryPositions: buildEntryPositions(doors, corridorBounds),
             artFrames:      artFrames,
             itemSpawn:      (isBoss && !peaceful) ? { x: MID_X, y: MID_Y } : null,
             isEntry:        isEntry,
@@ -14394,12 +14450,13 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
 // Respects L.dungeonCleared to skip already-killed enemies.
 function _loadDungeonRoom(L, room) {
     var lts = L.tileSize;
-    L.tilemap   = room.tilemap;
-    L.tileTypes = room.tileTypes || DUNGEON_TILE_TYPES;
-    L.width     = L.dungeon.roomW;
-    L.height    = L.dungeon.roomH;
-    L.dungeonDoors = room.doors;
-    L.artFrames = room.artFrames || [];
+    L.tilemap        = room.tilemap;
+    L.corridorBounds = room.corridorBounds || null;
+    L.tileTypes      = room.tileTypes || DUNGEON_TILE_TYPES;
+    L.width          = L.dungeon.roomW;
+    L.height         = L.dungeon.roomH;
+    L.dungeonDoors   = room.doors;
+    L.artFrames      = room.artFrames || [];
 
     var cleared = L.dungeonCleared[room.id];
 
@@ -15536,10 +15593,14 @@ function updateLevel(dt) {
             var _toRoomId = null;
 
             // Determine direction by where player is (near which wall)
+            var _lcb = L.corridorBounds;
+            var _isNScb = _lcb && _lcb.left > 0 && _lcb.right < _ROOM_W - 1;
+            var _eCol = _isNScb ? _lcb.right : _ROOM_W - 1;
+            var _wCol = _isNScb ? _lcb.left  : 0;
             if (_pcy === 0 && _dd.n !== null)              { _transDir = 'n'; _toRoomId = _dd.n; }
             else if (_pcy === _ROOM_H - 1 && _dd.s !== null) { _transDir = 's'; _toRoomId = _dd.s; }
-            else if (_pcx === _ROOM_W - 1 && _dd.e !== null) { _transDir = 'e'; _toRoomId = _dd.e; }
-            else if (_pcx === 0 && _dd.w !== null)           { _transDir = 'w'; _toRoomId = _dd.w; }
+            else if (_pcx === _eCol && _dd.e !== null)      { _transDir = 'e'; _toRoomId = _dd.e; }
+            else if (_pcx === _wCol && _dd.w !== null)      { _transDir = 'w'; _toRoomId = _dd.w; }
 
             if (_transDir !== null && _toRoomId !== null && _toRoomId >= 0) {
                 // Check if room is locked (has living enemies)
@@ -15560,15 +15621,16 @@ function updateLevel(dt) {
                     var _fromTilemap = L.tilemap.map(function(row) { return row.slice(); });
                     var _fromArtFrames = L.artFrames ? L.artFrames.slice() : [];
                     L.transition = {
-                        dir:          _transDir,
-                        fromRoomId:   L.currentRoomId,
-                        toRoomId:     _toRoomId,
-                        progress:     0,
-                        fromTilemap:  _fromTilemap,
-                        fromEnemies:  L.enemies.slice(),
-                        fromArtFrames: _fromArtFrames,
-                        playerStartX: p.x,
-                        playerStartY: p.y
+                        dir:               _transDir,
+                        fromRoomId:        L.currentRoomId,
+                        toRoomId:          _toRoomId,
+                        progress:          0,
+                        fromTilemap:       _fromTilemap,
+                        fromCorridorBounds: L.corridorBounds || null,
+                        fromEnemies:       L.enemies.slice(),
+                        fromArtFrames:     _fromArtFrames,
+                        playerStartX:      p.x,
+                        playerStartY:      p.y
                     };
                 }
             }
@@ -15720,8 +15782,8 @@ function updateLevel(dt) {
                 var spawnRate = e.bossPhase >= 3 ? 4.0 : e.bossPhase >= 2 ? 6.0 : 8.0;
                 e.bossSpawnTimer = spawnRate;
                 // Spawn a minion near the boss
-                var spawnType = e.bossPhase >= 2 ? (Math.random() < 0.4 ? 'foot_shield' : 'foot') : 'foot';
-                if (e.bossPhase >= 3 && Math.random() < 0.3) spawnType = 'foot_ranged';
+                var spawnType = e.bossPhase >= 3 ? (Math.random() < 0.4 ? 'foot_ranged' : 'foot') : 'foot';
+                if (e.bossPhase >= 2 && Math.random() < 0.3) spawnType = 'foot_ranged';
                 var minionX = e.x + (Math.random() - 0.5) * lts * 4;
                 var minionY = e.y + e.h + lts;
                 if (!levelTileCollision(L, minionX, minionY, lts * 0.7, lts * 0.7)) {
@@ -15729,7 +15791,7 @@ function updateLevel(dt) {
                         id: 'minion_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
                         type: spawnType,
                         ranged: spawnType === 'foot_ranged',
-                        shield: spawnType === 'foot_shield',
+                        shield: false,
                         runner: spawnType === 'foot_runner',
                         boss: false,
                         x: minionX, y: minionY,
@@ -16684,7 +16746,7 @@ function _drawSewerArtPopup(ctx, L) {
 }
 
 // Helper: draw one room's tilemap with an x/y pixel offset
-function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
+function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY, corridorBounds) {
     ctx.imageSmoothingEnabled = false;
     var ts = L.tileSize;
     var cx = L.camera.x - offsetX, cy = L.camera.y - offsetY;
@@ -16848,11 +16910,18 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
         ctx.fillRect(px + ts - 3, py + 1, 2, ts - 4);
     }
 
-    // ── Pass 1: fill mortar background ──────────────────────────────────────
+    // ── Pass 1: fill mortar background (void tiles outside corridorBounds get black) ─
+    var _cb = corridorBounds;
     for (var ty2 = 0; ty2 < RH; ty2++) {
         for (var tx2 = 0; tx2 < RW; tx2++) {
             var px2 = tx2 * ts - cx, py2 = ty2 * ts - cy;
             if (px2 > CANVAS_WIDTH + ts || px2 < -ts || py2 > CANVAS_HEIGHT + ts || py2 < -ts) continue;
+            var t2 = (tilemap[ty2] && tilemap[ty2][tx2]) || 0;
+            if (t2 === DT_WALL && _cb && (tx2 < _cb.left || tx2 > _cb.right || ty2 < _cb.top || ty2 > _cb.bottom)) {
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(px2, py2, ts, ts);
+                continue;
+            }
             ctx.fillStyle = pal.floorMortar;
             ctx.fillRect(px2, py2, ts, ts);
         }
@@ -16869,83 +16938,90 @@ function _drawDungeonRoom(L, tilemap, artFrames, offsetX, offsetY) {
             var h = th(tx, ty);
 
             if (tileId === DT_WALL) {
-                if (isEdge) {
-                    // ── Border wall: direction-aware Zelda sprites ──────────────
-                    var isCorner2 = (tx === 0 || tx === RW-1) && (ty === 0 || ty === RH-1);
-                    var isTopBot  = (ty === 0 || ty === RH-1) && !isCorner2;
-
-                    if (isCorner2 && (isCT ? sp.ctCornerTL : hasCorner)) {
-                        // Corner tile — flip to match the corner direction
-                        var cSprC = isCT ? sp.ctCornerTL : cornerSprite;
-                        ctx.save();
-                        ctx.translate(px + (tx === RW-1 ? ts : 0), py + (ty === RH-1 ? ts : 0));
-                        ctx.scale(tx === RW-1 ? -1 : 1, ty === RH-1 ? -1 : 1);
-                        ctx.drawImage(cSprC, 0, 0, ts, ts);
-                        ctx.restore();
-                    } else if (isTopBot && (isCT ? ctHWall.length > 0 : hasHWall)) {
-                        // Top/bottom: horizontal brick/scrollwork tiles
-                        var hSpr = isCT ? ctHWall[tx % ctHWall.length] : hWallSprites[tx % hWallSprites.length];
-                        if (!hSpr) hSpr = isCT ? ctHWall[0] : hWallSprites[0];
-                        if (ty === RH-1) {
-                            ctx.save();
-                            ctx.translate(px, py + ts);
-                            ctx.scale(1, -1);
-                            ctx.drawImage(hSpr, 0, 0, ts, ts);
-                            ctx.restore();
-                        } else {
-                            ctx.drawImage(hSpr, px, py, ts, ts);
-                        }
-                    } else if (!isTopBot && (isCT ? ctVWall.length > 0 : hasWall)) {
-                        // Left/right side walls
-                        if (isCT) {
-                            var vArr = ctVWall.length > 0 ? ctVWall : ctHWall;
-                            var wSprCT = vArr[ty % vArr.length] || vArr[0];
-                            if (tx === RW-1) {
-                                // Right wall: flip horizontally so golden edge faces left (into room)
-                                ctx.save();
-                                ctx.translate(px + ts, py);
-                                ctx.scale(-1, 1);
-                                ctx.drawImage(wSprCT, 0, 0, ts, ts);
-                                ctx.restore();
-                            } else {
-                                ctx.drawImage(wSprCT, px, py, ts, ts);
-                            }
-                        } else {
-                            var wSpr = wallSprites[(ty - 1) % wallSprites.length];
-                            if (!wSpr) wSpr = wallSprites[0];
-                            if (tx === RW-1) {
-                                ctx.save();
-                                ctx.translate(px + ts, py);
-                                ctx.scale(-1, 1);
-                                ctx.drawImage(wSpr, 0, 0, ts, ts);
-                                ctx.restore();
-                            } else {
-                                ctx.drawImage(wSpr, px, py, ts, ts);
-                            }
-                        }
-                    } else {
-                        // Procedural fallback for any missing sprites
-                        ctx.fillStyle = (h % 5 < 1) ? pal.borderSh : pal.borderBase;
-                        ctx.fillRect(px, py, ts, ts);
-                        if (ty === 0)    { ctx.fillStyle = pal.borderHi; ctx.fillRect(px, py, ts, 3); }
-                        if (tx === 0)    { ctx.fillStyle = pal.borderHi; ctx.fillRect(px, py, 3, ts); }
-                        if (ty === RH-1) { ctx.fillStyle = pal.borderSh; ctx.fillRect(px, py + ts - 3, ts, 3); }
-                        if (tx === RW-1) { ctx.fillStyle = pal.borderSh; ctx.fillRect(px + ts - 3, py, 3, ts); }
-                    }
+                // Void: outside the room bounds → pure black (skip remaining rendering)
+                if (_cb && (tx < _cb.left || tx > _cb.right || ty < _cb.top || ty > _cb.bottom)) {
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(px, py, ts, ts);
+                // Determine effective room edges (uses corridorBounds when present, tilemap edge otherwise)
                 } else {
-                    // ── Inner obstacle wall: render with actual wall sprite ──────
-                    if (hasWall) {
-                        var iWallSpr = wallSprites[h % wallSprites.length];
-                        if (!iWallSpr) iWallSpr = wallSprites[0];
-                        ctx.drawImage(iWallSpr, px, py, ts, ts);
+                    var _bL = _cb ? (tx === _cb.left)   : (tx === 0);
+                    var _bR = _cb ? (tx === _cb.right)  : (tx === RW - 1);
+                    var _bT = _cb ? (ty === _cb.top)    : (ty === 0);
+                    var _bB = _cb ? (ty === _cb.bottom) : (ty === RH - 1);
+                    var _isRoomEdge = _bL || _bR || _bT || _bB;
+                    var isCorner2 = (_bL || _bR) && (_bT || _bB);
+                    var isTopBot  = (_bT || _bB) && !isCorner2;
+
+                    if (_isRoomEdge) {
+                        if (isCorner2 && (isCT ? sp.ctCornerTL : hasCorner)) {
+                            var cSprC = isCT ? sp.ctCornerTL : cornerSprite;
+                            ctx.save();
+                            ctx.translate(px + (_bR ? ts : 0), py + (_bB ? ts : 0));
+                            ctx.scale(_bR ? -1 : 1, _bB ? -1 : 1);
+                            ctx.drawImage(cSprC, 0, 0, ts, ts);
+                            ctx.restore();
+                        } else if (isTopBot && (isCT ? ctHWall.length > 0 : hasHWall)) {
+                            var hSpr = isCT ? ctHWall[tx % ctHWall.length] : hWallSprites[tx % hWallSprites.length];
+                            if (!hSpr) hSpr = isCT ? ctHWall[0] : hWallSprites[0];
+                            if (_bB) {
+                                ctx.save();
+                                ctx.translate(px, py + ts);
+                                ctx.scale(1, -1);
+                                ctx.drawImage(hSpr, 0, 0, ts, ts);
+                                ctx.restore();
+                            } else {
+                                ctx.drawImage(hSpr, px, py, ts, ts);
+                            }
+                        } else if (!isTopBot && (isCT ? ctVWall.length > 0 : hasWall)) {
+                            if (isCT) {
+                                var vArr = ctVWall.length > 0 ? ctVWall : ctHWall;
+                                var wSprCT = vArr[ty % vArr.length] || vArr[0];
+                                if (_bR) {
+                                    ctx.save();
+                                    ctx.translate(px + ts, py);
+                                    ctx.scale(-1, 1);
+                                    ctx.drawImage(wSprCT, 0, 0, ts, ts);
+                                    ctx.restore();
+                                } else {
+                                    ctx.drawImage(wSprCT, px, py, ts, ts);
+                                }
+                            } else {
+                                var wSpr = wallSprites[(ty - 1) % wallSprites.length];
+                                if (!wSpr) wSpr = wallSprites[0];
+                                if (_bR) {
+                                    ctx.save();
+                                    ctx.translate(px + ts, py);
+                                    ctx.scale(-1, 1);
+                                    ctx.drawImage(wSpr, 0, 0, ts, ts);
+                                    ctx.restore();
+                                } else {
+                                    ctx.drawImage(wSpr, px, py, ts, ts);
+                                }
+                            }
+                        } else {
+                            // Procedural fallback
+                            ctx.fillStyle = (h % 5 < 1) ? pal.borderSh : pal.borderBase;
+                            ctx.fillRect(px, py, ts, ts);
+                            if (_bT) { ctx.fillStyle = pal.borderHi; ctx.fillRect(px, py, ts, 3); }
+                            if (_bL) { ctx.fillStyle = pal.borderHi; ctx.fillRect(px, py, 3, ts); }
+                            if (_bB) { ctx.fillStyle = pal.borderSh; ctx.fillRect(px, py + ts - 3, ts, 3); }
+                            if (_bR) { ctx.fillStyle = pal.borderSh; ctx.fillRect(px + ts - 3, py, 3, ts); }
+                        }
                     } else {
-                        drawSlab(px, py, pal.wall, pal.wallHi, pal.wallSh);
-                        var bH = Math.max(5, Math.round(ts / 4));
-                        ctx.fillStyle = pal.wallMortar;
-                        for (var br2 = 1; br2 < 4; br2++) {
-                            ctx.fillRect(px + 1, py + br2 * bH, ts - 2, 1);
-                            var vx2 = ((ty + br2) % 2 === 0) ? px + 1 : px + Math.round(ts/2);
-                            ctx.fillRect(vx2, py + br2 * bH + 1, 1, bH - 1);
+                        // ── Inner obstacle wall (pillars etc.) ──────────────────
+                        if (hasWall) {
+                            var iWallSpr = wallSprites[h % wallSprites.length];
+                            if (!iWallSpr) iWallSpr = wallSprites[0];
+                            ctx.drawImage(iWallSpr, px, py, ts, ts);
+                        } else {
+                            drawSlab(px, py, pal.wall, pal.wallHi, pal.wallSh);
+                            var bH = Math.max(5, Math.round(ts / 4));
+                            ctx.fillStyle = pal.wallMortar;
+                            for (var br2 = 1; br2 < 4; br2++) {
+                                ctx.fillRect(px + 1, py + br2 * bH, ts - 2, 1);
+                                var vx2 = ((ty + br2) % 2 === 0) ? px + 1 : px + Math.round(ts/2);
+                                ctx.fillRect(vx2, py + br2 * bH + 1, 1, bH - 1);
+                            }
                         }
                     }
                 }
@@ -17229,14 +17305,14 @@ function drawLevel() {
         else if (dir === 'w') { fromOx =  ease * RPXW;  toOx = -(1 - ease) * RPXW; }
 
         // Draw from-room (sliding away)
-        _drawDungeonRoom(L, tr.fromTilemap, tr.fromArtFrames, fromOx, fromOy);
+        _drawDungeonRoom(L, tr.fromTilemap, tr.fromArtFrames, fromOx, fromOy, tr.fromCorridorBounds || null);
 
         // Temporarily swap in the to-room tilemap for drawing
         var _saveTm = L.tilemap; var _saveAf = L.artFrames;
         var toRoom = L.dungeon.rooms[tr.toRoomId];
         L.tilemap   = toRoom.tilemap;
         L.artFrames = toRoom.artFrames || [];
-        _drawDungeonRoom(L, toRoom.tilemap, toRoom.artFrames || [], toOx, toOy);
+        _drawDungeonRoom(L, toRoom.tilemap, toRoom.artFrames || [], toOx, toOy, toRoom.corridorBounds || null);
         L.tilemap   = _saveTm;
         L.artFrames = _saveAf;
 
@@ -17280,7 +17356,7 @@ function drawLevel() {
 
     // ── Dungeon: normal single-room draw ────────────────────────
     if (L.dungeon) {
-        _drawDungeonRoom(L, L.tilemap, L.artFrames, 0, 0);
+        _drawDungeonRoom(L, L.tilemap, L.artFrames, 0, 0, L.corridorBounds || null);
 
         // Special item pedestal (if not collected)
         if (L.specialItemPos && !L.specialItemCollected && L.specialItem) {
