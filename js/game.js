@@ -20179,6 +20179,8 @@ if (typeof MP !== 'undefined') {
 if (typeof MP !== 'undefined') {
     MP.onGlobalChatReceived = function(msg) {
         if (!msg || !msg.text) return;
+        // Skip echo of our own messages — already added locally in submitChatInput
+        if (msg.from && msg.from === MP.entityId) return;
         _chatShell.globalMessages.push({
             from: msg.from || '__remote__',
             dn:   msg.dn || 'anon',
