@@ -6729,13 +6729,21 @@ function _chatShowPanelPmAlert(dn) {
 
 // PM suggestion list — populated by _chatUpdatePmSuggestions
 var _chatPmSuggestions = [];  // [{ id, dn, online }]
+var _chatPmSelectedIdx  = -1; // arrow-key highlighted row (-1 = none)
 var _chatPmSearchTimer = null;   // debounce handle for DB fetch
 var _chatPmSearchQuery = '';     // last query sent to server
 
 function _chatRenderPmSuggestions(matches) {
     var suggest = document.getElementById('chatPmSuggest');
     if (!suggest) return;
+    var wasEmpty = _chatPmSuggestions.length === 0;
     _chatPmSuggestions = matches;
+    // Auto-select first row when list first appears; clamp if list shrinks
+    if (wasEmpty && matches.length > 0) {
+        _chatPmSelectedIdx = 0;
+    } else if (_chatPmSelectedIdx >= matches.length) {
+        _chatPmSelectedIdx = matches.length > 0 ? matches.length - 1 : -1;
+    }
     suggest.innerHTML = '';
     if (matches.length === 0) {
         suggest.style.display = 'block';
@@ -6748,12 +6756,18 @@ function _chatRenderPmSuggestions(matches) {
     suggest.style.display = 'block';
     for (var j = 0; j < matches.length; j++) {
         (function(idx, m) {
+            var isSelected = (idx === _chatPmSelectedIdx);
             var srow = document.createElement('div');
-            srow.style.cssText = 'padding:2px 0;cursor:pointer;color:#ddd;display:flex;justify-content:space-between;';
-            srow.onmouseover = function() { srow.style.color = '#fcfc00'; };
-            srow.onmouseout  = function() { srow.style.color = '#ddd'; };
+            srow.dataset.pmIdx = idx;
+            srow.style.cssText = 'padding:2px 4px;cursor:pointer;display:flex;justify-content:space-between;'
+                + (isSelected ? 'background:#333;color:#fcfc00;' : 'color:#ddd;');
+            srow.onmouseover = function() { srow.style.background = '#333'; srow.style.color = '#fcfc00'; };
+            srow.onmouseout  = function() {
+                srow.style.background = (parseInt(srow.dataset.pmIdx) === _chatPmSelectedIdx) ? '#333' : '';
+                srow.style.color = (parseInt(srow.dataset.pmIdx) === _chatPmSelectedIdx) ? '#fcfc00' : '#ddd';
+            };
             var nameSpan = document.createElement('span');
-            nameSpan.textContent = (idx + 1) + '. ' + m.dn;
+            nameSpan.textContent = m.dn;
             srow.appendChild(nameSpan);
             if (m.online) {
                 var dot = document.createElement('span');
@@ -6767,6 +6781,12 @@ function _chatRenderPmSuggestions(matches) {
             suggest.appendChild(srow);
         })(j, matches[j]);
     }
+}
+
+function _chatPmMoveSelection(delta) {
+    if (_chatPmSuggestions.length === 0) return;
+    _chatPmSelectedIdx = (_chatPmSelectedIdx + delta + _chatPmSuggestions.length) % _chatPmSuggestions.length;
+    _chatRenderPmSuggestions(_chatPmSuggestions);
 }
 
 function _chatUpdatePmSuggestions(query) {
@@ -6846,6 +6866,7 @@ function _chatUpdatePmSuggestions(query) {
 
 function _chatClearPmSuggestions() {
     _chatPmSuggestions = [];
+    _chatPmSelectedIdx = -1;
     var suggest = document.getElementById('chatPmSuggest');
     if (suggest) { suggest.style.display = 'none'; suggest.innerHTML = ''; }
 }
@@ -13905,16 +13926,32 @@ setInterval(saveGame, 10000);
 
         if (e.code === 'Enter') {
             e.preventDefault();
-            // If suggestions are showing, pick the first one instead of sending
             if (_chatPmSuggestions.length > 0) {
-                _chatSelectPmSuggestion(_chatPmSuggestions[0].id, _chatPmSuggestions[0].dn);
+                var pickIdx = _chatPmSelectedIdx >= 0 ? _chatPmSelectedIdx : 0;
+                _chatSelectPmSuggestion(_chatPmSuggestions[pickIdx].id, _chatPmSuggestions[pickIdx].dn);
             } else {
                 submitChatInput();
             }
 
+        } else if (e.code === 'ArrowUp') {
+            if (_chatPmSuggestions.length > 0) {
+                e.preventDefault();
+                _chatPmMoveSelection(-1);
+            }
+
+        } else if (e.code === 'ArrowDown') {
+            if (_chatPmSuggestions.length > 0) {
+                e.preventDefault();
+                _chatPmMoveSelection(1);
+            }
+
         } else if (e.code === 'Escape') {
             e.preventDefault();
-            closeChatInput();
+            if (_chatPmSuggestions.length > 0) {
+                _chatClearPmSuggestions();
+            } else {
+                closeChatInput();
+            }
 
         } else if (e.code === 'Tab') {
             e.preventDefault();
