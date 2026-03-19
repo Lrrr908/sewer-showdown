@@ -121,6 +121,8 @@ var MP = (function () {
     var onTransferBegin = null;
     var onTransferCommit = null;
     var onChatReceived = null;
+    var onGlobalChatReceived = null;
+    var onPmReceived = null;
     var onTechnodroneState = null;
     var onLeaderboard = null;
 
@@ -1006,6 +1008,39 @@ var MP = (function () {
                 }
                 break;
 
+            case 'chat_global':
+                if (msg.from && msg.text) {
+                    if (onGlobalChatReceived) onGlobalChatReceived(msg);
+                    // If sender is a visible remote player, show a speech bubble
+                    if (msg.from !== entityId && remotePlayers[msg.from]) {
+                        var _gbDur = Math.max(3000, Math.min(msg.text.length * 60, 7000));
+                        chatBubbles[msg.from] = {
+                            text: msg.text, dn: msg.dn || '',
+                            roomId: null, expire: Date.now() + _gbDur
+                        };
+                    }
+                }
+                break;
+
+            case 'chat_history':
+                if (Array.isArray(msg.messages) && onGlobalChatReceived) {
+                    for (var _chi = 0; _chi < msg.messages.length; _chi++) {
+                        onGlobalChatReceived(msg.messages[_chi]);
+                    }
+                }
+                break;
+
+            case 'chat_pm':
+                if (msg.text) {
+                    if (onPmReceived) onPmReceived(msg);
+                }
+                break;
+
+            case 'chat_pm_error':
+                // Deliver the not-found error to the PM handler so the UI can show it
+                if (onPmReceived) onPmReceived({ _error: true, reason: msg.reason, to: msg.to });
+                break;
+
             // ── Level room messages ──────────────────────────────────────
             case 'level_joined':
                 // Server reply: we joined the room — store host flag, initial items,
@@ -1309,6 +1344,22 @@ var MP = (function () {
         chatBubbles['__self__'] = { text: text, dn: displayName || '', expire: Date.now() + bubbleDuration };
     }
 
+    function sendGlobalChat(text) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        if (typeof text !== 'string') return;
+        text = text.trim().substring(0, CHAT_MAX_LEN);
+        if (text.length === 0) return;
+        ws.send(JSON.stringify({ t: 'chat_global', text: text }));
+    }
+
+    function sendPm(toEntityId, text) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        if (typeof toEntityId !== 'string' || typeof text !== 'string') return;
+        text = text.trim().substring(0, CHAT_MAX_LEN);
+        if (text.length === 0) return;
+        ws.send(JSON.stringify({ t: 'chat_pm', to: toEntityId, text: text }));
+    }
+
     function getChatBubbles() { return chatBubbles; }
 
     // Call with the level instanceId when entering a level, null when returning to overworld.
@@ -1523,6 +1574,8 @@ var MP = (function () {
         requestCollision: requestCollision,
         submitUgcSprite: submitUgcSprite,
         sendChat: sendChat,
+        sendGlobalChat: sendGlobalChat,
+        sendPm: sendPm,
         getChatBubbles: getChatBubbles,
         setChatContext: setChatContext,
         setChatRoomId: setChatRoomId,
@@ -1586,6 +1639,8 @@ var MP = (function () {
         set onTransferBegin(fn) { onTransferBegin = fn; },
         set onTransferCommit(fn) { onTransferCommit = fn; },
         set onChatReceived(fn) { onChatReceived = fn; },
+        set onGlobalChatReceived(fn) { onGlobalChatReceived = fn; },
+        set onPmReceived(fn) { onPmReceived = fn; },
         set onTechnodroneState(fn) { onTechnodroneState = fn; },
 
         setTileSize: function(s) { TILE_SIZE = s; },

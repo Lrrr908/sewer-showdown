@@ -10,6 +10,7 @@ const {
   parseMessage, validateHello, validateInput, validateAction, validateUgcSubmit,
   makeHelloOk, makeSnapshot, makeDelta, makeError, makeUgcUpdate,
   makeTransferBegin, makeTransferCommit, makeCollisionFull, makeChat,
+  makeGlobalChat, makePm,
 } = require('./messages');
 const sim = require('./sim_tick');
 const { wireSnapshot } = require('../zones/zone');
@@ -22,6 +23,12 @@ const TRANSFER_IGNORE_NOTIFY_MS = 1000;
 const POS_SYNC_MIN_MS = 25;
 const CHAT_MAX_LEN = 60;
 const CHAT_COOLDOWN_MS = 1000;
+const GLOBAL_CHAT_COOLDOWN_MS = 1500;
+const PM_COOLDOWN_MS = 1500;
+const GLOBAL_HISTORY_MAX = 100;
+
+// Per-zone rolling buffer of recent global chat messages sent to new joiners.
+const globalChatHistory = new Map(); // zoneId → ChatMessage[]
 
 // ── Entity-level tracking ─────────────────────────────────────────────────────
 // Tracks which entity IDs are currently inside a building level so the overworld
@@ -294,6 +301,8 @@ function initWsServer(wss) {
     // Phase tracking for disconnect-during-transfer safety.
     let pendingTransfer = null;
     let lastChatMs = 0;
+    let lastGlobalChatMs = 0;
+    let lastPmMs = 0;
     let currentLevelInstanceId = null;
     let currentRoomId = null;          // dungeon/gallery room the player is currently in
 
@@ -432,6 +441,12 @@ function initWsServer(wss) {
 
         // Always send the current global leaderboard on connect (empty array clears stale local display)
         try { ws.send(JSON.stringify({ t: 'leaderboard', scores: globalLeaderboard })); } catch {}
+
+        // Send recent global chat history so the new player can read what was said
+        const _hist = globalChatHistory.get(zoneId) || [];
+        if (_hist.length > 0) {
+          try { ws.send(JSON.stringify({ t: 'chat_history', messages: _hist.slice(-50) })); } catch {}
+        }
 
         console.log(`[ws] ${entityId} (${accountId}) joined ${zoneId} (resume: ${resumeResult.reason}) instance=${require('../config').INSTANCE_ID}`);
         return;
@@ -657,6 +672,66 @@ function initWsServer(wss) {
             }
             try { ws.send(chatMsg); } catch {}
           }
+          break;
+        }
+
+        case 'chat_global': {
+          const _gcNow = Date.now();
+          if (_gcNow - lastGlobalChatMs < GLOBAL_CHAT_COOLDOWN_MS) break;
+          if (typeof msg.text !== 'string') break;
+          const _gcText = msg.text.trim().substring(0, CHAT_MAX_LEN);
+          if (_gcText.length === 0) break;
+          lastGlobalChatMs = _gcNow;
+          const _gcZone = sim.getZoneForAccount(accountId);
+          if (!_gcZone) break;
+          const _gcEntity = _gcZone.entities.get(entityId);
+          const _gcDn = (_gcEntity && _gcEntity.displayName) || accountId.substring(0, 8);
+          const _gcMsg = makeGlobalChat(_gcZone.id, entityId, _gcDn, _gcText, _gcNow);
+          const _gcEntry = { from: entityId, dn: _gcDn, text: _gcText, ts: _gcNow };
+
+          // Append to rolling history buffer for this zone
+          if (!globalChatHistory.has(_gcZone.id)) globalChatHistory.set(_gcZone.id, []);
+          const _gcHist = globalChatHistory.get(_gcZone.id);
+          _gcHist.push(_gcEntry);
+          if (_gcHist.length > GLOBAL_HISTORY_MAX) _gcHist.shift();
+
+          // Broadcast to all connected players in the zone
+          for (const [_pid, _pws] of _gcZone.conns) {
+            if (_pws.readyState === 1) try { _pws.send(_gcMsg); } catch {}
+          }
+          // Also AOI-filtered proximity chat so nearby players see a speech bubble
+          const _gcNearby = _gcZone.getPlayersNearEntity(entityId);
+          const _gcBubbleMsg = makeChat(_gcZone.id, entityId, _gcDn, _gcText);
+          for (const { ws: _pws2, pid: _pid2 } of _gcNearby) {
+            if (inLevelEntityIds.has(_pid2)) continue;
+            if (_pws2.readyState === 1) try { _pws2.send(_gcBubbleMsg); } catch {}
+          }
+          break;
+        }
+
+        case 'chat_pm': {
+          const _pmNow = Date.now();
+          if (_pmNow - lastPmMs < PM_COOLDOWN_MS) break;
+          if (typeof msg.text !== 'string' || typeof msg.to !== 'string') break;
+          const _pmText = msg.text.trim().substring(0, CHAT_MAX_LEN);
+          if (_pmText.length === 0) break;
+          lastPmMs = _pmNow;
+          const _pmZone = sim.getZoneForAccount(accountId);
+          if (!_pmZone) break;
+          const _pmEntity = _pmZone.entities.get(entityId);
+          const _pmDn = (_pmEntity && _pmEntity.displayName) || accountId.substring(0, 8);
+          const _pmMsg = makePm(entityId, _pmDn, msg.to, _pmText, _pmNow);
+          // Send to recipient if online in this zone
+          const _pmTargetWs = _pmZone.conns.get(msg.to);
+          if (_pmTargetWs && _pmTargetWs.readyState === 1) {
+            try { _pmTargetWs.send(_pmMsg); } catch {}
+          } else {
+            // Recipient not found — notify sender
+            try { ws.send(JSON.stringify({ t: 'chat_pm_error', reason: 'not_found', to: msg.to })); } catch {}
+            break;
+          }
+          // Echo back to sender
+          try { ws.send(_pmMsg); } catch {}
           break;
         }
 

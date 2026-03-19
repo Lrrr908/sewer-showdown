@@ -6469,6 +6469,135 @@ function _drawRemotePlayer(_rp) {
 // --- Speech Bubble Rendering ---
 var _chatInputActive = false;
 
+// Chat shell state — SAY / GLOBAL / PM modes, history, threads
+var _chatShell = {
+    mode: 'SAY',
+    globalMessages: [],   // { from, dn, text, ts }
+    pmThreads: {},        // entityId → [{ dir:'in'|'out', dn, text, ts }]
+    pmNames: {},          // entityId → displayName
+    activePmUserId: null,
+    unreadPmCount: 0,
+    unreadGlobalCount: 0,
+    isScrolledToBottom: true
+};
+
+// ── Chat shell helpers ────────────────────────────────────────────────────────
+
+function _chatOpenPanel() {
+    var panel = document.getElementById('chatPanel');
+    var bar   = document.getElementById('chatBarRow');
+    if (panel) panel.style.display = 'block';
+    if (bar)   bar.style.borderRadius = '0 0 6px 6px';
+}
+
+function _chatClosePanel() {
+    var panel = document.getElementById('chatPanel');
+    var bar   = document.getElementById('chatBarRow');
+    var alert = document.getElementById('chatPanelPmAlert');
+    if (panel) panel.style.display = 'none';
+    if (bar)   bar.style.borderRadius = '6px';
+    if (alert) { alert.style.display = 'none'; alert.textContent = ''; }
+}
+
+function _chatRenderPanel() {
+    var box = document.getElementById('chatPanelMessages');
+    if (!box) return;
+    box.innerHTML = '';
+    var msgs = [];
+    if (_chatShell.mode === 'GLOBAL') {
+        msgs = _chatShell.globalMessages;
+    } else if (_chatShell.mode === 'PM' && _chatShell.activePmUserId) {
+        msgs = _chatShell.pmThreads[_chatShell.activePmUserId] || [];
+    }
+    for (var i = 0; i < msgs.length; i++) {
+        var m = msgs[i];
+        var row = document.createElement('div');
+        row.style.cssText = 'margin-bottom:3px;';
+        if (_chatShell.mode === 'GLOBAL') {
+            var nameSpan = document.createElement('span');
+            nameSpan.style.color = '#58d8f8';
+            nameSpan.textContent = (m.dn || 'anon') + ': ';
+            var textSpan = document.createElement('span');
+            textSpan.textContent = m.text;
+            row.appendChild(nameSpan);
+            row.appendChild(textSpan);
+        } else {
+            var arrow = m.dir === 'out' ? '\u2192 ' : '\u2190 ';
+            var pmName = (m.dir === 'out' ? (typeof MP !== 'undefined' ? (MP.displayName || 'Me') : 'Me') : (m.dn || 'anon'));
+            var pmNameSpan = document.createElement('span');
+            pmNameSpan.style.color = m.dir === 'out' ? '#80ff80' : '#58d8f8';
+            pmNameSpan.textContent = arrow + pmName + ': ';
+            var pmTextSpan = document.createElement('span');
+            pmTextSpan.textContent = m.text;
+            row.appendChild(pmNameSpan);
+            row.appendChild(pmTextSpan);
+        }
+        box.appendChild(row);
+    }
+    if (_chatShell.isScrolledToBottom) box.scrollTop = box.scrollHeight;
+}
+
+function _chatSetMode(newMode, pmUserId) {
+    var label = document.getElementById('chatModeLabel');
+    var input = document.getElementById('chatInput');
+    _chatShell.mode = newMode;
+    if (newMode === 'SAY') {
+        _chatClosePanel();
+        if (label) label.textContent = '[SAY]';
+        if (input) input.placeholder = 'Say something...';
+    } else if (newMode === 'GLOBAL') {
+        _chatShell.unreadGlobalCount = 0;
+        _chatOpenPanel();
+        _chatRenderPanel();
+        if (label) label.textContent = '[GLOBAL]';
+        if (input) input.placeholder = 'Chat globally...';
+    } else if (newMode === 'PM') {
+        if (pmUserId) _chatShell.activePmUserId = pmUserId;
+        var targetName = _chatShell.pmNames[_chatShell.activePmUserId] || '?';
+        // Mark this thread's messages as read
+        _chatShell.unreadPmCount = Math.max(0, _chatShell.unreadPmCount - 1);
+        _chatUpdateBadge();
+        _chatOpenPanel();
+        _chatRenderPanel();
+        if (label) label.textContent = '[PM:' + targetName.substring(0, 8) + ']';
+        if (input) input.placeholder = 'Msg ' + targetName.substring(0, 10) + '...';
+    }
+}
+
+function _chatUpdateBadge() {
+    var badge = document.getElementById('pmBadge');
+    var count = document.getElementById('pmBadgeCount');
+    if (!badge) return;
+    if (_chatShell.unreadPmCount > 0 && !_chatInputActive) {
+        badge.style.display = 'block';
+        if (count) count.textContent = _chatShell.unreadPmCount;
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+function _chatShowPanelPmAlert(dn) {
+    var alert = document.getElementById('chatPanelPmAlert');
+    if (!alert) return;
+    alert.textContent = 'PM from ' + (dn || '?');
+    alert.style.display = 'block';
+    setTimeout(function() {
+        if (alert) alert.style.display = 'none';
+    }, 3000);
+}
+
+// Find a remote player by displayName (case-insensitive); returns entityId or null.
+function _chatFindPlayerByName(name) {
+    if (typeof MP === 'undefined') return null;
+    var remotes = MP.getRemotePlayers();
+    var lo = name.toLowerCase();
+    for (var i = 0; i < remotes.length; i++) {
+        var rp = remotes[i];
+        if ((rp.dn || '').toLowerCase() === lo) return rp.id;
+    }
+    return null;
+}
+
 function drawSpeechBubble(ctx, text, screenX, screenY, spriteW, bubbleColor) {
     var maxCharsPerLine = 18;
     var words = text.split(' ');
@@ -6587,35 +6716,98 @@ function drawAllChatBubbles() {
 function openChatInput() {
     if (_chatInputActive) return;
     _chatInputActive = true;
-    console.log('[chat] opening chat input');
-    var wrap = document.getElementById('chatInputWrap');
-    var input = document.getElementById('chatInput');
+    var wrap    = document.getElementById('chatInputWrap');
+    var input   = document.getElementById('chatInput');
     var counter = document.getElementById('chatCharCount');
     if (!wrap || !input) { console.warn('[chat] chatInputWrap or chatInput not found!'); return; }
     wrap.style.display = 'block';
     input.value = '';
-    counter.textContent = '0/60';
+    if (counter) counter.textContent = '0/60';
+    // Hide PM badge while chat is open
+    var badge = document.getElementById('pmBadge');
+    if (badge) badge.style.display = 'none';
+    // Start in SAY mode (panel hidden)
+    _chatSetMode('SAY');
     setTimeout(function() { input.focus(); }, 50);
 }
 
 function closeChatInput() {
     _chatInputActive = false;
-    var wrap = document.getElementById('chatInputWrap');
+    _chatShell.mode = 'SAY';
+    var wrap  = document.getElementById('chatInputWrap');
     var input = document.getElementById('chatInput');
-    if (wrap) wrap.style.display = 'none';
+    if (wrap)  wrap.style.display = 'none';
     if (input) input.blur();
+    _chatClosePanel();
+    // Restore PM badge if there are still unread messages
+    _chatUpdateBadge();
 }
 
 function submitChatInput() {
     var input = document.getElementById('chatInput');
     if (!input) return;
-    var text = input.value.trim();
-    console.log('[chat] submit:', text, 'connected:', typeof MP !== 'undefined' && MP.isConnected());
-    if (text.length > 0 && typeof MP !== 'undefined' && MP.isConnected()) {
-        MP.sendChat(text);
-        console.log('[chat] sent! bubbles:', JSON.stringify(MP.getChatBubbles()));
+    var raw = input.value.trim();
+    if (raw.length === 0) { closeChatInput(); return; }
+
+    var mp = (typeof MP !== 'undefined') ? MP : null;
+
+    // ── /pm <name> <text> command ─────────────────────────────────────────────
+    if (raw.toLowerCase().startsWith('/pm ')) {
+        var pmRest = raw.substring(4).trim();
+        var spIdx  = pmRest.indexOf(' ');
+        if (spIdx > 0 && mp && mp.isConnected()) {
+            var pmTarget = pmRest.substring(0, spIdx);
+            var pmText   = pmRest.substring(spIdx + 1).trim();
+            var pmId     = _chatFindPlayerByName(pmTarget);
+            if (pmId && pmText.length > 0) {
+                if (!_chatShell.pmThreads[pmId]) _chatShell.pmThreads[pmId] = [];
+                if (!_chatShell.pmNames[pmId])   _chatShell.pmNames[pmId]   = pmTarget;
+                _chatShell.pmThreads[pmId].push({ dir: 'out', dn: mp.displayName || 'Me', text: pmText, ts: Date.now() });
+                mp.sendPm(pmId, pmText);
+                _chatShell.activePmUserId = pmId;
+                _chatSetMode('PM', pmId);
+                input.value = '';
+                var chatCounter = document.getElementById('chatCharCount');
+                if (chatCounter) chatCounter.textContent = '0/60';
+            } else {
+                // Player not found — briefly flash a notice in the mode label
+                var lbl = document.getElementById('chatModeLabel');
+                if (lbl) {
+                    var prev = lbl.textContent;
+                    lbl.textContent = '[NOT FOUND]';
+                    lbl.style.color = '#ff5555';
+                    setTimeout(function() { lbl.textContent = prev; lbl.style.color = '#fcfc00'; }, 1500);
+                }
+            }
+        }
+        return;
     }
-    closeChatInput();
+
+    // ── Normal send ───────────────────────────────────────────────────────────
+    if (mp && mp.isConnected()) {
+        if (_chatShell.mode === 'GLOBAL') {
+            mp.sendGlobalChat(raw);
+            // Instant local echo into global history
+            _chatShell.globalMessages.push({ from: '__self__', dn: mp.displayName || 'Me', text: raw, ts: Date.now() });
+            if (_chatShell.globalMessages.length > 200) _chatShell.globalMessages.shift();
+            _chatShell.isScrolledToBottom = true;
+            _chatRenderPanel();
+        } else if (_chatShell.mode === 'PM' && _chatShell.activePmUserId) {
+            mp.sendPm(_chatShell.activePmUserId, raw);
+            var tid = _chatShell.activePmUserId;
+            if (!_chatShell.pmThreads[tid]) _chatShell.pmThreads[tid] = [];
+            _chatShell.pmThreads[tid].push({ dir: 'out', dn: mp.displayName || 'Me', text: raw, ts: Date.now() });
+            _chatShell.isScrolledToBottom = true;
+            _chatRenderPanel();
+        } else {
+            // SAY mode
+            mp.sendChat(raw);
+        }
+    }
+    input.value = '';
+    var chatCounter2 = document.getElementById('chatCharCount');
+    if (chatCounter2) chatCounter2.textContent = '0/60';
+    // Keep chat shell open after send; only close on ESC
 }
 var _blimpAnimTimer = 0;
 var _blimpAnimFrame = 0;
@@ -13450,9 +13642,60 @@ setInterval(saveGame, 10000);
         if (e.code === 'Enter') {
             e.preventDefault();
             submitChatInput();
+
         } else if (e.code === 'Escape') {
             e.preventDefault();
             closeChatInput();
+
+        } else if (e.code === 'Tab') {
+            e.preventDefault();
+            // Cycle SAY → GLOBAL → PM (only if thread/unread exists) → SAY
+            var hasPm = _chatShell.unreadPmCount > 0 || Object.keys(_chatShell.pmThreads).length > 0;
+            var modes = ['SAY', 'GLOBAL'];
+            if (hasPm) modes.push('PM');
+            var idx = modes.indexOf(_chatShell.mode);
+            var next = modes[(idx + 1) % modes.length];
+            // When cycling to PM, pick the first thread with unread or the activePmUserId
+            if (next === 'PM') {
+                var pmTarget = _chatShell.activePmUserId;
+                if (!pmTarget) {
+                    var keys = Object.keys(_chatShell.pmThreads);
+                    if (keys.length > 0) pmTarget = keys[0];
+                }
+                _chatSetMode('PM', pmTarget);
+            } else {
+                _chatSetMode(next);
+            }
+
+        } else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && _chatShell.mode !== 'SAY') {
+            e.preventDefault();
+            if (_chatShell.mode === 'PM') {
+                // Cycle through PM threads
+                var threadIds = Object.keys(_chatShell.pmThreads);
+                if (threadIds.length > 1) {
+                    var ci = threadIds.indexOf(_chatShell.activePmUserId);
+                    var di = e.code === 'ArrowRight' ? 1 : -1;
+                    var ni = ((ci + di) + threadIds.length) % threadIds.length;
+                    _chatSetMode('PM', threadIds[ni]);
+                }
+            } else if (_chatShell.mode === 'GLOBAL') {
+                // Switch to PM if threads exist
+                var hasPmThreads = Object.keys(_chatShell.pmThreads).length > 0;
+                if (hasPmThreads) {
+                    var firstId = _chatShell.activePmUserId || Object.keys(_chatShell.pmThreads)[0];
+                    _chatSetMode('PM', firstId);
+                }
+            }
+
+        } else if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') && _chatShell.mode !== 'SAY') {
+            e.preventDefault();
+            var panel = document.getElementById('chatPanelMessages');
+            if (panel) {
+                panel.scrollTop += e.code === 'ArrowDown' ? 36 : -36;
+                // If scrolled away from bottom, disable auto-scroll
+                _chatShell.isScrolledToBottom =
+                    (panel.scrollHeight - panel.scrollTop - panel.clientHeight) < 10;
+            }
         }
     });
 
@@ -13462,6 +13705,17 @@ setInterval(saveGame, 10000);
         var len = chatInput.value.length;
         var max = (typeof MP !== 'undefined') ? MP.CHAT_MAX_LEN : 60;
         if (chatCounter) chatCounter.textContent = len + '/' + max;
+    });
+})();
+
+// PM badge click: open chat and jump straight to PM mode
+(function() {
+    var badge = document.getElementById('pmBadge');
+    if (!badge) return;
+    badge.addEventListener('click', function() {
+        openChatInput();
+        var firstId = _chatShell.activePmUserId || Object.keys(_chatShell.pmThreads)[0];
+        if (firstId) _chatSetMode('PM', firstId);
     });
 })();
 
@@ -19630,6 +19884,69 @@ if (typeof MP !== 'undefined') {
         if (Array.isArray(scores)) {
             _globalLeaderboard = scores;
             _globalLeaderboardReceived = true;
+        }
+    };
+}
+
+// ── Global chat and PM callbacks ─────────────────────────────────────────────
+if (typeof MP !== 'undefined') {
+    MP.onGlobalChatReceived = function(msg) {
+        if (!msg || !msg.text) return;
+        _chatShell.globalMessages.push({
+            from: msg.from || '__remote__',
+            dn:   msg.dn || 'anon',
+            text: msg.text,
+            ts:   msg.ts || Date.now()
+        });
+        if (_chatShell.globalMessages.length > 200) _chatShell.globalMessages.shift();
+        if (_chatInputActive && _chatShell.mode === 'GLOBAL') {
+            _chatRenderPanel();
+        } else {
+            _chatShell.unreadGlobalCount++;
+        }
+    };
+
+    MP.onPmReceived = function(msg) {
+        if (!msg) return;
+        // Handle "not found" error from server
+        if (msg._error) {
+            var lbl2 = document.getElementById('chatModeLabel');
+            if (lbl2) {
+                var prev2 = lbl2.textContent;
+                lbl2.textContent = '[NOT FOUND]';
+                lbl2.style.color = '#ff5555';
+                setTimeout(function() { lbl2.textContent = prev2; lbl2.style.color = '#fcfc00'; }, 1500);
+            }
+            return;
+        }
+        var senderId = msg.from;
+        if (!senderId || !msg.text) return;
+        var senderDn  = msg.dn || 'anon';
+        var isSelf    = (typeof MP !== 'undefined') && senderId === MP.entityId;
+        if (!_chatShell.pmThreads[senderId])  _chatShell.pmThreads[senderId]  = [];
+        if (!_chatShell.pmNames[senderId])     _chatShell.pmNames[senderId]    = senderDn;
+
+        _chatShell.pmThreads[senderId].push({
+            dir: isSelf ? 'out' : 'in',
+            dn:  senderDn,
+            text: msg.text,
+            ts:   msg.ts || Date.now()
+        });
+
+        if (!isSelf) {
+            // It's an incoming message from someone else
+            _chatShell.unreadPmCount++;
+            if (_chatInputActive && _chatShell.mode === 'PM' && _chatShell.activePmUserId === senderId) {
+                _chatShell.unreadPmCount = Math.max(0, _chatShell.unreadPmCount - 1);
+                _chatShell.isScrolledToBottom = true;
+                _chatRenderPanel();
+                _chatUpdateBadge();
+            } else {
+                _chatUpdateBadge();
+                if (_chatInputActive) {
+                    _chatShowPanelPmAlert(senderDn);
+                }
+            }
         }
     };
 }

@@ -143,6 +143,20 @@ function makeChat(zoneId, entityId, displayName, text) {
   });
 }
 
+function makeGlobalChat(zoneId, entityId, displayName, text, timestamp) {
+  return JSON.stringify({
+    t: 'chat_global', v: PROTOCOL_VERSION,
+    zone: zoneId, from: entityId, dn: displayName, text, ts: timestamp,
+  });
+}
+
+function makePm(fromId, fromDn, toId, text, timestamp) {
+  return JSON.stringify({
+    t: 'chat_pm', v: PROTOCOL_VERSION,
+    from: fromId, dn: fromDn, to: toId, text, ts: timestamp,
+  });
+}
+
 function makeError(code, msg, fatal) {
   return JSON.stringify({
     t: 'error', v: PROTOCOL_VERSION,
@@ -156,5 +170,5 @@ module.exports = {
   validateHello, validateInput, validateAction, validateUgcSubmit,
   makeHelloOk, makeSnapshot, makeDelta, makePosUpdate, makeEvent,
   makeUgcUpdate, makeTransferBegin, makeTransferCommit,
-  makeCollisionFull, makeChat, makeError,
+  makeCollisionFull, makeChat, makeGlobalChat, makePm, makeError,
 };
