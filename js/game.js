@@ -6468,8 +6468,7 @@ function _drawRemotePlayer(_rp) {
 
 // --- Speech Bubble Rendering ---
 var _chatInputActive = false;
-var _chatBrowseMode  = false;  // panel visible but input blurred (TAB+C)
-var _tabHeld         = false;  // true while Tab key is physically held
+var _chatBrowseMode  = false;  // panel visible but input blurred (SHIFT+C)
 
 // Chat shell state — SAY / GLOBAL / PM modes, history, threads
 var _chatShell = {
@@ -6659,9 +6658,10 @@ function _chatSetPmView(view, uid) {
     if (view === 'inbox') {
         _chatShell.activePmUserId = null;
         if (label) label.textContent = '[PM:INBOX]';
-        if (input) { input.placeholder = '@name to search...'; input.value = ''; }
-        _chatClearPmSuggestions();
+        if (input) { input.placeholder = 'Type to search players...'; input.value = ''; }
         _chatRenderPanel();
+        // Auto-show all online players immediately (no @ required)
+        _chatUpdatePmSuggestions('');
     } else if (view === 'thread' && uid) {
         _chatShell.activePmUserId = uid;
         // Clear unread for this thread
@@ -6728,26 +6728,14 @@ function _chatShowPanelPmAlert(dn) {
 }
 
 // PM suggestion list — populated by _chatUpdatePmSuggestions
-var _chatPmSuggestions = [];  // [{ id, dn }]
+var _chatPmSuggestions = [];  // [{ id, dn, online }]
+var _chatPmSearchTimer = null;   // debounce handle for DB fetch
+var _chatPmSearchQuery = '';     // last query sent to server
 
-function _chatUpdatePmSuggestions(query) {
+function _chatRenderPmSuggestions(matches) {
     var suggest = document.getElementById('chatPmSuggest');
     if (!suggest) return;
-    if (typeof MP === 'undefined') { suggest.style.display = 'none'; return; }
-
-    var remotes = MP.getRemotePlayers();
-    var lo = (query || '').toLowerCase();
-    var matches = [];
-    for (var i = 0; i < remotes.length; i++) {
-        var rp = remotes[i];
-        var dn = rp.dn || '';
-        if (lo === '' || dn.toLowerCase().indexOf(lo) !== -1) {
-            matches.push({ id: rp.id, dn: dn });
-            if (matches.length >= 9) break;
-        }
-    }
     _chatPmSuggestions = matches;
-
     suggest.innerHTML = '';
     if (matches.length === 0) {
         suggest.style.display = 'block';
@@ -6761,16 +6749,99 @@ function _chatUpdatePmSuggestions(query) {
     for (var j = 0; j < matches.length; j++) {
         (function(idx, m) {
             var srow = document.createElement('div');
-            srow.style.cssText = 'padding:2px 0;cursor:pointer;color:#ddd;';
+            srow.style.cssText = 'padding:2px 0;cursor:pointer;color:#ddd;display:flex;justify-content:space-between;';
             srow.onmouseover = function() { srow.style.color = '#fcfc00'; };
             srow.onmouseout  = function() { srow.style.color = '#ddd'; };
-            srow.textContent = (idx + 1) + '. ' + m.dn;
+            var nameSpan = document.createElement('span');
+            nameSpan.textContent = (idx + 1) + '. ' + m.dn;
+            srow.appendChild(nameSpan);
+            if (m.online) {
+                var dot = document.createElement('span');
+                dot.style.cssText = 'color:#44ff44;font-size:10px;align-self:center;margin-left:6px;';
+                dot.textContent = '● online';
+                srow.appendChild(dot);
+            }
             srow.addEventListener('click', function() {
                 _chatSelectPmSuggestion(m.id, m.dn);
             });
             suggest.appendChild(srow);
         })(j, matches[j]);
     }
+}
+
+function _chatUpdatePmSuggestions(query) {
+    var suggest = document.getElementById('chatPmSuggest');
+    if (!suggest) return;
+    var lo = (query || '').toLowerCase();
+
+    // Always build the online-players list immediately (no network wait)
+    var onlineIds = {};
+    var combined = [];
+    if (typeof MP !== 'undefined') {
+        var remotes = MP.getRemotePlayers();
+        for (var i = 0; i < remotes.length; i++) {
+            var rp = remotes[i];
+            var dn = rp.dn || '';
+            if (lo === '' || dn.toLowerCase().indexOf(lo) !== -1) {
+                onlineIds[rp.id] = true;
+                combined.push({ id: rp.id, dn: dn, online: true });
+                if (combined.length >= 9) break;
+            }
+        }
+    }
+    _chatRenderPmSuggestions(combined);
+
+    // Debounced DB search — merges offline players below online ones
+    clearTimeout(_chatPmSearchTimer);
+    _chatPmSearchTimer = setTimeout(function() {
+        if (typeof MP === 'undefined' || !MP.API_URL) return;
+        var fetchQuery = query || '';
+        _chatPmSearchQuery = fetchQuery;
+        fetch(MP.API_URL + '/players/search?q=' + encodeURIComponent(fetchQuery))
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+                if (!data || !Array.isArray(data.players)) return;
+                // Check the query didn't change while we were fetching
+                if (_chatPmSearchQuery !== fetchQuery) return;
+
+                // Re-check current online set (may have changed)
+                var nowOnline = {};
+                if (typeof MP !== 'undefined') {
+                    var rs = MP.getRemotePlayers();
+                    for (var k = 0; k < rs.length; k++) nowOnline[rs[k].id] = true;
+                }
+
+                // Online first, then offline, skip self
+                var selfId = (typeof MP !== 'undefined') ? MP.userId : null;
+                var merged = [];
+                // Re-add online players (fresh pass)
+                var dbIds = {};
+                for (var d = 0; d < data.players.length; d++) dbIds[data.players[d].id] = data.players[d].dn;
+                // Online players that match (may or may not be in DB)
+                if (typeof MP !== 'undefined') {
+                    var remotes2 = MP.getRemotePlayers();
+                    for (var ri = 0; ri < remotes2.length; ri++) {
+                        var rp2 = remotes2[ri];
+                        if (rp2.id === selfId) continue;
+                        var dn2 = rp2.dn || '';
+                        if (lo === '' || dn2.toLowerCase().indexOf(lo) !== -1) {
+                            merged.push({ id: rp2.id, dn: dn2, online: true });
+                        }
+                        if (merged.length >= 9) break;
+                    }
+                }
+                // Offline DB players (not already in merged)
+                for (var di = 0; di < data.players.length; di++) {
+                    var p = data.players[di];
+                    if (p.id === selfId) continue;
+                    if (nowOnline[p.id]) continue; // already added above
+                    merged.push({ id: p.id, dn: p.dn, online: false });
+                    if (merged.length >= 9) break;
+                }
+                _chatRenderPmSuggestions(merged);
+            })
+            .catch(function() {});
+    }, 300);
 }
 
 function _chatClearPmSuggestions() {
@@ -13478,9 +13549,6 @@ const keyToDirection = {
 };
 
 document.addEventListener('keydown', (e) => {
-    // Track Tab held state globally (used for TAB+C chat blur)
-    if (e.code === 'Tab') _tabHeld = true;
-
     var _ae = document.activeElement;
     if (_ae && (_ae.tagName === 'INPUT' || _ae.tagName === 'TEXTAREA' || _ae.tagName === 'SELECT')) return;
     if (document.getElementById('loginOverlay') && document.getElementById('loginOverlay').style.display !== 'none') return;
@@ -13615,26 +13683,25 @@ document.addEventListener('keydown', (e) => {
 
     // H = toggle high score board
 
-    // TAB+V from game or browse mode → open PM inbox with @fuzzy search ready
-    if (e.code === 'KeyV' && _tabHeld) {
-        e.preventDefault();
-        if (!_chatInputActive) openChatInput();
-        if (_chatShell.mode !== 'PM') _chatSetMode('PM', null);
-        else _chatSetPmView('inbox');
-        var _gvInput = document.getElementById('chatInput');
-        if (_gvInput) { _gvInput.value = '@'; _gvInput.focus(); }
-        _chatBrowseMode = false;
-        _chatUpdatePmSuggestions('');
-        return;
-    }
-
     if (e.code === 'KeyC') {
         e.preventDefault();
-        if (_chatBrowseMode) {
-            // Panel open but input blurred → C closes the shell entirely
-            closeChatInput();
-        } else if (!_chatInputActive) {
-            openChatInput();
+        if (e.shiftKey) {
+            // SHIFT+C: if browse mode → re-focus input; if chat closed → open chat
+            if (_chatBrowseMode) {
+                _chatBrowseMode = false;
+                var _scInput = document.getElementById('chatInput');
+                if (_scInput) _scInput.focus();
+                _chatInputActive = true;
+            } else if (!_chatInputActive) {
+                openChatInput();
+            }
+        } else {
+            if (_chatBrowseMode) {
+                // C alone while panel open + input blurred → close entirely
+                closeChatInput();
+            } else if (!_chatInputActive) {
+                openChatInput();
+            }
         }
         return;
     }
@@ -13666,8 +13733,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keyup', (e) => {
-    if (e.code === 'Tab') _tabHeld = false;
-
     var _ae = document.activeElement;
     if (_ae && (_ae.tagName === 'INPUT' || _ae.tagName === 'TEXTAREA' || _ae.tagName === 'SELECT')) return;
     const dir = keyToDirection[e.code];
@@ -13831,21 +13896,10 @@ setInterval(saveGame, 10000);
     chatInput.addEventListener('keydown', function(e) {
         e.stopPropagation();
 
-        // ── TAB+C → blur input, keep panel open (browse mode) ──────────────
-        if (e.code === 'KeyC' && _tabHeld) {
+        // ── SHIFT+C → blur input, keep panel open (browse mode) ────────────
+        if (e.code === 'KeyC' && e.shiftKey) {
             e.preventDefault();
             _chatBlurInput();
-            return;
-        }
-
-        // ── TAB+V → jump to PM inbox and open fuzzy @search ─────────────────
-        if (e.code === 'KeyV' && _tabHeld) {
-            e.preventDefault();
-            if (_chatShell.mode !== 'PM') _chatSetMode('PM', null);
-            else _chatSetPmView('inbox');
-            var _tvInput = document.getElementById('chatInput');
-            if (_tvInput) { _tvInput.value = '@'; _tvInput.focus(); }
-            _chatUpdatePmSuggestions('');
             return;
         }
 
@@ -13887,11 +13941,7 @@ setInterval(saveGame, 10000);
         }
     });
 
-    chatInput.addEventListener('keyup', function(e) {
-        e.stopPropagation();
-        // Keep _tabHeld accurate when Tab is released while input is focused
-        if (e.code === 'Tab') _tabHeld = false;
-    });
+    chatInput.addEventListener('keyup', function(e) { e.stopPropagation(); });
 
     chatInput.addEventListener('input', function() {
         var len = chatInput.value.length;

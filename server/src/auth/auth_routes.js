@@ -328,5 +328,19 @@ async function resolveEmailByAccountId(accountId) {
   return null;
 }
 
+function getTestPlayers(q, limit) {
+  const lo = (q || '').toLowerCase();
+  const results = [];
+  for (const acct of Object.values(_testAccounts)) {
+    const dn = acct.display_name || '';
+    if (!lo || dn.toLowerCase().includes(lo)) {
+      results.push({ id: acct.account_id, dn });
+    }
+    if (results.length >= (limit || 20)) break;
+  }
+  return results;
+}
+
 module.exports = router;
 module.exports.resolveEmailByAccountId = resolveEmailByAccountId;
+module.exports.getTestPlayers = getTestPlayers;

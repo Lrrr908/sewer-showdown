@@ -75,6 +75,39 @@ app.use('/ig-thumbs', (req, res) => {
   res.sendFile(file, err => { if (err) res.status(404).end(); });
 });
 
+// ── Player search — used by PM fuzzy picker (offline players included) ──────
+app.get('/players/search', async (req, res) => {
+  const q = (req.query.q || '').trim().slice(0, 64);
+  const limit = 20;
+
+  // Try DB first
+  let dbOk = false;
+  try { await pool.query('SELECT 1'); dbOk = true; } catch (_) {}
+
+  if (dbOk) {
+    try {
+      const rows = await pool.query(
+        `SELECT account_id, display_name FROM accounts
+         WHERE ($1 = '' OR display_name ILIKE $2)
+         ORDER BY display_name
+         LIMIT $3`,
+        [q, '%' + q + '%', limit]
+      );
+      return res.json({
+        ok: true,
+        players: rows.rows.map(r => ({ id: r.account_id, dn: r.display_name || '' })),
+      });
+    } catch (e) {
+      console.warn('[players/search] db error:', e.message);
+    }
+  }
+
+  // No-DB fallback: delegate to auth module's in-memory accounts
+  const { getTestPlayers } = require('./auth/auth_routes');
+  const fallback = typeof getTestPlayers === 'function' ? getTestPlayers(q, limit) : [];
+  res.json({ ok: true, players: fallback });
+});
+
 app.get('/debug/zones', (_req, res) => {
   const sim = require('./realtime/sim_tick');
   const zones = {};
