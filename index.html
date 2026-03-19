@@ -492,8 +492,10 @@
     <!-- Chat shell — SAY/GLOBAL/PM unified input + history panel -->
     <div id="chatInputWrap" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:500;font-family:'Press Start 2P',monospace;">
         <!-- History panel — expands upward, hidden in SAY mode -->
-        <div id="chatPanel" style="display:none;width:320px;max-height:220px;background:#111;border:2px solid #fcfc00;border-bottom:none;border-radius:6px 6px 0 0;overflow:hidden;transition:max-height 0.15s ease-out;">
-            <div id="chatPanelMessages" style="height:196px;overflow-y:auto;padding:6px 8px;font-size:9px;color:#ddd;line-height:1.7;word-break:break-word;"></div>
+        <div id="chatPanel" style="display:none;width:320px;max-height:260px;background:#111;border:2px solid #fcfc00;border-bottom:none;border-radius:6px 6px 0 0;overflow:hidden;transition:max-height 0.15s ease-out;">
+            <div id="chatPanelMessages" style="height:186px;overflow-y:auto;padding:6px 8px;font-size:9px;color:#ddd;line-height:1.7;word-break:break-word;"></div>
+            <!-- PM fuzzy-search suggestions (shown when typing @name in PM mode) -->
+            <div id="chatPmSuggest" style="display:none;padding:4px 8px;border-top:1px solid #333;font-size:9px;color:#ddd;max-height:100px;overflow-y:auto;"></div>
             <div id="chatPanelPmAlert" style="display:none;padding:2px 8px 4px;font-size:8px;color:#fcfc00;background:#1a1400;border-top:1px solid #3a3000;"></div>
         </div>
         <!-- Input bar row -->
@@ -608,7 +610,7 @@
     </script>
     <script src="js/building_pixels.js?v=3"></script>
     <script src="js/car-ai.js?v=1"></script>
-    <script src="js/game.js?v=569"></script>
+    <script src="js/game.js?v=570"></script>
     <script src="js/world_popup.js?v=1"></script>
     <script>
     // Login overlay wiring

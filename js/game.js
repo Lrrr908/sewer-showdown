@@ -6468,6 +6468,8 @@ function _drawRemotePlayer(_rp) {
 
 // --- Speech Bubble Rendering ---
 var _chatInputActive = false;
+var _chatBrowseMode  = false;  // panel visible but input blurred (TAB+C)
+var _tabHeld         = false;  // true while Tab key is physically held
 
 // Chat shell state — SAY / GLOBAL / PM modes, history, threads
 var _chatShell = {
@@ -6475,7 +6477,9 @@ var _chatShell = {
     globalMessages: [],   // { from, dn, text, ts }
     pmThreads: {},        // entityId → [{ dir:'in'|'out', dn, text, ts }]
     pmNames: {},          // entityId → displayName
+    pmUnread: {},         // entityId → unread count for that thread
     activePmUserId: null,
+    pmView: 'inbox',      // 'inbox' | 'thread'
     unreadPmCount: 0,
     unreadGlobalCount: 0,
     isScrolledToBottom: true
@@ -6499,42 +6503,177 @@ function _chatClosePanel() {
     if (alert) { alert.style.display = 'none'; alert.textContent = ''; }
 }
 
+// Blur the input without closing the panel (TAB+C "browse mode")
+function _chatBlurInput() {
+    _chatBrowseMode = true;
+    var input = document.getElementById('chatInput');
+    if (input) input.blur();
+}
+
+// Relative-time helper for inbox rows
+function _chatRelTime(ts) {
+    var diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60)  return diff + 's';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+    return Math.floor(diff / 86400) + 'd';
+}
+
 function _chatRenderPanel() {
     var box = document.getElementById('chatPanelMessages');
     if (!box) return;
     box.innerHTML = '';
-    var msgs = [];
+
+    // ── GLOBAL view ───────────────────────────────────────────────────────
     if (_chatShell.mode === 'GLOBAL') {
-        msgs = _chatShell.globalMessages;
-    } else if (_chatShell.mode === 'PM' && _chatShell.activePmUserId) {
-        msgs = _chatShell.pmThreads[_chatShell.activePmUserId] || [];
-    }
-    for (var i = 0; i < msgs.length; i++) {
-        var m = msgs[i];
-        var row = document.createElement('div');
-        row.style.cssText = 'margin-bottom:3px;';
-        if (_chatShell.mode === 'GLOBAL') {
-            var nameSpan = document.createElement('span');
-            nameSpan.style.color = '#58d8f8';
-            nameSpan.textContent = (m.dn || 'anon') + ': ';
-            var textSpan = document.createElement('span');
-            textSpan.textContent = m.text;
-            row.appendChild(nameSpan);
-            row.appendChild(textSpan);
-        } else {
-            var arrow = m.dir === 'out' ? '\u2192 ' : '\u2190 ';
-            var pmName = (m.dir === 'out' ? (typeof MP !== 'undefined' ? (MP.displayName || 'Me') : 'Me') : (m.dn || 'anon'));
-            var pmNameSpan = document.createElement('span');
-            pmNameSpan.style.color = m.dir === 'out' ? '#80ff80' : '#58d8f8';
-            pmNameSpan.textContent = arrow + pmName + ': ';
-            var pmTextSpan = document.createElement('span');
-            pmTextSpan.textContent = m.text;
-            row.appendChild(pmNameSpan);
-            row.appendChild(pmTextSpan);
+        var gMsgs = _chatShell.globalMessages;
+        for (var gi = 0; gi < gMsgs.length; gi++) {
+            var gm = gMsgs[gi];
+            var grow = document.createElement('div');
+            grow.style.cssText = 'margin-bottom:3px;';
+            var gnSpan = document.createElement('span');
+            gnSpan.style.color = '#58d8f8';
+            gnSpan.textContent = (gm.dn || 'anon') + ': ';
+            var gtSpan = document.createElement('span');
+            gtSpan.textContent = gm.text;
+            grow.appendChild(gnSpan);
+            grow.appendChild(gtSpan);
+            box.appendChild(grow);
         }
-        box.appendChild(row);
+        if (_chatShell.isScrolledToBottom) box.scrollTop = box.scrollHeight;
+        return;
     }
-    if (_chatShell.isScrolledToBottom) box.scrollTop = box.scrollHeight;
+
+    // ── PM INBOX view ─────────────────────────────────────────────────────
+    if (_chatShell.mode === 'PM' && _chatShell.pmView === 'inbox') {
+        // "NEW PM" hint row at top
+        var hintRow = document.createElement('div');
+        hintRow.style.cssText = 'padding:3px 0 5px;color:#888;font-size:8px;border-bottom:1px solid #333;margin-bottom:4px;';
+        hintRow.textContent = 'Type @name to start a new PM';
+        box.appendChild(hintRow);
+
+        var threadIds = Object.keys(_chatShell.pmThreads);
+        if (threadIds.length === 0) {
+            var emptyRow = document.createElement('div');
+            emptyRow.style.cssText = 'color:#555;font-size:8px;padding:4px 0;';
+            emptyRow.textContent = 'No conversations yet';
+            box.appendChild(emptyRow);
+        } else {
+            // Sort by most recent message timestamp
+            threadIds.sort(function(a, b) {
+                var aThread = _chatShell.pmThreads[a];
+                var bThread = _chatShell.pmThreads[b];
+                var aTs = aThread.length ? aThread[aThread.length - 1].ts : 0;
+                var bTs = bThread.length ? bThread[bThread.length - 1].ts : 0;
+                return bTs - aTs;
+            });
+            for (var ti = 0; ti < threadIds.length; ti++) {
+                (function(uid) {
+                    var thread  = _chatShell.pmThreads[uid];
+                    var tName   = _chatShell.pmNames[uid] || uid.substring(0, 8);
+                    var lastMsg = thread.length ? thread[thread.length - 1] : null;
+                    var snippet = lastMsg ? lastMsg.text.substring(0, 28) + (lastMsg.text.length > 28 ? '\u2026' : '') : '';
+                    var timeStr = lastMsg ? _chatRelTime(lastMsg.ts) : '';
+                    var hasUnread = (_chatShell.pmUnread[uid] || 0) > 0;
+
+                    var trow = document.createElement('div');
+                    trow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 2px;cursor:pointer;border-radius:3px;' +
+                        (hasUnread ? 'background:#1a1400;' : '');
+                    trow.onmouseover = function() { trow.style.background = '#222'; };
+                    trow.onmouseout  = function() { trow.style.background = hasUnread ? '#1a1400' : ''; };
+
+                    // Color badge
+                    var badge = document.createElement('span');
+                    badge.style.cssText = 'display:inline-block;width:7px;height:7px;border-radius:50%;background:' +
+                        (hasUnread ? '#fcfc00' : '#58d8f8') + ';flex-shrink:0;';
+                    trow.appendChild(badge);
+
+                    // Name
+                    var nameEl = document.createElement('span');
+                    nameEl.style.cssText = 'color:' + (hasUnread ? '#fcfc00' : '#ddd') + ';min-width:60px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                    nameEl.textContent = tName.substring(0, 10);
+                    trow.appendChild(nameEl);
+
+                    // Snippet
+                    var snipEl = document.createElement('span');
+                    snipEl.style.cssText = 'color:#666;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;';
+                    snipEl.textContent = snippet;
+                    trow.appendChild(snipEl);
+
+                    // Time
+                    var timeEl = document.createElement('span');
+                    timeEl.style.cssText = 'color:#555;font-size:7px;flex-shrink:0;';
+                    timeEl.textContent = timeStr;
+                    trow.appendChild(timeEl);
+
+                    trow.addEventListener('click', function() {
+                        _chatSetPmView('thread', uid);
+                    });
+                    box.appendChild(trow);
+                })(threadIds[ti]);
+            }
+        }
+        return;
+    }
+
+    // ── PM THREAD view ────────────────────────────────────────────────────
+    if (_chatShell.mode === 'PM' && _chatShell.pmView === 'thread' && _chatShell.activePmUserId) {
+        // "← INBOX" header
+        var backRow = document.createElement('div');
+        backRow.style.cssText = 'padding:2px 0 5px;border-bottom:1px solid #333;margin-bottom:4px;cursor:pointer;color:#aaa;font-size:8px;';
+        backRow.textContent = '\u2190 INBOX';
+        backRow.onmouseover = function() { backRow.style.color = '#fcfc00'; };
+        backRow.onmouseout  = function() { backRow.style.color = '#aaa'; };
+        backRow.addEventListener('click', function() {
+            _chatSetPmView('inbox');
+        });
+        box.appendChild(backRow);
+
+        var tMsgs = _chatShell.pmThreads[_chatShell.activePmUserId] || [];
+        for (var mi = 0; mi < tMsgs.length; mi++) {
+            var pm = tMsgs[mi];
+            var mrow = document.createElement('div');
+            mrow.style.cssText = 'margin-bottom:3px;';
+            var arrow = pm.dir === 'out' ? '\u2192 ' : '\u2190 ';
+            var mName = pm.dir === 'out'
+                ? (typeof MP !== 'undefined' ? (MP.displayName || 'Me') : 'Me')
+                : (pm.dn || 'anon');
+            var mNameSpan = document.createElement('span');
+            mNameSpan.style.color = pm.dir === 'out' ? '#80ff80' : '#58d8f8';
+            mNameSpan.textContent = arrow + mName + ': ';
+            var mTextSpan = document.createElement('span');
+            mTextSpan.textContent = pm.text;
+            mrow.appendChild(mNameSpan);
+            mrow.appendChild(mTextSpan);
+            box.appendChild(mrow);
+        }
+        if (_chatShell.isScrolledToBottom) box.scrollTop = box.scrollHeight;
+    }
+}
+
+// Switch between inbox and thread inside PM mode
+function _chatSetPmView(view, uid) {
+    _chatShell.pmView = view;
+    var label = document.getElementById('chatModeLabel');
+    var input = document.getElementById('chatInput');
+    if (view === 'inbox') {
+        _chatShell.activePmUserId = null;
+        if (label) label.textContent = '[PM:INBOX]';
+        if (input) { input.placeholder = '@name to search...'; input.value = ''; }
+        _chatClearPmSuggestions();
+        _chatRenderPanel();
+    } else if (view === 'thread' && uid) {
+        _chatShell.activePmUserId = uid;
+        // Clear unread for this thread
+        _chatShell.unreadPmCount = Math.max(0, _chatShell.unreadPmCount - (_chatShell.pmUnread[uid] || 0));
+        _chatShell.pmUnread[uid] = 0;
+        _chatUpdateBadge();
+        var tName = _chatShell.pmNames[uid] || '?';
+        if (label) label.textContent = '[PM:' + tName.substring(0, 8) + ']';
+        if (input) input.placeholder = 'Reply to ' + tName.substring(0, 10) + '...';
+        _chatShell.isScrolledToBottom = true;
+        _chatRenderPanel();
+    }
 }
 
 function _chatSetMode(newMode, pmUserId) {
@@ -6552,15 +6691,17 @@ function _chatSetMode(newMode, pmUserId) {
         if (label) label.textContent = '[GLOBAL]';
         if (input) input.placeholder = 'Chat globally...';
     } else if (newMode === 'PM') {
-        if (pmUserId) _chatShell.activePmUserId = pmUserId;
-        var targetName = _chatShell.pmNames[_chatShell.activePmUserId] || '?';
-        // Mark this thread's messages as read
-        _chatShell.unreadPmCount = Math.max(0, _chatShell.unreadPmCount - 1);
-        _chatUpdateBadge();
         _chatOpenPanel();
-        _chatRenderPanel();
-        if (label) label.textContent = '[PM:' + targetName.substring(0, 8) + ']';
-        if (input) input.placeholder = 'Msg ' + targetName.substring(0, 10) + '...';
+        if (pmUserId) {
+            // Open directly to thread view
+            _chatShell.pmView = 'thread';
+            _chatSetPmView('thread', pmUserId);
+        } else {
+            // Open to inbox
+            _chatShell.pmView = 'inbox';
+            _chatSetPmView('inbox');
+        }
+        _chatUpdateBadge();
     }
 }
 
@@ -6586,16 +6727,67 @@ function _chatShowPanelPmAlert(dn) {
     }, 3000);
 }
 
-// Find a remote player by displayName (case-insensitive); returns entityId or null.
-function _chatFindPlayerByName(name) {
-    if (typeof MP === 'undefined') return null;
+// PM suggestion list — populated by _chatUpdatePmSuggestions
+var _chatPmSuggestions = [];  // [{ id, dn }]
+
+function _chatUpdatePmSuggestions(query) {
+    var suggest = document.getElementById('chatPmSuggest');
+    if (!suggest) return;
+    if (typeof MP === 'undefined') { suggest.style.display = 'none'; return; }
+
     var remotes = MP.getRemotePlayers();
-    var lo = name.toLowerCase();
+    var lo = (query || '').toLowerCase();
+    var matches = [];
     for (var i = 0; i < remotes.length; i++) {
         var rp = remotes[i];
-        if ((rp.dn || '').toLowerCase() === lo) return rp.id;
+        var dn = rp.dn || '';
+        if (lo === '' || dn.toLowerCase().indexOf(lo) !== -1) {
+            matches.push({ id: rp.id, dn: dn });
+            if (matches.length >= 9) break;
+        }
     }
-    return null;
+    _chatPmSuggestions = matches;
+
+    suggest.innerHTML = '';
+    if (matches.length === 0) {
+        suggest.style.display = 'block';
+        var noone = document.createElement('div');
+        noone.style.cssText = 'color:#666;padding:2px 0;';
+        noone.textContent = 'no players found';
+        suggest.appendChild(noone);
+        return;
+    }
+    suggest.style.display = 'block';
+    for (var j = 0; j < matches.length; j++) {
+        (function(idx, m) {
+            var srow = document.createElement('div');
+            srow.style.cssText = 'padding:2px 0;cursor:pointer;color:#ddd;';
+            srow.onmouseover = function() { srow.style.color = '#fcfc00'; };
+            srow.onmouseout  = function() { srow.style.color = '#ddd'; };
+            srow.textContent = (idx + 1) + '. ' + m.dn;
+            srow.addEventListener('click', function() {
+                _chatSelectPmSuggestion(m.id, m.dn);
+            });
+            suggest.appendChild(srow);
+        })(j, matches[j]);
+    }
+}
+
+function _chatClearPmSuggestions() {
+    _chatPmSuggestions = [];
+    var suggest = document.getElementById('chatPmSuggest');
+    if (suggest) { suggest.style.display = 'none'; suggest.innerHTML = ''; }
+}
+
+function _chatSelectPmSuggestion(uid, dn) {
+    if (!uid) return;
+    _chatClearPmSuggestions();
+    var input = document.getElementById('chatInput');
+    if (input) { input.value = ''; }
+    if (!_chatShell.pmThreads[uid]) _chatShell.pmThreads[uid] = [];
+    if (!_chatShell.pmNames[uid])   _chatShell.pmNames[uid]   = dn;
+    _chatShell.pmView = 'thread';
+    _chatSetPmView('thread', uid);
 }
 
 function drawSpeechBubble(ctx, text, screenX, screenY, spriteW, bubbleColor) {
@@ -6714,7 +6906,13 @@ function drawAllChatBubbles() {
 }
 
 function openChatInput() {
-    if (_chatInputActive) return;
+    _chatBrowseMode = false;
+    if (_chatInputActive) {
+        // Already open — just re-focus the input
+        var input2 = document.getElementById('chatInput');
+        if (input2) input2.focus();
+        return;
+    }
     _chatInputActive = true;
     var wrap    = document.getElementById('chatInputWrap');
     var input   = document.getElementById('chatInput');
@@ -6733,12 +6931,14 @@ function openChatInput() {
 
 function closeChatInput() {
     _chatInputActive = false;
+    _chatBrowseMode  = false;
     _chatShell.mode = 'SAY';
     var wrap  = document.getElementById('chatInputWrap');
     var input = document.getElementById('chatInput');
     if (wrap)  wrap.style.display = 'none';
     if (input) input.blur();
     _chatClosePanel();
+    _chatClearPmSuggestions();
     // Restore PM badge if there are still unread messages
     _chatUpdateBadge();
 }
@@ -6751,38 +6951,6 @@ function submitChatInput() {
 
     var mp = (typeof MP !== 'undefined') ? MP : null;
 
-    // ── /pm <name> <text> command ─────────────────────────────────────────────
-    if (raw.toLowerCase().startsWith('/pm ')) {
-        var pmRest = raw.substring(4).trim();
-        var spIdx  = pmRest.indexOf(' ');
-        if (spIdx > 0 && mp && mp.isConnected()) {
-            var pmTarget = pmRest.substring(0, spIdx);
-            var pmText   = pmRest.substring(spIdx + 1).trim();
-            var pmId     = _chatFindPlayerByName(pmTarget);
-            if (pmId && pmText.length > 0) {
-                if (!_chatShell.pmThreads[pmId]) _chatShell.pmThreads[pmId] = [];
-                if (!_chatShell.pmNames[pmId])   _chatShell.pmNames[pmId]   = pmTarget;
-                _chatShell.pmThreads[pmId].push({ dir: 'out', dn: mp.displayName || 'Me', text: pmText, ts: Date.now() });
-                mp.sendPm(pmId, pmText);
-                _chatShell.activePmUserId = pmId;
-                _chatSetMode('PM', pmId);
-                input.value = '';
-                var chatCounter = document.getElementById('chatCharCount');
-                if (chatCounter) chatCounter.textContent = '0/60';
-            } else {
-                // Player not found — briefly flash a notice in the mode label
-                var lbl = document.getElementById('chatModeLabel');
-                if (lbl) {
-                    var prev = lbl.textContent;
-                    lbl.textContent = '[NOT FOUND]';
-                    lbl.style.color = '#ff5555';
-                    setTimeout(function() { lbl.textContent = prev; lbl.style.color = '#fcfc00'; }, 1500);
-                }
-            }
-        }
-        return;
-    }
-
     // ── Normal send ───────────────────────────────────────────────────────────
     if (mp && mp.isConnected()) {
         if (_chatShell.mode === 'GLOBAL') {
@@ -6792,15 +6960,15 @@ function submitChatInput() {
             if (_chatShell.globalMessages.length > 200) _chatShell.globalMessages.shift();
             _chatShell.isScrolledToBottom = true;
             _chatRenderPanel();
-        } else if (_chatShell.mode === 'PM' && _chatShell.activePmUserId) {
-            mp.sendPm(_chatShell.activePmUserId, raw);
+        } else if (_chatShell.mode === 'PM' && _chatShell.pmView === 'thread' && _chatShell.activePmUserId) {
             var tid = _chatShell.activePmUserId;
+            mp.sendPm(tid, raw);
             if (!_chatShell.pmThreads[tid]) _chatShell.pmThreads[tid] = [];
             _chatShell.pmThreads[tid].push({ dir: 'out', dn: mp.displayName || 'Me', text: raw, ts: Date.now() });
             _chatShell.isScrolledToBottom = true;
             _chatRenderPanel();
         } else {
-            // SAY mode
+            // SAY mode (or PM inbox with no active thread — treat as SAY)
             mp.sendChat(raw);
         }
     }
@@ -13310,6 +13478,9 @@ const keyToDirection = {
 };
 
 document.addEventListener('keydown', (e) => {
+    // Track Tab held state globally (used for TAB+C chat blur)
+    if (e.code === 'Tab') _tabHeld = true;
+
     var _ae = document.activeElement;
     if (_ae && (_ae.tagName === 'INPUT' || _ae.tagName === 'TEXTAREA' || _ae.tagName === 'SELECT')) return;
     if (document.getElementById('loginOverlay') && document.getElementById('loginOverlay').style.display !== 'none') return;
@@ -13399,7 +13570,7 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    if (e.code === 'Escape' || e.code === 'Backspace' || e.code === 'KeyM') {
+    if (e.code === 'KeyM' || e.code === 'Backspace') {
         e.preventDefault();
         // Close sewer art popup if open
         if (game.mode === 'LEVEL' && game.level && game.level.sewerArtPopup) {
@@ -13444,9 +13615,14 @@ document.addEventListener('keydown', (e) => {
 
     // H = toggle high score board
 
-    if (e.code === 'KeyC' && !_chatInputActive) {
+    if (e.code === 'KeyC') {
         e.preventDefault();
-        openChatInput();
+        if (_chatBrowseMode) {
+            // Panel open but input blurred → C closes the shell entirely
+            closeChatInput();
+        } else if (!_chatInputActive) {
+            openChatInput();
+        }
         return;
     }
     if (e.code === 'KeyH' && game.mode !== 'LEVEL') {
@@ -13477,6 +13653,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keyup', (e) => {
+    if (e.code === 'Tab') _tabHeld = false;
+
     var _ae = document.activeElement;
     if (_ae && (_ae.tagName === 'INPUT' || _ae.tagName === 'TEXTAREA' || _ae.tagName === 'SELECT')) return;
     const dir = keyToDirection[e.code];
@@ -13639,9 +13817,22 @@ setInterval(saveGame, 10000);
 
     chatInput.addEventListener('keydown', function(e) {
         e.stopPropagation();
+
+        // ── TAB+C → blur input, keep panel open (browse mode) ──────────────
+        if (e.code === 'KeyC' && _tabHeld) {
+            e.preventDefault();
+            _chatBlurInput();
+            return;
+        }
+
         if (e.code === 'Enter') {
             e.preventDefault();
-            submitChatInput();
+            // If suggestions are showing, pick the first one instead of sending
+            if (_chatPmSuggestions.length > 0) {
+                _chatSelectPmSuggestion(_chatPmSuggestions[0].id, _chatPmSuggestions[0].dn);
+            } else {
+                submitChatInput();
+            }
 
         } else if (e.code === 'Escape') {
             e.preventDefault();
@@ -13649,13 +13840,13 @@ setInterval(saveGame, 10000);
 
         } else if (e.code === 'Tab') {
             e.preventDefault();
+            _chatClearPmSuggestions();
             // Cycle SAY → GLOBAL → PM (only if thread/unread exists) → SAY
             var hasPm = _chatShell.unreadPmCount > 0 || Object.keys(_chatShell.pmThreads).length > 0;
             var modes = ['SAY', 'GLOBAL'];
             if (hasPm) modes.push('PM');
             var idx = modes.indexOf(_chatShell.mode);
             var next = modes[(idx + 1) % modes.length];
-            // When cycling to PM, pick the first thread with unread or the activePmUserId
             if (next === 'PM') {
                 var pmTarget = _chatShell.activePmUserId;
                 if (!pmTarget) {
@@ -13667,44 +13858,33 @@ setInterval(saveGame, 10000);
                 _chatSetMode(next);
             }
 
-        } else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && _chatShell.mode !== 'SAY') {
-            e.preventDefault();
-            if (_chatShell.mode === 'PM') {
-                // Cycle through PM threads
-                var threadIds = Object.keys(_chatShell.pmThreads);
-                if (threadIds.length > 1) {
-                    var ci = threadIds.indexOf(_chatShell.activePmUserId);
-                    var di = e.code === 'ArrowRight' ? 1 : -1;
-                    var ni = ((ci + di) + threadIds.length) % threadIds.length;
-                    _chatSetMode('PM', threadIds[ni]);
-                }
-            } else if (_chatShell.mode === 'GLOBAL') {
-                // Switch to PM if threads exist
-                var hasPmThreads = Object.keys(_chatShell.pmThreads).length > 0;
-                if (hasPmThreads) {
-                    var firstId = _chatShell.activePmUserId || Object.keys(_chatShell.pmThreads)[0];
-                    _chatSetMode('PM', firstId);
-                }
-            }
-
-        } else if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') && _chatShell.mode !== 'SAY') {
-            e.preventDefault();
-            var panel = document.getElementById('chatPanelMessages');
-            if (panel) {
-                panel.scrollTop += e.code === 'ArrowDown' ? 36 : -36;
-                // If scrolled away from bottom, disable auto-scroll
-                _chatShell.isScrolledToBottom =
-                    (panel.scrollHeight - panel.scrollTop - panel.clientHeight) < 10;
+        } else {
+            // ── Digit keys 1–9: pick from PM suggestion list ───────────────
+            var d = parseInt(e.key, 10);
+            if (!isNaN(d) && d >= 1 && d <= _chatPmSuggestions.length) {
+                e.preventDefault();
+                _chatSelectPmSuggestion(_chatPmSuggestions[d - 1].id, _chatPmSuggestions[d - 1].dn);
             }
         }
     });
 
-    chatInput.addEventListener('keyup', function(e) { e.stopPropagation(); });
+    chatInput.addEventListener('keyup', function(e) {
+        e.stopPropagation();
+        // Keep _tabHeld accurate when Tab is released while input is focused
+        if (e.code === 'Tab') _tabHeld = false;
+    });
 
     chatInput.addEventListener('input', function() {
         var len = chatInput.value.length;
         var max = (typeof MP !== 'undefined') ? MP.CHAT_MAX_LEN : 60;
         if (chatCounter) chatCounter.textContent = len + '/' + max;
+        // Fuzzy PM search: trigger when input starts with "@" in PM mode
+        var val = chatInput.value;
+        if (_chatShell.mode === 'PM' && val.startsWith('@')) {
+            _chatUpdatePmSuggestions(val.slice(1));
+        } else {
+            _chatClearPmSuggestions();
+        }
     });
 })();
 
@@ -19921,10 +20101,11 @@ if (typeof MP !== 'undefined') {
         }
         var senderId = msg.from;
         if (!senderId || !msg.text) return;
-        var senderDn  = msg.dn || 'anon';
-        var isSelf    = (typeof MP !== 'undefined') && senderId === MP.entityId;
-        if (!_chatShell.pmThreads[senderId])  _chatShell.pmThreads[senderId]  = [];
-        if (!_chatShell.pmNames[senderId])     _chatShell.pmNames[senderId]    = senderDn;
+        var senderDn = msg.dn || 'anon';
+        var isSelf   = (typeof MP !== 'undefined') && senderId === MP.entityId;
+        if (!_chatShell.pmThreads[senderId]) _chatShell.pmThreads[senderId] = [];
+        if (!_chatShell.pmNames[senderId])   _chatShell.pmNames[senderId]   = senderDn;
+        if (!_chatShell.pmUnread[senderId])  _chatShell.pmUnread[senderId]  = 0;
 
         _chatShell.pmThreads[senderId].push({
             dir: isSelf ? 'out' : 'in',
@@ -19934,16 +20115,26 @@ if (typeof MP !== 'undefined') {
         });
 
         if (!isSelf) {
-            // It's an incoming message from someone else
-            _chatShell.unreadPmCount++;
-            if (_chatInputActive && _chatShell.mode === 'PM' && _chatShell.activePmUserId === senderId) {
-                _chatShell.unreadPmCount = Math.max(0, _chatShell.unreadPmCount - 1);
+            var inActiveThread = _chatInputActive &&
+                _chatShell.mode === 'PM' &&
+                _chatShell.pmView === 'thread' &&
+                _chatShell.activePmUserId === senderId;
+
+            if (inActiveThread) {
+                // Thread is open — render immediately, no unread count
                 _chatShell.isScrolledToBottom = true;
                 _chatRenderPanel();
-                _chatUpdateBadge();
             } else {
+                // Increment unread for this thread and global badge
+                _chatShell.pmUnread[senderId]++;
+                _chatShell.unreadPmCount++;
                 _chatUpdateBadge();
-                if (_chatInputActive) {
+                // If PM inbox view is open, re-render it to show updated snippet
+                if (_chatInputActive && _chatShell.mode === 'PM' && _chatShell.pmView === 'inbox') {
+                    _chatRenderPanel();
+                }
+                // Show in-shell alert if chat is open on another mode
+                if (_chatInputActive && _chatShell.mode !== 'PM') {
                     _chatShowPanelPmAlert(senderDn);
                 }
             }
