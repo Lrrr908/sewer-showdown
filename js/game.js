@@ -13615,6 +13615,19 @@ document.addEventListener('keydown', (e) => {
 
     // H = toggle high score board
 
+    // TAB+V from game or browse mode → open PM inbox with @fuzzy search ready
+    if (e.code === 'KeyV' && _tabHeld) {
+        e.preventDefault();
+        if (!_chatInputActive) openChatInput();
+        if (_chatShell.mode !== 'PM') _chatSetMode('PM', null);
+        else _chatSetPmView('inbox');
+        var _gvInput = document.getElementById('chatInput');
+        if (_gvInput) { _gvInput.value = '@'; _gvInput.focus(); }
+        _chatBrowseMode = false;
+        _chatUpdatePmSuggestions('');
+        return;
+    }
+
     if (e.code === 'KeyC') {
         e.preventDefault();
         if (_chatBrowseMode) {
@@ -13822,6 +13835,17 @@ setInterval(saveGame, 10000);
         if (e.code === 'KeyC' && _tabHeld) {
             e.preventDefault();
             _chatBlurInput();
+            return;
+        }
+
+        // ── TAB+V → jump to PM inbox and open fuzzy @search ─────────────────
+        if (e.code === 'KeyV' && _tabHeld) {
+            e.preventDefault();
+            if (_chatShell.mode !== 'PM') _chatSetMode('PM', null);
+            else _chatSetPmView('inbox');
+            var _tvInput = document.getElementById('chatInput');
+            if (_tvInput) { _tvInput.value = '@'; _tvInput.focus(); }
+            _chatUpdatePmSuggestions('');
             return;
         }
 
