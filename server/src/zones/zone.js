@@ -173,7 +173,12 @@ class Zone {
       entity.vpy = null;
       entity.vf = null;
     }
-    entity.atk = (atk === 'WINDUP' || atk === 'ACTIVE' || atk === 'RECOVERY') ? atk : 'IDLE';
+    // Only update atk when explicitly provided — undefined means a regular pos_sync
+    // that should NOT clear an in-flight attack state set by sendAtkSync.
+    const prevAtk = entity.atk || 'IDLE';
+    if (atk !== undefined && atk !== null) {
+      entity.atk = (atk === 'WINDUP' || atk === 'ACTIVE' || atk === 'RECOVERY') ? atk : 'IDLE';
+    }
     entity.ps = ps ? 1 : 0;
 
     const newTileX = Math.floor(px / TILE_PX);
@@ -193,8 +198,13 @@ class Zone {
     const dyB = Math.abs(py - entity._lastBcastPy);
     const facingChanged = entity.facing !== entity._lastBcastFacing;
     const keepalive = (Date.now() - (entity._lastBcastTime || 0)) >= 2000;
+    // Broadcast immediately on attack start (IDLE→WINDUP) so remotes see the
+    // weapon animation right away, AND on attack end (any→IDLE) so the animation
+    // stops instead of looping on the remote side.
+    const atkJustStarted = (entity.atk === 'WINDUP' && prevAtk === 'IDLE');
+    const atkJustEnded   = (entity.atk === 'IDLE'   && prevAtk !== 'IDLE');
 
-    if (dxB >= POS_DIRTY_THRESHOLD_PX || dyB >= POS_DIRTY_THRESHOLD_PX || facingChanged || keepalive) {
+    if (dxB >= POS_DIRTY_THRESHOLD_PX || dyB >= POS_DIRTY_THRESHOLD_PX || facingChanged || atkJustStarted || atkJustEnded || keepalive) {
       this._posDirty.set(entityId, entity);
     }
 

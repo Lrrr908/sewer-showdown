@@ -26,6 +26,7 @@ var MP = (function () {
     var authenticated = false;
     var token = localStorage.getItem('ss_token') || null;
     var userId = null;
+    var playerEmail = localStorage.getItem('ss_player_email') || null;
     var displayName = null;
     var isGuest = false;
     var entityId = null;
@@ -382,6 +383,23 @@ var MP = (function () {
         ws.send(JSON.stringify(msg));
     }
 
+    // Bypasses the rate-limit — call this when an attack starts so remotes see it immediately.
+    function sendLevelPosNow(instanceId, px, py, facing, atkPhase, tid, roomId) {
+        if (!ws || ws.readyState !== 1 || !authenticated) return;
+        _lastLevelPosSend = Date.now();
+        var msg = {
+            t: 'level_pos',
+            instanceId: instanceId,
+            px: Math.round(px),
+            py: Math.round(py),
+            facing: facing || 's',
+            atkPhase: atkPhase || 'IDLE',
+            tid: tid || 'leo'
+        };
+        if (roomId !== undefined && roomId !== null) msg.roomId = roomId;
+        ws.send(JSON.stringify(msg));
+    }
+
     function sendLevelSync(instanceId, kills, itemId, hits) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
         var payload = { t: 'level_sync', instanceId: instanceId, kills: kills || [] };
@@ -648,6 +666,9 @@ var MP = (function () {
         setToken(data.token);
         displayName = data.user.displayName;
         if (data.user.allowedVehicles) _allowedVehicles = data.user.allowedVehicles;
+        // Store email for character unlock checks
+        playerEmail = email.toLowerCase();
+        localStorage.setItem('ss_player_email', playerEmail);
         return data;
     }
 
@@ -659,6 +680,8 @@ var MP = (function () {
             }).catch(function () {});
         }
         setToken(null);
+        playerEmail = null;
+        localStorage.removeItem('ss_player_email');
         disconnect();
     }
 
@@ -1474,6 +1497,7 @@ var MP = (function () {
         sendJoinLevel: sendJoinLevel,
         sendLeaveLevel: sendLeaveLevel,
         sendLevelPos: sendLevelPos,
+        sendLevelPosNow: sendLevelPosNow,
         sendLevelSync: sendLevelSync,
         drainLevelJoins: drainLevelJoins,
         drainLevelLeaves: drainLevelLeaves,
@@ -1539,6 +1563,7 @@ var MP = (function () {
         getUgcCache: function () { return ugcCache; },
 
         get userId() { return userId; },
+        get email() { return playerEmail; },
         get displayName() { return displayName; },
         get isGuest() { return isGuest; },
         get entityId() { return entityId; },

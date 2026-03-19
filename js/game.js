@@ -3271,7 +3271,38 @@ var NES = (function () {
     // ── Turtle sprite rendering with color swap ──
     var _turtleSpriteCache = {};
 
+    // ── Epoxi frame table — 4-frame walk cycle: neutral → lf → neutral → rf ──
+    // This ensures both feet alternate symmetrically instead of one foot dominating.
+    var EPOXI_FRAMES = {
+        down:  ['epoxNFront',  'epoxLFFront', 'epoxNFront',  'epoxLRFront'],
+        up:    ['epoxNBack',   'epoxLFBack',  'epoxNBack',   'epoxRFBack' ],
+        right: ['epoxNSide',   'epoxLFSide',  'epoxNSide',   'epoxRFSide' ],
+        left:  ['epoxNSide',   'epoxLFSide',  'epoxNSide',   'epoxRFSide' ]
+    };
+
     function drawTurtleSprite(ctx, px, py, direction, frame, turtleId, scale) {
+        // ── Epoxi: PNG-based sprite ──
+        if (turtleId === 'epoxi') {
+            var _eDir = direction || 'down';
+            var _eFrames = EPOXI_FRAMES[_eDir] || EPOXI_FRAMES.down;
+            var _eIdx = frame % _eFrames.length;
+            var _eSprKey = _eFrames[_eIdx];
+            var _eSpr = game.sprites[_eSprKey] || game.sprites['epoxNFront'];
+            if (!_eSpr) return;
+            var _ePx = Math.round(scale * 16); // same footprint as turtle (16px base)
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            if (_eDir === 'left') {
+                ctx.translate(px + _ePx, py);
+                ctx.scale(-1, 1);
+                ctx.drawImage(_eSpr, 0, 0, _ePx, _ePx);
+            } else {
+                ctx.drawImage(_eSpr, px, py, _ePx, _ePx);
+            }
+            ctx.restore();
+            return;
+        }
+
         var maskKey = TURTLE_COLORS[turtleId] || 'B';
         var frames = TURTLE_FRAMES[direction] || TURTLE_FRAMES.down;
         var patKey = frames[frame % frames.length];
@@ -4865,6 +4896,16 @@ const SPRITE_MANIFEST = {
     barfFront:         'img/barffront.png',
     barfBack:          'img/barfback.png',
     barfSide:          'img/barfside.png',
+    // Epoxi character sprites (exclusive to privileged accounts)
+    epoxNFront:        'img/epox/epoxnfront.png',
+    epoxNBack:         'img/epox/epoxnback.png',
+    epoxNSide:         'img/epox/epoxnside.png',
+    epoxLFFront:       'img/epox/epoxlffront.png',
+    epoxLFBack:        'img/epox/epoxlfback.png',
+    epoxLFSide:        'img/epox/epoxlfside.png',
+    epoxLRFront:       'img/epox/epoxlrfront.png',
+    epoxRFBack:        'img/epox/epoxrfback.png',
+    epoxRFSide:        'img/epox/epoxrfside.png',
     // Reference sheets
     area1:             'sprites/area1.png',
     turtles:           'sprites/turtles.png',
@@ -6218,10 +6259,13 @@ function _processRemoteAtks() {
             var _dirToFacing = { right: 'e', left: 'w', up: 'n', down: 's' };
             _rpMatch.facing = _dirToFacing[_atk.dir] || _rpMatch.facing;
         }
-        // Trigger animation (overwrite any stale phase so the new attack is always visible)
-        _aSt.atkPhase = 'WINDUP';
-        _aSt.atkTimer = ATK_WINDUP;
-        _aSt.atkFrame = 0;
+        // Only trigger if idle — pos_batch (sendAtkSync) may have already started
+        // the animation; restarting mid-swing causes a visible double-hit.
+        if (_aSt.atkPhase === 'IDLE') {
+            _aSt.atkPhase = 'WINDUP';
+            _aSt.atkTimer = ATK_WINDUP;
+            _aSt.atkFrame = 0;
+        }
     }
 }
 
@@ -6306,6 +6350,25 @@ function _smoothRemotePos(_rp) {
         st.atkPhase = incomingAtk;
         st.atkTimer = incomingAtk === 'WINDUP' ? ATK_WINDUP : incomingAtk === 'ACTIVE' ? ATK_ACTIVE : ATK_RECOVERY;
         st.atkFrame = 0;
+        // Spawn epoxi blob for this remote player's attack
+        if (_rp.tid === 'epoxi') {
+            var _rDir = _rp.facing || 's';
+            var _rDirMap = { e: [1,0], w: [-1,0], n: [0,-1], s: [0,1] };
+            var _rDv = _rDirMap[_rDir] || [1, 0];
+            var _rBlob = { x: _rp.px, y: _rp.py,
+                           vx: _rDv[0], vy: _rDv[1],
+                           life: 0.7, wobble: 0 };
+            if (game.mode === 'LEVEL' && game.level) {
+                var _rlts2 = game.level.tileSize || 32;
+                _rBlob.vx *= _rlts2 * 5; _rBlob.vy *= _rlts2 * 5;
+                if (!game.level.epoxiBlobs) game.level.epoxiBlobs = [];
+                game.level.epoxiBlobs.push(_rBlob);
+            } else {
+                _rBlob.vx *= TILE_SIZE * 5; _rBlob.vy *= TILE_SIZE * 5;
+                if (!game.owEpoxiBlobs) game.owEpoxiBlobs = [];
+                game.owEpoxiBlobs.push(_rBlob);
+            }
+        }
     } else if (incomingAtk !== 'IDLE' && (_atkOrder[incomingAtk] || 0) > (_atkOrder[st.atkPhase] || 0)) {
         // Snap forward if server says we're further ahead
         st.atkPhase = incomingAtk;
@@ -7292,6 +7355,11 @@ function requestAttack() {
         if (lp.atkPhase === 'IDLE' && lp.atkCooldown <= 0) {
             lp.atkPhase = 'WINDUP';
             lp.atkTimer = ATK_WINDUP;
+            // Immediately broadcast attack start to remote players (bypasses 100ms rate limit)
+            if (typeof MP !== 'undefined' && MP.isConnected() && game.level._instanceId) {
+                var _lvlAtkF = lp.direction === 'left' ? 'w' : lp.direction === 'right' ? 'e' : lp.direction === 'up' ? 'n' : 's';
+                MP.sendLevelPosNow(game.level._instanceId, lp.x, lp.y, _lvlAtkF, 'WINDUP', lp.turtleId || 'leo', game.level.currentRoomId);
+            }
         }
         return;
     }
@@ -8033,6 +8101,20 @@ function update(dt) {
                 if (t.atkPhase === 'WINDUP') {
                     t.atkPhase = 'ACTIVE';
                     t.atkTimer = ATK_ACTIVE;
+                    // Epoxi fires an overworld blob on WINDUP→ACTIVE
+                    if (game.activeTurtle === 'epoxi') {
+                        var _owEDir = t.direction || 'right';
+                        var _owEVx = _owEDir === 'right' ? 1 : _owEDir === 'left' ? -1 : 0;
+                        var _owEVy = _owEDir === 'down'  ? 1 : _owEDir === 'up'   ? -1 : 0;
+                        if (_owEVx === 0 && _owEVy === 0) _owEVx = 1;
+                        var _owESpd = TILE_SIZE * 5;
+                        if (!game.owEpoxiBlobs) game.owEpoxiBlobs = [];
+                        game.owEpoxiBlobs.push({
+                            x: t.x + t.width / 2, y: t.y + t.height / 2,
+                            vx: _owEVx * _owESpd, vy: _owEVy * _owESpd,
+                            life: 0.7, wobble: 0
+                        });
+                    }
                 } else if (t.atkPhase === 'ACTIVE') {
                     t.atkPhase = 'RECOVERY';
                     t.atkTimer = ATK_RECOVERY;
@@ -11465,6 +11547,32 @@ function updateRegionEnemies(dt) {
         if (e.animTimer >= 0.18) { e.animTimer -= 0.18; e.frame = (e.frame + 1) % 2; }
     }
 
+    // ── Epoxi overworld blob update ──────────────────────────────
+    if (game.owEpoxiBlobs && game.owEpoxiBlobs.length > 0) {
+        for (var _owi = game.owEpoxiBlobs.length - 1; _owi >= 0; _owi--) {
+            var _owb = game.owEpoxiBlobs[_owi];
+            _owb.x += _owb.vx * dt;
+            _owb.y += _owb.vy * dt;
+            _owb.life -= dt;
+            _owb.wobble = (_owb.wobble || 0) + dt * 12;
+            if (_owb.life <= 0) { game.owEpoxiBlobs.splice(_owi, 1); continue; }
+            // Hit overworld enemies
+            for (var _owj = 0; _owj < game.regionEnemies.length; _owj++) {
+                var _owe = game.regionEnemies[_owj];
+                if (_owe.state === 'dead' || _owe.state === 'dying') continue;
+                var _owew = _owe.type === 'car' ? REGION_ENEMY_CAR_W : REGION_ENEMY_WALK_W;
+                var _oweh = _owe.type === 'car' ? REGION_ENEMY_CAR_H : REGION_ENEMY_WALK_H;
+                var _owecx = _owe.x + _owew / 2, _owecy = _owe.y + _oweh / 2;
+                if (Math.abs(_owb.x - _owecx) < _owew * 0.6 && Math.abs(_owb.y - _owecy) < _oweh * 0.6) {
+                    _owe.hp -= OW_TURTLE_ATK_DMG;
+                    game.owHitSparks.push({ x: _owb.x, y: _owb.y, life: 0.15, maxLife: 0.15 });
+                    game.owEpoxiBlobs.splice(_owi, 1);
+                    break;
+                }
+            }
+        }
+    }
+
     // Tick hit sparks, screen shake, combo, and point popups
     for (var _si = game.owHitSparks.length - 1; _si >= 0; _si--) {
         game.owHitSparks[_si].life -= dt;
@@ -12470,6 +12578,44 @@ function draw() {
             }
         }
 
+        // ── Epoxi overworld blob projectiles ────────────────────────
+        if (game.owEpoxiBlobs && game.owEpoxiBlobs.length > 0) {
+            ctx.save();
+            for (var _owr = 0; _owr < game.owEpoxiBlobs.length; _owr++) {
+                var _owbl = game.owEpoxiBlobs[_owr];
+                var _owsx = _owbl.x - game.camera.x, _owsy = _owbl.y - game.camera.y;
+                var _owR  = TILE_SIZE * 0.18;
+                var _owWob = _owbl.wobble || 0;
+                var _owFade = Math.min(1, _owbl.life / 0.15);
+                // Trailing drips
+                var _owSpd = Math.hypot(_owbl.vx, _owbl.vy);
+                if (_owSpd > 0) {
+                    var _owNx = -_owbl.vx / _owSpd, _owNy = -_owbl.vy / _owSpd;
+                    for (var _owt = 1; _owt <= 2; _owt++) {
+                        ctx.globalAlpha = (0.35 - _owt * 0.1) * _owFade;
+                        ctx.fillStyle = '#44cc11';
+                        ctx.beginPath();
+                        ctx.ellipse(_owsx + _owNx * _owt * 7, _owsy + _owNy * _owt * 7,
+                                    _owR * 0.48, _owR * 0.38, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                var _owW = _owR * (1 + Math.sin(_owWob) * 0.2);
+                var _owH = _owR * (1 - Math.sin(_owWob) * 0.15);
+                ctx.globalAlpha = _owFade;
+                ctx.fillStyle = '#55ee22';
+                ctx.beginPath();
+                ctx.ellipse(_owsx, _owsy, _owW, _owH, _owWob * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 0.6 * _owFade;
+                ctx.fillStyle = '#bbff66';
+                ctx.beginPath();
+                ctx.ellipse(_owsx - _owW * 0.2, _owsy - _owH * 0.25, _owW * 0.3, _owH * 0.22, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
         // Projectiles (drawn on top of everything)
         if (game.vanProjectiles && game.vanProjectiles.length > 0) {
             for (var _vpi = 0; _vpi < game.vanProjectiles.length; _vpi++) {
@@ -12659,14 +12805,16 @@ function draw() {
         ctx.fillText('ITEMS: ' + itemCount + '/10', _hudX + 4, _curY + 10);
         _curY += 16;
 
-        // Turtle team panel
+        // Turtle team panel (dynamic — works for 4 or 5 members)
         var _turtlePanelY = _curY;
+        var _tNames = game.party.turtles;
+        var _tSlot = 27; // px per slot
+        var _tPanelW = _tNames.length * _tSlot + 8;
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(_hudX, _turtlePanelY, 112, 36);
-        var tNames = ['leo', 'raph', 'donnie', 'mikey'];
-        for (var ti = 0; ti < 4; ti++) {
-            var tx = _hudX + 4 + ti * 27;
-            var turtleId = tNames[ti];
+        ctx.fillRect(_hudX, _turtlePanelY, _tPanelW, 36);
+        for (var ti = 0; ti < _tNames.length; ti++) {
+            var tx = _hudX + 4 + ti * _tSlot;
+            var turtleId = _tNames[ti];
             var isActive = (game.activeTurtle === turtleId);
             var isDead = (game.party.status[turtleId] === 'dead');
             var turtleHp = game.party.hp[turtleId] || 0;
@@ -13070,9 +13218,9 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Turtle selection: 1=Leo, 2=Raph, 3=Donnie, 4=Mikey (works in overworld AND levels)
-    var turtleKeys = { 'Digit1': 'leo', 'Digit2': 'raph', 'Digit3': 'donnie', 'Digit4': 'mikey' };
-    if (turtleKeys[e.code]) {
+    // Turtle selection: 1=Leo, 2=Raph, 3=Donnie, 4=Mikey, 5=Epoxi (works in overworld AND levels)
+    var turtleKeys = { 'Digit1': 'leo', 'Digit2': 'raph', 'Digit3': 'donnie', 'Digit4': 'mikey', 'Digit5': 'epoxi' };
+    if (turtleKeys[e.code] && (turtleKeys[e.code] !== 'epoxi' || _hasEpoxiAccess())) {
         var requestedTurtle = turtleKeys[e.code];
         if (game.mode === 'LEVEL' && game.level) {
             // Level mode: switch level player turtle if available and not knocked out
@@ -14453,8 +14601,8 @@ function _loadDungeonRoom(L, room) {
         var isRanged = e.type === 'foot_ranged';
         var isShield = e.type === 'foot_shield';
         var isRunner = e.type === 'foot_runner';
-        var isBoss   = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf';
-        var _bossSize = e.type === 'boss_puff' ? lts * 4 : lts * 3;
+        var isBoss   = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf' || e.type === 'boss_epox';
+        var _bossSize = e.type === 'boss_puff' ? lts * 4 : e.type === 'boss_epox' ? lts * 1.0 : lts * 3;
         return {
             id:              'e_r' + room.id + '_' + idx,
             type:            e.type,
@@ -14496,7 +14644,18 @@ function _loadDungeonRoom(L, room) {
             hopVy:     e.type === 'boss_barf' ? 0    : undefined,
             hopVx:     e.type === 'boss_barf' ? 0    : undefined,
             hopVz:     e.type === 'boss_barf' ? 0    : undefined,
-            slimeTimer: e.type === 'boss_barf' ? 3.0 : undefined
+            slimeTimer: e.type === 'boss_barf' ? 3.0 : undefined,
+            // boss_epox-specific movement/attack fields
+            epState:   e.type === 'boss_epox' ? 'CHASE' : undefined,
+            epTimer:   e.type === 'boss_epox' ? 0 : undefined,
+            epFireCount: e.type === 'boss_epox' ? 0 : undefined,
+            epFireTimer: e.type === 'boss_epox' ? 0 : undefined,
+            hopState:  e.type === 'boss_epox' ? 'GROUND' : undefined,
+            hopOffset: e.type === 'boss_epox' ? 0 : undefined,
+            hopVy:     e.type === 'boss_epox' ? 0 : undefined,
+            hopVx:     e.type === 'boss_epox' ? 0 : undefined,
+            hopVz:     e.type === 'boss_epox' ? 0 : undefined,
+            hopTimer:  e.type === 'boss_epox' ? 0.8 : undefined
         };
     });
 
@@ -14520,6 +14679,68 @@ function _loadDungeonRoom(L, room) {
     L.camera.x = 0;
     L.camera.y = 0;
     L.projectiles = [];
+    L.epoxiBlobs = [];
+}
+
+// ── Inject the persistent Technodrome Epox boss into the current room ──
+function _injectTechnodromePersistBoss(L) {
+    var pb = L.dungeonPersistBoss;
+    if (!pb || !pb.active || pb.state !== 'READY') return;
+    var rid = L.currentRoomId;
+    if (rid === 0) return; // never in the entry room
+
+    var isFinalRoom = (rid === (pb.finalRoomId !== undefined ? pb.finalRoomId : 7));
+
+    // Random appearance: always show in the final boss room; 65% chance elsewhere
+    if (!isFinalRoom && Math.random() > 0.65) return;
+
+    var lts  = L.tileSize || 32;
+    var RW   = L.dungeon.roomW, RH = L.dungeon.roomH;
+    var midX = Math.floor(RW / 2) * lts;
+    var midY = Math.floor(RH / 2) * lts;
+    var sz   = lts * 1.0;
+
+    pb.state      = 'IN_ROOM';
+    pb.stayTimer  = isFinalRoom ? 99999 : (12 + Math.random() * 8); // auto-flee after 12-20 s
+
+    L.enemies.push({
+        id:              'persist_epox_' + Date.now(),
+        type:            'boss_epox',
+        ranged: false, shield: false, runner: false, boss: true,
+        x:               midX - sz / 2,
+        y:               lts * 2,
+        w: sz, h: sz,
+        hp:              pb.hp,
+        maxHp:           pb.maxHp,
+        alive:           true,
+        patrolLeft:      lts * 2,
+        patrolRight:     (RW - 2) * lts,
+        patrolCx:        midX,
+        patrolCy:        midY,
+        facingDir:       1,
+        animTimer:       0,
+        state:           'BOSS_PHASE1',
+        stateTimer:      0,
+        stunTimer:       0,
+        kbVx: 0, kbVy: 0, kbTimer: 0,
+        chaseRadius:     lts * 20,
+        attackRadius:    lts * 6,
+        attackCooldown:  0,
+        shieldUp:        false,
+        bossPhase:       pb.bossPhase || 1,
+        bossSpawnTimer:  999999,
+        bossFireTimer:   1.5,
+        weakPointVisible: false,
+        weakPointTimer:  0,
+        bossDir:         'front',
+        epState:   'CHASE', epTimer: 0, epFireCount: 0, epFireTimer: 0,
+        hopState:  'GROUND', hopOffset: 0, hopVy: 0, hopVx: 0, hopVz: 0, hopTimer: 1.0,
+        _isTechnodromePersist: true,
+        _fleeing: false
+    });
+
+    // Subtle entrance — just a quick screen shake, no text popup
+    L.screenShake = 3;
 }
 
 // ── Finish a room transition ────────────────────────────────────
@@ -14536,6 +14757,11 @@ function _finishRoomTransition(L) {
     L.currentRoomId = tr.toRoomId;
     _loadDungeonRoom(L, toRoom);
     if (typeof MP !== 'undefined' && MP.setChatRoomId) MP.setChatRoomId(tr.toRoomId);
+
+    // Inject the Technodrome's persistent Epox hunter if ready
+    if (L.dungeon && L.dungeon.theme === 'dimension_x') {
+        _injectTechnodromePersistBoss(L);
+    }
 
     // Place player at the opposite door entrance
     var p = L.player;
@@ -14739,6 +14965,26 @@ async function startEnterLevelFromContext(ctx) {
             console.log('[bootlegtoyco] Barf boss injected into room ' + levelData.itemRoomId);
         }
 
+        // Epoxy Crusader: replace boss room enemies with boss_epox
+        if (artistId === 'epoxy_crusader' && levelData.rooms && levelData.itemRoomId != null) {
+            var _epRoom = levelData.rooms[levelData.itemRoomId];
+            var _epMX   = Math.floor(levelData.roomW / 2);
+            var _epMY   = Math.floor(levelData.roomH / 2);
+            _epRoom.enemies = [
+                { type: 'boss_epox', x: _epMX, y: _epMY - 1, hp: 20,
+                  patrol: { left: 2, right: levelData.roomW - 3 } }
+            ];
+            _epRoom.itemSpawn = null;
+            var _eptm = _epRoom.tilemap;
+            var _epRW = levelData.roomW, _epRH = levelData.roomH;
+            for (var _epbr = 2; _epbr < _epRH - 2; _epbr++) {
+                for (var _epbc = 2; _epbc < _epRW - 2; _epbc++) {
+                    if (_eptm[_epbr][_epbc] === 3) _eptm[_epbr][_epbc] = 4;
+                }
+            }
+            console.log('[epoxy_crusader] Epox boss injected into room ' + levelData.itemRoomId);
+        }
+
         await startEnterLevelWithData(levelData);
     }
 }
@@ -14849,8 +15095,8 @@ async function startEnterLevelWithData(levelData) {
             var isRanged = e.type === 'foot_ranged';
             var isShield = e.type === 'foot_shield';
             var isRunner = e.type === 'foot_runner';
-            var isBoss = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf';
-            var _bossSize = e.type === 'boss_puff' ? lts * 4 : lts * 3;
+            var isBoss = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf' || e.type === 'boss_epox';
+            var _bossSize = e.type === 'boss_puff' ? lts * 4 : e.type === 'boss_epox' ? lts * 1.0 : lts * 3;
             return {
                 id: 'enemy_' + idx,
                 type: e.type,
@@ -14893,7 +15139,18 @@ async function startEnterLevelWithData(levelData) {
                 hopVy:     e.type === 'boss_barf' ? 0 : undefined,
                 hopVx:     e.type === 'boss_barf' ? 0 : undefined,
                 hopVz:     e.type === 'boss_barf' ? 0 : undefined,
-                slimeTimer: e.type === 'boss_barf' ? 3.0 : undefined
+                slimeTimer: e.type === 'boss_barf' ? 3.0 : undefined,
+                // boss_epox-specific fields
+                epState:   e.type === 'boss_epox' ? 'CHASE' : undefined,
+                epTimer:   e.type === 'boss_epox' ? 0 : undefined,
+                epFireCount: e.type === 'boss_epox' ? 0 : undefined,
+                epFireTimer: e.type === 'boss_epox' ? 0 : undefined,
+                hopState:  e.type === 'boss_epox' ? 'GROUND' : undefined,
+                hopOffset: e.type === 'boss_epox' ? 0 : undefined,
+                hopVy:     e.type === 'boss_epox' ? 0 : undefined,
+                hopVx:     e.type === 'boss_epox' ? 0 : undefined,
+                hopVz:     e.type === 'boss_epox' ? 0 : undefined,
+                hopTimer:  e.type === 'boss_epox' ? 0.8 : undefined
             };
         }),
         projectiles: [],
@@ -14960,6 +15217,22 @@ async function startEnterLevelWithData(levelData) {
         _buildSewerArtSlots(game.level);
     }
 
+    // Technodrome: init the persistent Epox that hunts the player through every room
+    if (levelData.theme === 'dimension_x') {
+        game.level.dungeonPersistBoss = {
+            active:       true,
+            hp:           12,
+            maxHp:        12,
+            bossPhase:    1,
+            fleeHp:       3,        // flee when HP drops to this value
+            state:        'READY',  // READY | IN_ROOM | HIDDEN | DEAD
+            hideTimer:    0,
+            hideDuration: 10,       // seconds before he can re-appear in a new room
+            stayTimer:    0,        // counts down; forces flee when expired
+            finalRoomId:  7         // room 7 = Puff's room; Epox can't flee there
+        };
+    }
+
     game.mode = 'LEVEL';
     game.levelState = 'PLAYING';
     game.state = 'OVERWORLD';
@@ -14988,7 +15261,7 @@ async function startEnterLevelWithData(levelData) {
 // SCORING SYSTEM (Phase 2)
 // ============================================
 
-var SCORE_KILL = { foot: 100, foot_ranged: 150, foot_shield: 200, foot_runner: 120, boss_technodrome: 10000, boss_puff: 8000, boss_barf: 8000 };
+var SCORE_KILL = { foot: 100, foot_ranged: 150, foot_shield: 200, foot_runner: 120, boss_technodrome: 10000, boss_puff: 8000, boss_barf: 8000, boss_epox: 8000 };
 var SCORE_LEVEL_CLEAR = 500;
 var SCORE_SPECIAL_ITEM = 1000;
 var SCORE_SPEED_BONUS_PER_SEC = 50;
@@ -15296,6 +15569,32 @@ var PROJ_SPEED = 4.0;     // tiles/sec
 var PROJ_KB = 6;          // knockback pixels
 var PROJ_RADIUS = 3;      // draw radius
 
+// Shared defeat logic for boss_epox — called from melee, blob, and any other hit path.
+function _epoxDefeat(e, ecx, ecy, lts, L) {
+    addKillScore('boss_epox', ecx, ecy);
+    addLevelScore(SCORE_KILL['boss_epox'] || 8000, 'EPOX DEFEATED');
+    game.progress.score += SCORE_KILL['boss_epox'] || 8000;
+    saveGame();
+    var _pbItem = null;
+    for (var _pi = 0; _pi < SPECIAL_ITEMS.length; _pi++) {
+        if (SPECIAL_ITEMS[_pi].id === 'pizza_box') { _pbItem = SPECIAL_ITEMS[_pi]; break; }
+    }
+    if (_pbItem) {
+        L.specialItem = _pbItem;
+        L.specialItemCollected = game.progress.collectedItems['pizza_box'] ? true : false;
+        L.specialItemPos = { x: ecx - lts * 0.4, y: ecy - lts * 0.4, w: lts * 0.8, h: lts * 0.8 };
+        if (!L.specialItemCollected) {
+            L.pointPopups.push({ text: 'PIZZA BOX!', x: ecx, y: ecy - lts, life: 2.5, color: '#ff8800' });
+        }
+    }
+    // Victory door opens via the all-enemies-dead check (same as Puff/dungeon bosses).
+    // Do NOT set L.bossDefeated here — that path freezes the level and double-fires exitLevel.
+    L.screenShake = 14;
+    // Clear lingering slime so the player isn't killed on the walk to the exit.
+    L.slimeProjectiles = [];
+    if (L.player) { L.player.slimed = 0; L.player.slimedDoTTimer = 0; }
+}
+
 function updateLevel(dt) {
     var L = game.level;
     if (!L) return;
@@ -15316,6 +15615,25 @@ function updateLevel(dt) {
     }
 
     if (L.complete || L.failed) return;
+
+    // ── Technodrome persistent Epox: hide-timer countdown ───────
+    if (L.dungeonPersistBoss && L.dungeonPersistBoss.active) {
+        var _pbd = L.dungeonPersistBoss;
+        if (_pbd.state === 'HIDDEN') {
+            _pbd.hideTimer -= dt;
+            if (_pbd.hideTimer <= 0) {
+                _pbd.state     = 'READY';
+                _pbd.stayTimer = 0; // will be set fresh on next injection
+            }
+        }
+        // If IN_ROOM but no live persistent Epox found, he was killed permanently
+        if (_pbd.state === 'IN_ROOM') {
+            var _hasLiveEpox = L.enemies.some(function(_en) {
+                return _en.alive && _en._isTechnodromePersist;
+            });
+            if (!_hasLiveEpox) { _pbd.active = false; }
+        }
+    }
 
     // ── Dungeon room-message timer ──────────────────────────────
     if (L.dungeon && L.dungeonMsgTimer > 0) {
@@ -15507,6 +15825,22 @@ function updateLevel(dt) {
                 p.atkPhase = 'ACTIVE';
                 p.atkTimer = ATK_ACTIVE;
                 p.atkHitIds = new Set();
+                // Epoxi fires a blob projectile instead of melee
+                if (p.turtleId === 'epoxi') {
+                    var _ebDir = p.direction || 'right';
+                    var _ebVx = _ebDir === 'right' ? 1 : _ebDir === 'left' ? -1 : 0;
+                    var _ebVy = _ebDir === 'down'  ? 1 : _ebDir === 'up'   ? -1 : 0;
+                    if (_ebVx === 0 && _ebVy === 0) { _ebVx = p.facingDir || 1; }
+                    var _ebSpd = lts * 5; // ~5 tiles/sec — feels weighty, not too fast
+                    if (!L.epoxiBlobs) L.epoxiBlobs = [];
+                    L.epoxiBlobs.push({
+                        x: pcx, y: pcy,
+                        vx: _ebVx * _ebSpd, vy: _ebVy * _ebSpd,
+                        life: 0.7, // travels ~3.5 tiles before fading
+                        wobble: 0,
+                        id: 'eb_' + Date.now()
+                    });
+                }
                 // If holding a toy, throw it toward the boss
                 if ((p.heldToys || 0) > 0) {
                     p.heldToys--;
@@ -15917,6 +16251,254 @@ function updateLevel(dt) {
             continue; // barf done — skip all Puff/Technodrome code
         }
 
+        // ── boss_epox AI ──────────────────────────────────────────────
+        if (e.type === 'boss_epox') {
+            // Safety init
+            if (!e.epState)    { e.epState = 'CHASE'; e.epTimer = 0; e.epFireCount = 0; e.epFireTimer = 0; }
+            if (!e.hopState)   { e.hopState = 'GROUND'; e.hopOffset = 0; e.hopVy = 0; e.hopVx = 0; e.hopVz = 0; e.hopTimer = 0.8; }
+
+            // ── Technodrome persistent-boss: stay timer, flee & HP sync ──
+            if (e._isTechnodromePersist && L.dungeonPersistBoss) {
+                var _pb = L.dungeonPersistBoss;
+
+                // Sync live HP back so it survives room transitions
+                _pb.hp        = e.hp;
+                _pb.bossPhase = e.bossPhase;
+
+                var _finalRoom = _pb.finalRoomId !== undefined ? _pb.finalRoomId : 7;
+                var _canFlee   = L.currentRoomId !== _finalRoom;
+
+                // Count down how long he's allowed to stay; flee when time's up OR near death
+                if (_canFlee && !e._fleeing) {
+                    if (_pb.stayTimer > 0) { _pb.stayTimer -= dt; }
+                    if (_pb.stayTimer <= 0 || e.hp <= (_pb.fleeHp || 3)) {
+                        e._fleeing = true;
+                        L.screenShake = 3;
+                    }
+                }
+
+                // Flee movement — sprint toward north wall and vanish
+                if (e._fleeing) {
+                    var _flSpd = lts * 10;
+                    var _flMoved = false;
+                    var _flNy = e.y - _flSpd * dt;
+                    if (!levelTileCollision(L, e.x, _flNy, e.w, e.h)) {
+                        e.y = _flNy; _flMoved = true;
+                    } else {
+                        var _flNx = e.x + (e.facingDir || 1) * _flSpd * dt;
+                        if (!levelTileCollision(L, _flNx, e.y, e.w, e.h)) {
+                            e.x = _flNx; _flMoved = true;
+                        }
+                    }
+                    e.bossDir  = 'back';
+                    e.animTimer += dt;
+
+                    var _atEdge = (e.y <= lts * 1.2) || (e.x <= lts * 1.2) ||
+                                  (e.x >= (L.dungeon.roomW - 2) * lts) ||
+                                  (e.y >= (L.dungeon.roomH - 2) * lts);
+                    if (_atEdge || !_flMoved) {
+                        e.alive = false;
+                        _pb.state     = 'HIDDEN';
+                        _pb.hideTimer = _pb.hideDuration || 10;
+                    }
+                    continue;
+                }
+            }
+            // ── End Technodrome persistent logic ─────────────────────
+
+            var _ephp = e.hp / e.maxHp;
+            if (_ephp <= 0.25 && e.bossPhase < 3) { e.bossPhase = 3; L.screenShake = 8; }
+            else if (_ephp <= 0.55 && e.bossPhase < 2) { e.bossPhase = 2; L.screenShake = 5; }
+
+            var _epSpd   = lts * (e.bossPhase >= 3 ? 3.2 : e.bossPhase >= 2 ? 2.4 : 1.8);
+            var _epFireR = lts * (e.bossPhase >= 3 ? 9 : 7);
+            var _epGrav  = lts * 18;
+            var _epLaunchV = lts * (e.bossPhase >= 3 ? 9.5 : e.bossPhase >= 2 ? 8.0 : 6.5);
+
+            var _epdx = pcx - ecx, _epdy = pcy - ecy;
+            var _epdist = Math.hypot(_epdx, _epdy) || 1;
+            e.facingDir = _epdx > 0 ? 1 : -1;
+            e.bossDir = Math.abs(_epdx) >= Math.abs(_epdy) ? 'side' : (_epdy > 0 ? 'front' : 'back');
+
+            // ── Helper: launch a hop ─────────────────────────────────
+            var _epStartHop = function(vx, vz) {
+                e.hopState  = 'AIR';
+                e.hopOffset = 0;
+                e.hopVy     = -_epLaunchV;
+                e.hopVx     = vx;
+                e.hopVz     = vz;
+            };
+
+            if (e.hopState === 'AIR') {
+                // Physics in the air
+                e.hopVy += _epGrav * dt;
+                e.hopOffset -= e.hopVy * dt;
+                var _epNx = e.x + e.hopVx * dt;
+                var _epNz = e.y + e.hopVz * dt;
+                if (!levelTileCollision(L, _epNx, e.y, e.w, e.h)) e.x = _epNx;
+                if (!levelTileCollision(L, e.x, _epNz, e.w, e.h)) e.y = _epNz;
+                if (e.hopOffset <= 0) {
+                    // Landed
+                    e.hopOffset = 0; e.hopState = 'GROUND';
+                    e.hopTimer  = e.bossPhase >= 3 ? 0.25 : e.bossPhase >= 2 ? 0.45 : 0.7;
+                    L.screenShake = e.bossPhase >= 3 ? 4 : 2;
+                    // Fire blobs on landing toward player
+                    if (!L.slimeProjectiles) L.slimeProjectiles = [];
+                    var _epLandBlobs = e._isTechnodromePersist ? 0 :
+                                       (e.bossPhase >= 3 ? 4 : e.bossPhase >= 2 ? 3 : 2);
+                    for (var _epli = 0; _epli < _epLandBlobs; _epli++) {
+                        var _epLA = Math.atan2(pcy - ecy, pcx - ecx) + (Math.random() - 0.5) * 0.8;
+                        var _epLS = lts * (2.5 + Math.random() * 1.5);
+                        L.slimeProjectiles.push({
+                            id: 'epl_' + Date.now() + '_' + _epli,
+                            x: ecx, y: ecy,
+                            vx: Math.cos(_epLA) * _epLS, vy: Math.sin(_epLA) * _epLS,
+                            life: 1.8 + Math.random() * 0.5,
+                            r: lts * (0.14 + Math.random() * 0.1),
+                            wobble: Math.random() * Math.PI * 2
+                        });
+                    }
+                }
+            } else {
+                // On the ground — regular CHASE / FIRE AI
+                e.hopTimer -= dt;
+
+                // Evasive hop if hit (_justHit set by melee detector below)
+                if (e._justHit) {
+                    e._justHit = false;
+                    // Hop perpendicular to player + slightly away
+                    var _perpX = -_epdy / _epdist, _perpZ = _epdx / _epdist;
+                    if (Math.random() < 0.5) { _perpX = -_perpX; _perpZ = -_perpZ; }
+                    var _evSpd = lts * (e.bossPhase >= 3 ? 3.0 : 2.2);
+                    _epStartHop(_perpX * _evSpd + (-_epdx / _epdist) * _evSpd * 0.4,
+                                _perpZ * _evSpd + (-_epdy / _epdist) * _evSpd * 0.4);
+                } else if (e.hopTimer <= 0) {
+                    // Autonomous hop toward player
+                    var _hSpd = e.bossPhase >= 3 ? 2.8 : e.bossPhase >= 2 ? 2.2 : 1.6;
+                    _epStartHop((_epdx / _epdist) * lts * _hSpd, (_epdy / _epdist) * lts * _hSpd);
+                    e.epState = 'CHASE'; // resume chase after hop
+                } else if (e.epState === 'CHASE') {
+                    // Walk toward player
+                    var _epCx = e.x + (_epdx / _epdist) * _epSpd * dt;
+                    var _epCy = e.y + (_epdy / _epdist) * _epSpd * dt;
+                    if (!levelTileCollision(L, _epCx, e.y, e.w, e.h)) e.x = _epCx;
+                    if (!levelTileCollision(L, e.x, _epCy, e.w, e.h)) e.y = _epCy;
+                    if (_epdist < _epFireR) {
+                        e.epState = 'FIRE';
+                        // Technodrome version fires fewer blobs so it stays fun, not overwhelming
+                        e.epFireCount = e._isTechnodromePersist ? 1 :
+                                        (e.bossPhase >= 3 ? 5 : e.bossPhase >= 2 ? 4 : 3);
+                        e.epFireTimer = 0;
+                    }
+                } else if (e.epState === 'FIRE') {
+                    e.epFireTimer -= dt;
+                    if (e.epFireTimer <= 0 && e.epFireCount > 0) {
+                        e.epFireTimer = e._isTechnodromePersist ? 0.5 :
+                                        (e.bossPhase >= 3 ? 0.15 : 0.22);
+                        e.epFireCount--;
+                        var _epfA = Math.atan2(pcy - ecy, pcx - ecx) + (Math.random() - 0.5) * 0.55;
+                        var _epfSpd = lts * (3.0 + Math.random() * 1.5);
+                        if (!L.slimeProjectiles) L.slimeProjectiles = [];
+                        L.slimeProjectiles.push({
+                            id: 'epfb_' + Date.now() + '_' + e.epFireCount,
+                            x: ecx + (Math.random() - 0.5) * e.w * 0.4,
+                            y: ecy + (Math.random() - 0.5) * e.h * 0.4,
+                            vx: Math.cos(_epfA) * _epfSpd, vy: Math.sin(_epfA) * _epfSpd,
+                            life: 1.8 + Math.random() * 0.6,
+                            r: lts * (0.14 + Math.random() * 0.1),
+                            wobble: Math.random() * Math.PI * 2,
+                            _weak: e._isTechnodromePersist ? true : false // weaker slime in Technodrome
+                        });
+                    }
+                    if (e.epFireCount <= 0) {
+                        // Jump away after firing
+                        var _feeSpd = lts * (e.bossPhase >= 3 ? 2.5 : 2.0);
+                        _epStartHop((-_epdx / _epdist) * _feeSpd, (-_epdy / _epdist) * _feeSpd);
+                        e.epState = 'CHASE';
+                    }
+                }
+            }
+
+            // Walker minion spawns (disabled in Technodrome — he hunts solo)
+            e.bossSpawnTimer -= dt;
+            if (e.bossSpawnTimer <= 0 && !e._isTechnodromePersist) {
+                var _epSpawnRate = e.bossPhase >= 3 ? 3.5 : e.bossPhase >= 2 ? 5.5 : 8.0;
+                e.bossSpawnTimer = _epSpawnRate;
+                var _epmx = e.x + (Math.random() - 0.5) * lts * 4;
+                var _epmy = e.y + e.h + lts;
+                if (!e._minionCount) e._minionCount = 0;
+                e._minionCount++;
+                if (!levelTileCollision(L, _epmx, _epmy, lts * 0.7, lts * 0.7)) {
+                    L.enemies.push({
+                        id: 'em_' + e.id + '_' + e._minionCount,
+                        type: 'foot', ranged: false, shield: false, runner: false, boss: false,
+                        x: _epmx, y: _epmy, w: lts * 0.7, h: lts * 0.7,
+                        hp: 1, maxHp: 1, alive: true,
+                        patrolLeft: _epmx - lts*4, patrolRight: _epmx + lts*4,
+                        patrolCx: _epmx, patrolCy: _epmy,
+                        facingDir: pcx > _epmx ? 1 : -1,
+                        animTimer: 0, state: 'CHASE', stateTimer: 0, stunTimer: 0,
+                        kbVx: 0, kbVy: 0, kbTimer: 0,
+                        chaseRadius: lts*10, attackRadius: lts*1.2, attackCooldown: 0,
+                        shieldUp: false, bossPhase: 0, bossSpawnTimer: 0, bossFireTimer: 0,
+                        weakPointVisible: false, weakPointTimer: 0
+                    });
+                }
+            }
+
+            // ── Body contact: boss_epox damages player on touch ─────
+            // (passive collision block is skipped by continue, so handle it here)
+            if (e.hopState !== 'AIR' && p.invTimer <= 0 &&
+                levelRectsOverlap(p.x, p.y, p.w, p.h, e.x, e.y, e.w, e.h)) {
+                p.hp -= 1; p.damageTaken++;
+                p.invTimer = 0.8;
+                var _epCDir = Math.atan2(pcy - ecy, pcx - ecx);
+                p.kbVx = Math.cos(_epCDir) * KB_PLAYER_DIST / KB_DURATION;
+                p.kbVy = Math.sin(_epCDir) * KB_PLAYER_DIST / KB_DURATION;
+                p.kbTimer = KB_DURATION;
+                if (p.hp <= 0 && !_levelSwitchOnDeath()) {
+                    L.failed = true; game.levelState = 'FAIL';
+                    setTimeout(exitLevel, 1500); return;
+                }
+            }
+
+            // ── Player melee + Epoxi-blob hit detection for boss_epox ──
+            // (Must live here because the continue below skips the shared hit block)
+            if (p.atkPhase === 'ACTIVE' && !p.atkHitIds.has(e.id)) {
+                var _epAR = lts * 1.4;
+                var _epADx = (p.direction === 'right') ? _epAR : (p.direction === 'left') ? -_epAR : 0;
+                var _epADy = (p.direction === 'up') ? -_epAR : (p.direction === 'down') ? _epAR : 0;
+                var _epAX = p.x + p.w / 2 + _epADx;
+                var _epAY = p.y + p.h / 2 + _epADy;
+                if (Math.abs(_epAX - ecx) < lts * 1.3 && Math.abs(_epAY - ecy) < lts * 1.3) {
+                    e.hp -= 1;
+                    p.atkHitIds.add(e.id);
+                    L.hitSparks.push({ x: (_epAX + ecx) / 2, y: (_epAY + ecy) / 2, life: 0.12 });
+                    // Trigger evasive jump on next AI tick
+                    e._justHit = true;
+                    if (e.hp <= 0) {
+                        e.alive = false;
+                        if (e._isTechnodromePersist) {
+                            // Permanently defeated — no pizza box, no bossDefeated
+                            if (L.dungeonPersistBoss) L.dungeonPersistBoss.active = false;
+                            addKillScore('boss_epox', ecx, ecy);
+                            addLevelScore(SCORE_KILL['boss_epox'] || 8000, 'EPOX DEFEATED!');
+                            game.progress.score += SCORE_KILL['boss_epox'] || 8000;
+                            saveGame();
+                            L.slimeProjectiles = [];
+                            if (L.player) { L.player.slimed = 0; L.player.slimedDoTTimer = 0; }
+                            L.pointPopups.push({ text: 'EPOX DOWN FOR GOOD!', x: ecx, y: ecy - lts * 1.5, life: 3.0, color: '#00ccff' });
+                            L.screenShake = 14;
+                        } else {
+                            _epoxDefeat(e, ecx, ecy, lts, L);
+                        }
+                    }
+                }
+            }
+
+            continue; // epox done
+        }
+
             var hpPercent = e.hp / e.maxHp;
             // Phase transitions
             if (hpPercent <= 0.25 && e.bossPhase < 3) {
@@ -16151,11 +16733,18 @@ function updateLevel(dt) {
                     }
                     // Boss defeat check
                     if (e.boss) {
-                        L.bossDefeated = true;
-                        L.victoryTimer = 0;
-                        game.progress.technodromeClear = true;
-                        game.progress.score += 10000;
-                        saveGame();
+                        if (e.type === 'boss_epox') {
+                            // Use shared helper — same path as the in-AI melee detector.
+                            // Critically: does NOT set L.bossDefeated so the dungeon uses
+                            // the normal all-enemies-dead → victory door flow (same as Puff/Barf).
+                            _epoxDefeat(e, ecx, ecy, lts, L);
+                        } else {
+                            L.bossDefeated = true;
+                            L.victoryTimer = 0;
+                            game.progress.technodromeClear = true;
+                            game.progress.score += 10000;
+                            saveGame();
+                        }
                     }
                 } else {
                     // Non-fatal hit: buffer it so we can broadcast to the host.
@@ -16244,7 +16833,9 @@ function updateLevel(dt) {
             // Player collision
             if (Math.abs(_sp.x - (p.x + p.w / 2)) < p.w * 0.65 && Math.abs(_sp.y - (p.y + p.h / 2)) < p.h * 0.65) {
                 // Apply slime: slow player and tick tiny damage
-                p.slimed = (p.slimed || 0) + 5.0;       // 5 seconds slimed (stacks/refreshes)
+                // Technodrome blobs are weaker — shorter slow, no real danger
+                var _slimeAdd = _sp._weak ? 1.5 : 5.0;
+                p.slimed = (p.slimed || 0) + _slimeAdd;
                 p.slimedDoTTimer = (p.slimedDoTTimer || 0); // DoT timer carries over
                 L.slimeProjectiles.splice(_spi, 1);
                 L.pointPopups.push({ text: 'SLIMED!', x: p.x + p.w / 2, y: p.y - 10, life: 1.0, color: '#44ff44' });
@@ -16272,6 +16863,62 @@ function updateLevel(dt) {
         }
     } else {
         p.slimedDoTTimer = 0;
+    }
+
+    // ── Epoxi blob projectile update ─────────────────────────────
+    if (L.epoxiBlobs && L.epoxiBlobs.length > 0) {
+        for (var _ebi = L.epoxiBlobs.length - 1; _ebi >= 0; _ebi--) {
+            var _eb = L.epoxiBlobs[_ebi];
+            _eb.x += _eb.vx * dt;
+            _eb.y += _eb.vy * dt;
+            _eb.life -= dt;
+            _eb.wobble = (_eb.wobble || 0) + dt * 12;
+            if (_eb.life <= 0) { L.epoxiBlobs.splice(_ebi, 1); continue; }
+            if (levelTileCollision(L, _eb.x - 6, _eb.y - 6, 12, 12)) {
+                L.epoxiBlobs.splice(_ebi, 1); continue;
+            }
+            // Hit enemies
+            var _ebHit = false;
+            for (var _eej = 0; _eej < L.enemies.length; _eej++) {
+                var _ee = L.enemies[_eej];
+                if (!_ee.alive) continue;
+                var _edx = _eb.x - (_ee.x + _ee.w / 2);
+                var _edy = _eb.y - (_ee.y + _ee.h / 2);
+                if (Math.abs(_edx) < _ee.w * 0.55 && Math.abs(_edy) < _ee.h * 0.55) {
+                    // Damage: 1 HP (same as melee for regular enemies)
+                    _ee.hp -= 1;
+                    _ee.kbVx = _eb.vx * 0.8; _ee.kbVy = _eb.vy * 0.8; _ee.kbTimer = 0.15;
+                    L.hitSparks.push({ x: _eb.x, y: _eb.y, life: 0.25 });
+                    L.pointPopups.push({ text: '+1', x: _eb.x, y: _eb.y - 8, life: 0.7, color: '#88ff44' });
+                    if (_ee.hp <= 0) {
+                        _ee.alive = false; _ee.state = 'dying';
+                        if (_ee.type === 'boss_epox') {
+                            if (_ee._isTechnodromePersist) {
+                                if (L.dungeonPersistBoss) L.dungeonPersistBoss.active = false;
+                                addKillScore('boss_epox', _ee.x + _ee.w / 2, _ee.y + _ee.h / 2);
+                                addLevelScore(SCORE_KILL['boss_epox'] || 8000, 'EPOX DEFEATED!');
+                                game.progress.score += SCORE_KILL['boss_epox'] || 8000;
+                                saveGame();
+                                L.slimeProjectiles = [];
+                                if (L.player) { L.player.slimed = 0; L.player.slimedDoTTimer = 0; }
+                                L.pointPopups.push({ text: 'EPOX DOWN FOR GOOD!', x: _ee.x + _ee.w / 2, y: _ee.y - lts, life: 3.0, color: '#00ccff' });
+                                L.screenShake = 14;
+                            } else {
+                                _epoxDefeat(_ee, _ee.x + _ee.w / 2, _ee.y + _ee.h / 2, lts, L);
+                            }
+                        } else {
+                            var _pts = SCORE_KILL[_ee.type] || 100;
+                            L.score += _pts;
+                            L.pointPopups.push({ text: '+' + _pts, x: _eb.x, y: _eb.y - 16, life: 1.0, color: '#88ff44' });
+                            if (!L._killBuffer) L._killBuffer = [];
+                            L._killBuffer.push(_ee.id);
+                        }
+                    }
+                    _ebHit = true; break;
+                }
+            }
+            if (_ebHit) { L.epoxiBlobs.splice(_ebi, 1); }
+        }
     }
 
     // ── Boss room clear → open victory door ─────────────────────
@@ -16334,6 +16981,20 @@ function updateLevel(dt) {
                     // Trigger windup animation if attack phase changed to WINDUP
                     if (_lpu.atkPhase === 'WINDUP' && _lr.atkPhase !== 'WINDUP') {
                         _lr.atkPhase = 'WINDUP'; _lr.atkTimer = ATK_WINDUP;
+                        // Spawn Epoxi blob for remote dungeon player attack
+                        var _lrTid = _lpu.tid || _lr.tid || 'leo';
+                        if (_lrTid === 'epoxi') {
+                            var _lrDir = _lr.facing || 's';
+                            var _lrDirMap = { e:[1,0], w:[-1,0], n:[0,-1], s:[0,1] };
+                            var _lrDv = _lrDirMap[_lrDir] || [1, 0];
+                            var _lrLts = (L && L.tileSize) ? L.tileSize : 32;
+                            if (!L.epoxiBlobs) L.epoxiBlobs = [];
+                            L.epoxiBlobs.push({
+                                x: _lr.px, y: _lr.py,
+                                vx: _lrDv[0] * _lrLts * 5, vy: _lrDv[1] * _lrLts * 5,
+                                life: 0.7, wobble: 0
+                            });
+                        }
                     } else if (_lpu.atkPhase === 'IDLE' && _lr.atkPhase !== 'IDLE' && _lr.atkPhase !== 'ACTIVE' && _lr.atkPhase !== 'RECOVERY') {
                         _lr.atkPhase = 'IDLE'; _lr.atkTimer = 0;
                     }
@@ -16656,6 +17317,43 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
                 ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW * (e.hp / e.maxHp), 6);
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
                 ctx.fillText('PUFF', esx + e.w / 2, esy - 14); ctx.textAlign = 'left';
+            } else if (e.type === 'boss_epox') {
+                var _epH   = e.hopOffset || 0;
+                var _epGY  = esy + e.h;
+                var _epSS  = Math.max(0.15, 1 - _epH / (ts * 3.5));
+                ctx.save();
+                ctx.globalAlpha = 0.4 * _epSS;
+                ctx.fillStyle = '#001a2a';
+                ctx.beginPath();
+                ctx.ellipse(esx + e.w / 2, _epGY - e.h * 0.07, e.w * 0.48 * _epSS, e.h * 0.1 * _epSS, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                var _epDir = e.bossDir || 'front';
+                var _epAnimF = Math.floor(e.animTimer / 0.12) % 4;
+                var _epFrameMap = {
+                    front: ['epoxNFront','epoxLFFront','epoxNFront','epoxLRFront'],
+                    back:  ['epoxNBack', 'epoxLFBack', 'epoxNBack', 'epoxRFBack' ],
+                    side:  ['epoxNSide', 'epoxLFSide', 'epoxNSide', 'epoxRFSide' ]
+                };
+                var _epSprKey = (_epFrameMap[_epDir] || _epFrameMap['front'])[_epAnimF];
+                var _epSpr = game.sprites[_epSprKey] || game.sprites['epoxNFront'];
+                var _epSY = esy - _epH;
+                ctx.save();
+                ctx.imageSmoothingEnabled = false;
+                if (e.bossPhase >= 3) { ctx.filter = 'saturate(2.5) brightness(1.5) hue-rotate(270deg)'; }
+                else if (e.bossPhase >= 2) { ctx.filter = 'saturate(1.8) brightness(1.2) hue-rotate(180deg)'; }
+                if (_epDir === 'side' && e.facingDir < 0) {
+                    ctx.translate(esx + e.w, _epSY); ctx.scale(-1, 1);
+                    if (_epSpr) ctx.drawImage(_epSpr, 0, 0, e.w, e.h);
+                } else {
+                    if (_epSpr) ctx.drawImage(_epSpr, esx, _epSY, e.w, e.h);
+                }
+                ctx.restore();
+                ctx.fillStyle = NES.PAL.K; ctx.fillRect(esx + e.w/2 - bossHpW/2, _epSY - 10, bossHpW, 6);
+                ctx.fillStyle = e.bossPhase >= 3 ? '#ff00ff' : e.bossPhase >= 2 ? '#ff8800' : '#00ccff';
+                ctx.fillRect(esx + e.w/2 - bossHpW/2, _epSY - 10, bossHpW * (e.hp / e.maxHp), 6);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
+                ctx.fillText('EPOX', esx + e.w/2, _epSY - 14); ctx.textAlign = 'left';
             } else if (e.type === 'boss_barf') {
                 var _bh = e.hopOffset || 0;
                 var _bgY = esy + e.h;
@@ -17682,6 +18380,46 @@ function drawLevel() {
     if (L.dungeon) {
         _drawDungeonRoom(L, L.tilemap, L.artFrames, 0, 0, L.corridorBounds || null, L.roomProps || []);
 
+        // ── Epoxi player blob projectiles ───────────────────────────
+        if (L.epoxiBlobs && L.epoxiBlobs.length > 0) {
+            ctx.save();
+            for (var _ebr = 0; _ebr < L.epoxiBlobs.length; _ebr++) {
+                var _ebl = L.epoxiBlobs[_ebr];
+                var _ebx = _ebl.x - cx, _eby = _ebl.y - cy;
+                var _ebR = ts * 0.38; // chunky enough to see clearly
+                var _ebWob = (_ebl.wobble || 0);
+                var _ebFade = Math.min(1, _ebl.life / 0.15);
+                // Trailing drips
+                var _ebSpd3 = Math.hypot(_ebl.vx, _ebl.vy);
+                if (_ebSpd3 > 0) {
+                    var _ebNx = -_ebl.vx / _ebSpd3, _ebNy = -_ebl.vy / _ebSpd3;
+                    for (var _ebt = 1; _ebt <= 2; _ebt++) {
+                        ctx.globalAlpha = (0.35 - _ebt * 0.1) * _ebFade;
+                        ctx.fillStyle = '#44cc11';
+                        ctx.beginPath();
+                        ctx.ellipse(_ebx + _ebNx * _ebt * 7, _eby + _ebNy * _ebt * 7,
+                                    _ebR * 0.48, _ebR * 0.38, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                // Main blob
+                var _ebW = _ebR * (1 + Math.sin(_ebWob) * 0.2);
+                var _ebH = _ebR * (1 - Math.sin(_ebWob) * 0.15);
+                ctx.globalAlpha = _ebFade;
+                ctx.fillStyle = '#55ee22';
+                ctx.beginPath();
+                ctx.ellipse(_ebx, _eby, _ebW, _ebH, _ebWob * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                // Highlight
+                ctx.globalAlpha = 0.6 * _ebFade;
+                ctx.fillStyle = '#bbff66';
+                ctx.beginPath();
+                ctx.ellipse(_ebx - _ebW * 0.2, _eby - _ebH * 0.25, _ebW * 0.3, _ebH * 0.22, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
         // Special item pedestal (if not collected)
         if (L.specialItemPos && !L.specialItemCollected && L.specialItem) {
             var sip = L.specialItemPos;
@@ -18065,6 +18803,43 @@ function drawLevel() {
                 ctx.textAlign = 'center';
                 ctx.fillText('BARF', esx + e.w / 2, esy - 14 - _bhop);
                 ctx.textAlign = 'left';
+            } else if (e.type === 'boss_epox') {
+                var _epH2   = e.hopOffset || 0;
+                var _epGY2  = esy + e.h;
+                var _epSS2  = Math.max(0.15, 1 - _epH2 / (ts * 3.5));
+                ctx.save();
+                ctx.globalAlpha = 0.4 * _epSS2;
+                ctx.fillStyle = '#001a2a';
+                ctx.beginPath();
+                ctx.ellipse(esx + e.w / 2, _epGY2 - e.h * 0.07, e.w * 0.48 * _epSS2, e.h * 0.1 * _epSS2, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                var _epDir2 = e.bossDir || 'front';
+                var _epAnimF2 = Math.floor(e.animTimer / 0.12) % 4;
+                var _epFM2 = {
+                    front: ['epoxNFront','epoxLFFront','epoxNFront','epoxLRFront'],
+                    back:  ['epoxNBack', 'epoxLFBack', 'epoxNBack', 'epoxRFBack' ],
+                    side:  ['epoxNSide', 'epoxLFSide', 'epoxNSide', 'epoxRFSide' ]
+                };
+                var _epSK2 = (_epFM2[_epDir2] || _epFM2['front'])[_epAnimF2];
+                var _epSp2 = game.sprites[_epSK2] || game.sprites['epoxNFront'];
+                var _epSY2 = esy - _epH2;
+                ctx.save();
+                ctx.imageSmoothingEnabled = false;
+                if (e.bossPhase >= 3) { ctx.filter = 'saturate(2.5) brightness(1.5) hue-rotate(270deg)'; }
+                else if (e.bossPhase >= 2) { ctx.filter = 'saturate(1.8) brightness(1.2) hue-rotate(180deg)'; }
+                if (_epDir2 === 'side' && e.facingDir < 0) {
+                    ctx.translate(esx + e.w, _epSY2); ctx.scale(-1, 1);
+                    if (_epSp2) ctx.drawImage(_epSp2, 0, 0, e.w, e.h);
+                } else {
+                    if (_epSp2) ctx.drawImage(_epSp2, esx, _epSY2, e.w, e.h);
+                }
+                ctx.restore();
+                ctx.fillStyle = NES.PAL.K; ctx.fillRect(esx + e.w/2 - bossHpW/2, _epSY2 - 10, bossHpW, 6);
+                ctx.fillStyle = e.bossPhase >= 3 ? '#ff00ff' : e.bossPhase >= 2 ? '#ff8800' : '#00ccff';
+                ctx.fillRect(esx + e.w/2 - bossHpW/2, _epSY2 - 10, bossHpW * (e.hp / e.maxHp), 6);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
+                ctx.fillText('EPOX', esx + e.w/2, _epSY2 - 14); ctx.textAlign = 'left';
             } else {
             // ── Technodrome boss — original circle rendering ──
             ctx.fillStyle = NES.PAL.G;
@@ -18859,6 +19634,40 @@ if (typeof MP !== 'undefined') {
     };
 }
 
+// ── Epoxi character unlock ───────────────────────────────────────────────────
+// Accounts in this list get a 5th character slot (epoxi) added to their party.
+// Everyone else can SEE epoxi on remote players but cannot select her.
+var EPOXI_EMAILS = [
+    'test@test.com',
+    'm47u5@icloud.com',
+    'digitalagony@gmail.com'
+];
+
+function _hasEpoxiAccess() {
+    var email = (typeof MP !== 'undefined' && MP.email) ||
+                localStorage.getItem('ss_player_email') || '';
+    return EPOXI_EMAILS.indexOf(email.toLowerCase()) !== -1;
+}
+
+// Called after login to add/remove epoxi from the active party.
+game._applyEpoxiUnlock = function() {
+    var has = _hasEpoxiAccess();
+    var turtles = game.party.turtles;
+    var idx = turtles.indexOf('epoxi');
+    if (has && idx === -1) {
+        turtles.push('epoxi');
+        // Preserve status/HP that loadSave() may have already restored (e.g. dead after a kill).
+        // Only default to alive/full-health when there is no saved state for this slot.
+        if (!game.party.status.epoxi) game.party.status.epoxi = 'alive';
+        if (game.party.hp.epoxi == null) game.party.hp.epoxi = game.party.maxHp;
+        console.log('[epoxi] Unlocked for this account');
+    } else if (!has && idx !== -1) {
+        turtles.splice(idx, 1);
+        delete game.party.status.epoxi;
+        delete game.party.hp.epoxi;
+    }
+};
+
 // Grant all items to privileged accounts (e.g. test@test.com) on login
 if (typeof MP !== 'undefined') {
     MP.onGrantItems = function(items) {
@@ -18892,6 +19701,8 @@ if (typeof MP !== 'undefined') {
 async function init() {
     cleanStaleRegionCache();
     loadSave();
+    // Apply epoxi unlock for returning users who already have a saved email
+    game._applyEpoxiUnlock();
     await loadBootData();
     var _sp = game._savedPosition;
     var _restoreRegion = (_sp && _sp.regionId) ? _sp.regionId : 'na';
