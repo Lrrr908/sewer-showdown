@@ -4861,6 +4861,10 @@ const SPRITE_MANIFEST = {
     nesLogo:           'img/logo_nes.png',
     // Dungeon props
     greenCouch:        'img/greencouch.png',
+    // Barf boss sprites
+    barfFront:         'img/barffront.png',
+    barfBack:          'img/barfback.png',
+    barfSide:          'img/barfside.png',
     // Reference sheets
     area1:             'sprites/area1.png',
     turtles:           'sprites/turtles.png',
@@ -14364,6 +14368,17 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
                   patrol: { left: MID_X + 2, right: ROOM_W - 3 } }
             ];
         }
+        // dimension_x dead-end (room 6, west fork): Barf lurks here
+        if (theme === 'dimension_x' && ri === 6) {
+            enemies = [
+                { type: 'boss_barf', x: MID_X, y: MID_Y - 1, hp: 25,
+                  patrol: { left: 2, right: ROOM_W - 3 } },
+                { type: 'foot_ranged', x: MID_X - 3, y: MID_Y + 2, hp: 2,
+                  patrol: { left: 2, right: MID_X - 1 } },
+                { type: 'foot_ranged', x: MID_X + 3, y: MID_Y + 2, hp: 2,
+                  patrol: { left: MID_X + 1, right: ROOM_W - 3 } }
+            ];
+        }
         var artFrames = [];
         // Entry room gets a couch against the back (north) wall (not in Technodrome)
         var roomProps = [];
@@ -14438,7 +14453,8 @@ function _loadDungeonRoom(L, room) {
         var isRanged = e.type === 'foot_ranged';
         var isShield = e.type === 'foot_shield';
         var isRunner = e.type === 'foot_runner';
-        var isBoss   = e.type === 'boss_technodrome' || e.type === 'boss_puff';
+        var isBoss   = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf';
+        var _bossSize = e.type === 'boss_puff' ? lts * 4 : lts * 3;
         return {
             id:              'e_r' + room.id + '_' + idx,
             type:            e.type,
@@ -14448,8 +14464,8 @@ function _loadDungeonRoom(L, room) {
             boss:            isBoss,
             x:               e.x * lts,
             y:               e.y * lts,
-            w:               isBoss ? lts * 3 : lts * (isRunner ? 0.6 : 0.7),
-            h:               isBoss ? lts * 3 : lts * (isRunner ? 0.6 : 0.7),
+            w:               isBoss ? _bossSize : lts * (isRunner ? 0.6 : 0.7),
+            h:               isBoss ? _bossSize : lts * (isRunner ? 0.6 : 0.7),
             hp:              e.hp || (isBoss ? 30 : 1),
             maxHp:           e.hp || (isBoss ? 30 : 1),
             alive:           true,
@@ -14472,7 +14488,15 @@ function _loadDungeonRoom(L, room) {
             bossFireTimer:   isBoss ? 1.5 : 0,
             weakPointVisible: false,
             weakPointTimer:  0,
-            bossDir:         'front'
+            bossDir:         'front',
+            // barf-specific hop fields
+            hopState:  e.type === 'boss_barf' ? 'WAIT' : undefined,
+            hopTimer:  e.type === 'boss_barf' ? 1.5 : undefined,
+            hopOffset: e.type === 'boss_barf' ? 0    : undefined,
+            hopVy:     e.type === 'boss_barf' ? 0    : undefined,
+            hopVx:     e.type === 'boss_barf' ? 0    : undefined,
+            hopVz:     e.type === 'boss_barf' ? 0    : undefined,
+            slimeTimer: e.type === 'boss_barf' ? 3.0 : undefined
         };
     });
 
@@ -14694,6 +14718,27 @@ async function startEnterLevelFromContext(ctx) {
             console.log('[snztoys] Puff boss injected into room ' + levelData.itemRoomId);
         }
 
+        // Bootleg Toy Co: replace boss room enemies with Barf
+        if (artistId === 'bootlegtoyco' && levelData.rooms && levelData.itemRoomId != null) {
+            var _bRoom = levelData.rooms[levelData.itemRoomId];
+            var _bMX   = Math.floor(levelData.roomW / 2);
+            var _bMY   = Math.floor(levelData.roomH / 2);
+            _bRoom.enemies = [
+                { type: 'boss_barf', x: _bMX, y: _bMY - 1, hp: 25,
+                  patrol: { left: 2, right: levelData.roomW - 3 } }
+            ];
+            _bRoom.itemSpawn = null;
+            // Clear interior obstacles so barf has room to hop around
+            var _btm = _bRoom.tilemap;
+            var _bRW = levelData.roomW, _bRH = levelData.roomH;
+            for (var _bbr = 2; _bbr < _bRH - 2; _bbr++) {
+                for (var _bbc = 2; _bbc < _bRW - 2; _bbc++) {
+                    if (_btm[_bbr][_bbc] === 3) _btm[_bbr][_bbc] = 4;
+                }
+            }
+            console.log('[bootlegtoyco] Barf boss injected into room ' + levelData.itemRoomId);
+        }
+
         await startEnterLevelWithData(levelData);
     }
 }
@@ -14804,7 +14849,8 @@ async function startEnterLevelWithData(levelData) {
             var isRanged = e.type === 'foot_ranged';
             var isShield = e.type === 'foot_shield';
             var isRunner = e.type === 'foot_runner';
-            var isBoss = e.type === 'boss_technodrome' || e.type === 'boss_puff';
+            var isBoss = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf';
+            var _bossSize = e.type === 'boss_puff' ? lts * 4 : lts * 3;
             return {
                 id: 'enemy_' + idx,
                 type: e.type,
@@ -14814,8 +14860,8 @@ async function startEnterLevelWithData(levelData) {
                 boss: isBoss,
                 x: e.x * lts,
                 y: e.y * lts,
-                w: isBoss ? lts * 3 : lts * (isRunner ? 0.6 : 0.7),
-                h: isBoss ? lts * 3 : lts * (isRunner ? 0.6 : 0.7),
+                w: isBoss ? _bossSize : lts * (isRunner ? 0.6 : 0.7),
+                h: isBoss ? _bossSize : lts * (isRunner ? 0.6 : 0.7),
                 hp: e.hp || 2,
                 maxHp: e.hp || 2,
                 alive: true,
@@ -14839,7 +14885,15 @@ async function startEnterLevelWithData(levelData) {
                 bossFireTimer: isBoss ? 1.5 : 0,
                 weakPointVisible: false,
                 weakPointTimer: 0,
-                bossDir: 'front'
+                bossDir: 'front',
+                // barf-specific hop fields
+                hopState:  e.type === 'boss_barf' ? 'WAIT' : undefined,
+                hopTimer:  e.type === 'boss_barf' ? 1.5 : undefined,
+                hopOffset: e.type === 'boss_barf' ? 0 : undefined,
+                hopVy:     e.type === 'boss_barf' ? 0 : undefined,
+                hopVx:     e.type === 'boss_barf' ? 0 : undefined,
+                hopVz:     e.type === 'boss_barf' ? 0 : undefined,
+                slimeTimer: e.type === 'boss_barf' ? 3.0 : undefined
             };
         }),
         projectiles: [],
@@ -14934,7 +14988,7 @@ async function startEnterLevelWithData(levelData) {
 // SCORING SYSTEM (Phase 2)
 // ============================================
 
-var SCORE_KILL = { foot: 100, foot_ranged: 150, foot_shield: 200, foot_runner: 120, boss_technodrome: 10000, boss_puff: 8000 };
+var SCORE_KILL = { foot: 100, foot_ranged: 150, foot_shield: 200, foot_runner: 120, boss_technodrome: 10000, boss_puff: 8000, boss_barf: 8000 };
 var SCORE_LEVEL_CLEAR = 500;
 var SCORE_SPECIAL_ITEM = 1000;
 var SCORE_SPEED_BONUS_PER_SEC = 50;
@@ -15400,6 +15454,48 @@ function updateLevel(dt) {
         }
     }
 
+    // ── Toy projectile hits barf ────────────────────────────────
+    if (L.toyProjectiles) {
+        for (var _tpj2 = L.toyProjectiles.length - 1; _tpj2 >= 0; _tpj2--) {
+            var _tproj2 = L.toyProjectiles[_tpj2];
+            var _hitBarf = false;
+            for (var _tei2 = 0; _tei2 < L.enemies.length; _tei2++) {
+                var _te2 = L.enemies[_tei2];
+                if (!_te2.alive || _te2.type !== 'boss_barf') continue;
+                if (_tproj2.x > _te2.x && _tproj2.x < _te2.x + _te2.w &&
+                    _tproj2.y > _te2.y - (_te2.hopOffset || 0) && _tproj2.y < _te2.y + _te2.h - (_te2.hopOffset || 0)) {
+                    _te2.hp -= 4;
+                    L.screenShake = 4;
+                    L.hitSparks.push({ x: _tproj2.x, y: _tproj2.y, life: 0.15 });
+                    L.pointPopups.push({ text: '-4', x: _tproj2.x, y: _tproj2.y - 12, life: 0.8, color: '#44ff44' });
+                    if (_te2.hp <= 0) {
+                        _te2.alive = false;
+                        addKillScore(_te2.type, _te2.x + _te2.w / 2, _te2.y + _te2.h / 2);
+                        addLevelScore(SCORE_KILL['boss_barf'] || 8000, "BARF DEFEATED");
+                        game.progress.score += SCORE_KILL['boss_barf'] || 8000;
+                        saveGame();
+                        // Drop Mutagen Canister — always spawns on Barf's defeat
+                        var _mcItem = null;
+                        for (var _mci = 0; _mci < SPECIAL_ITEMS.length; _mci++) {
+                            if (SPECIAL_ITEMS[_mci].id === 'mutagen_canister') { _mcItem = SPECIAL_ITEMS[_mci]; break; }
+                        }
+                        if (_mcItem) {
+                            L.specialItem = _mcItem;
+                            L.specialItemCollected = game.progress.collectedItems['mutagen_canister'] ? true : false;
+                            L.specialItemPos = { x: _te2.x + _te2.w / 2 - lts * 0.4, y: _te2.y + _te2.h / 2 - lts * 0.4, w: lts * 0.8, h: lts * 0.8 };
+                            if (!L.specialItemCollected) {
+                                L.pointPopups.push({ text: 'MUTAGEN CANISTER!', x: _te2.x + _te2.w / 2, y: _te2.y - lts, life: 2.5, color: '#00ff88' });
+                            }
+                        }
+                    }
+                    _hitBarf = true;
+                    break;
+                }
+            }
+            if (_hitBarf) { L.toyProjectiles.splice(_tpj2, 1); }
+        }
+    }
+
     // ── Player attack state machine ─────────────────────────────
     if (p.atkCooldown > 0) p.atkCooldown -= dt;
     if (p.invTimer > 0) p.invTimer -= dt;
@@ -15484,6 +15580,8 @@ function updateLevel(dt) {
         if (hazardInfo.slowMult) moveSpeed *= hazardInfo.slowMult;
         if (hazardInfo.slipMult) moveSpeed *= hazardInfo.slipMult;
     }
+    // Slime: slows player significantly while active
+    if (p.slimed > 0) moveSpeed *= 0.45;
 
     var dx = 0, dy = 0;
     if (inputState.left) dx -= 1;
@@ -15694,6 +15792,131 @@ function updateLevel(dt) {
 
         // ── Boss AI (3 phases) ──────────────────────────────────
         if (e.boss) {
+
+        // ── Boss Barf AI — exits early, never touches Puff code ──
+        if (e.type === 'boss_barf') {
+            // Safety init in case fields weren't set
+            if (!e.hopState) { e.hopState = 'WAIT'; e.hopTimer = 1.0; e.hopOffset = 0; e.hopVy = 0; e.hopVx = 0; e.hopVz = 0; }
+            if (!e.slimeTimer) e.slimeTimer = 3.0;
+            var _bhp = e.hp / e.maxHp;
+            if (_bhp <= 0.25 && e.bossPhase < 3) {
+                e.bossPhase = 3; e.state = 'BOSS_PHASE3'; L.screenShake = 8;
+            } else if (_bhp <= 0.55 && e.bossPhase < 2) {
+                e.bossPhase = 2; e.state = 'BOSS_PHASE2'; L.screenShake = 5;
+            }
+
+            var _bhopGravity = lts * 18;
+            var _bhopLaunchV = lts * (e.bossPhase >= 3 ? 10 : e.bossPhase >= 2 ? 8.5 : 7.5);
+
+            if (e.hopState === 'WAIT') {
+                e.hopTimer -= dt;
+                if (e.hopTimer <= 0) {
+                    var _bHopRate = e.bossPhase >= 3 ? 0.5 : e.bossPhase >= 2 ? 0.8 : 1.2;
+                    e.hopTimer = _bHopRate;
+                    e.hopState = 'HOP';
+                    e.hopOffset = 0;
+                    e.hopVy = -_bhopLaunchV;
+                    var _hdx = _nearTcx - ecx, _hdy = _nearTcy - ecy;
+                    var _hlen = Math.hypot(_hdx, _hdy) || 1;
+                    var _bhopSpd = lts * (e.bossPhase >= 3 ? 4.5 : e.bossPhase >= 2 ? 3.5 : 2.5);
+                    e.hopVx = (_hdx / _hlen) * _bhopSpd;
+                    e.hopVz = (_hdy / _hlen) * _bhopSpd;
+                    e.facingDir = _hdx > 0 ? 1 : -1;
+                    e.bossDir = Math.abs(_hdx) >= Math.abs(_hdy) ? 'side' : (_hdy > 0 ? 'front' : 'back');
+                    // Spew slime blobs on launch
+                    if (!L.slimeProjectiles) L.slimeProjectiles = [];
+                    var _bsCount = e.bossPhase >= 3 ? 5 : e.bossPhase >= 2 ? 3 : 2;
+                    for (var _bsi = 0; _bsi < _bsCount; _bsi++) {
+                        var _bsA = Math.atan2(_hdy, _hdx) + (Math.random() - 0.5) * 0.9;
+                        var _bsSpd = lts * (2.5 + Math.random() * 2.5);
+                        L.slimeProjectiles.push({
+                            id: 'slime_' + Date.now() + '_' + _bsi,
+                            x: ecx + (Math.random()-0.5)*e.w*0.5,
+                            y: ecy + (Math.random()-0.5)*e.h*0.5,
+                            vx: Math.cos(_bsA) * _bsSpd,
+                            vy: Math.sin(_bsA) * _bsSpd,
+                            life: 1.8 + Math.random() * 0.8,
+                            r: lts * (0.18 + Math.random() * 0.16),
+                            wobble: Math.random() * Math.PI * 2
+                        });
+                    }
+                }
+            } else if (e.hopState === 'HOP') {
+                var _bnx = e.x + e.hopVx * dt;
+                var _bny = e.y + e.hopVz * dt;
+                if (!levelTileCollision(L, _bnx, e.y, e.w, e.h)) e.x = _bnx;
+                if (!levelTileCollision(L, e.x, _bny, e.w, e.h)) e.y = _bny;
+                e.hopVy += _bhopGravity * dt;
+                e.hopOffset -= e.hopVy * dt;
+                if (e.hopOffset <= 0) {
+                    e.hopOffset = 0;
+                    e.hopState = 'WAIT';
+                    e.hopTimer = e.bossPhase >= 3 ? 0.35 : e.bossPhase >= 2 ? 0.6 : 0.9;
+                    e.hopVx = 0; e.hopVz = 0;
+                    L.screenShake = e.bossPhase >= 3 ? 6 : 4;
+                    // Stomp: splatter slime on landing + damage if close
+                    if (!L.slimeProjectiles) L.slimeProjectiles = [];
+                    var _splCount = e.bossPhase >= 3 ? 6 : 4;
+                    for (var _spi2 = 0; _spi2 < _splCount; _spi2++) {
+                        var _spA = (_spi2 / _splCount) * Math.PI * 2;
+                        var _spSpd = lts * (1.5 + Math.random() * 2);
+                        L.slimeProjectiles.push({
+                            id: 'splat_' + Date.now() + '_' + _spi2,
+                            x: ecx, y: ecy,
+                            vx: Math.cos(_spA) * _spSpd,
+                            vy: Math.sin(_spA) * _spSpd,
+                            life: 0.9 + Math.random() * 0.5,
+                            r: lts * (0.22 + Math.random() * 0.18),
+                            wobble: Math.random() * Math.PI * 2
+                        });
+                    }
+                    var _stompDist = lts * 2.5;
+                    if (Math.hypot(pcx - ecx, pcy - ecy) < _stompDist && p.invTimer <= 0) {
+                        p.hp -= 1; p.damageTaken++;
+                        p.invTimer = 0.9;
+                        var _sDir = Math.atan2(pcy - ecy, pcx - ecx);
+                        p.kbVx = Math.cos(_sDir) * KB_PLAYER_DIST / KB_DURATION;
+                        p.kbVy = Math.sin(_sDir) * KB_PLAYER_DIST / KB_DURATION;
+                        p.kbTimer = KB_DURATION;
+                        if (p.hp <= 0 && !_levelSwitchOnDeath()) {
+                            L.failed = true; game.levelState = 'FAIL';
+                            setTimeout(exitLevel, 1500); return;
+                        }
+                    }
+                }
+            }
+
+            // Minion spawn (walkers only — no ranged/shield)
+            e.bossSpawnTimer -= dt;
+            if (e.bossSpawnTimer <= 0) {
+                var _bSpawnRate = e.bossPhase >= 3 ? 3.5 : e.bossPhase >= 2 ? 5.5 : 8.0;
+                e.bossSpawnTimer = _bSpawnRate;
+                var _bmx = e.x + (Math.random() - 0.5) * lts * 4;
+                var _bmy = e.y + e.h + lts;
+                // Deterministic ID so host + non-host generate matching IDs
+                if (!e._minionCount) e._minionCount = 0;
+                e._minionCount++;
+                if (!levelTileCollision(L, _bmx, _bmy, lts * 0.7, lts * 0.7)) {
+                    L.enemies.push({
+                        id: 'bm_' + e.id + '_' + e._minionCount,
+                        type: 'foot', ranged: false, shield: false, runner: false, boss: false,
+                        x: _bmx, y: _bmy, w: lts * 0.7, h: lts * 0.7,
+                        hp: 1, maxHp: 1, alive: true,
+                        patrolLeft: _bmx - lts*4, patrolRight: _bmx + lts*4,
+                        patrolCx: _bmx, patrolCy: _bmy,
+                        facingDir: _nearTcx > _bmx ? 1 : -1,
+                        animTimer: 0, state: 'CHASE', stateTimer: 0, stunTimer: 0,
+                        kbVx: 0, kbVy: 0, kbTimer: 0,
+                        chaseRadius: lts*10, attackRadius: lts*1.2, attackCooldown: 0,
+                        shieldUp: false, bossPhase: 0, bossSpawnTimer: 0, bossFireTimer: 0,
+                        weakPointVisible: false, weakPointTimer: 0
+                    });
+                }
+            }
+
+            continue; // barf done — skip all Puff/Technodrome code
+        }
+
             var hpPercent = e.hp / e.maxHp;
             // Phase transitions
             if (hpPercent <= 0.25 && e.bossPhase < 3) {
@@ -15762,8 +15985,10 @@ function updateLevel(dt) {
                 var minionX = e.x + (Math.random() - 0.5) * lts * 4;
                 var minionY = e.y + e.h + lts;
                 if (!levelTileCollision(L, minionX, minionY, lts * 0.7, lts * 0.7)) {
+                    if (!e._minionCount) e._minionCount = 0;
+                    e._minionCount++;
                     L.enemies.push({
-                        id: 'minion_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                        id: 'pm_' + e.id + '_' + e._minionCount,
                         type: spawnType,
                         ranged: spawnType === 'foot_ranged',
                         shield: false,
@@ -15791,7 +16016,7 @@ function updateLevel(dt) {
                 }
             }
 
-            // Boss only takes damage when weak point is visible (handled in hit detection)
+            // Puff: only takes damage when weak point is visible (handled in hit detection)
             continue;
         }
 
@@ -15918,9 +16143,9 @@ function updateLevel(dt) {
                     } else if (Math.random() < 0.05) {
                         L.pizzaPickups.push({ id: 'lpz_' + Date.now() + '_w' + Math.random(), x: ecx, y: ecy, type: 'whole' });
                     }
-                    // In Puff's dungeon: walkers drop a throwable toy
-                    var _hasPuff = L.enemies.some(function(en) { return en.alive && en.type === 'boss_puff'; });
-                    if (!e.boss && _hasPuff) {
+                    // In Puff's or Barf's dungeon: walkers drop a throwable toy
+                    var _hasBoss = L.enemies.some(function(en) { return en.alive && (en.type === 'boss_puff' || en.type === 'boss_barf'); });
+                    if (!e.boss && _hasBoss) {
                         if (!L.toyPickups) L.toyPickups = [];
                         L.toyPickups.push({ id: 'toy_' + Date.now() + '_' + Math.random(), x: ecx - lts * 0.25, y: ecy - lts * 0.25 });
                     }
@@ -16000,6 +16225,53 @@ function updateLevel(dt) {
             }
             continue;
         }
+    }
+
+    // ── Slime projectile update (boss_barf) ──────────────────────
+    if (L.slimeProjectiles) {
+        for (var _spi = L.slimeProjectiles.length - 1; _spi >= 0; _spi--) {
+            var _sp = L.slimeProjectiles[_spi];
+            _sp.life -= dt;
+            if (_sp.life <= 0) { L.slimeProjectiles.splice(_spi, 1); continue; }
+            _sp.x += _sp.vx * dt;
+            _sp.y += _sp.vy * dt;
+            // Wall collision — slime splats on walls
+            var _sptx = Math.floor(_sp.x / lts), _spty = Math.floor(_sp.y / lts);
+            if (_sptx < 0 || _sptx >= L.width || _spty < 0 || _spty >= L.height ||
+                (L.tileTypes[String(L.tilemap[_spty][_sptx])] && L.tileTypes[String(L.tilemap[_spty][_sptx])].solid)) {
+                L.slimeProjectiles.splice(_spi, 1); continue;
+            }
+            // Player collision
+            if (Math.abs(_sp.x - (p.x + p.w / 2)) < p.w * 0.65 && Math.abs(_sp.y - (p.y + p.h / 2)) < p.h * 0.65) {
+                // Apply slime: slow player and tick tiny damage
+                p.slimed = (p.slimed || 0) + 5.0;       // 5 seconds slimed (stacks/refreshes)
+                p.slimedDoTTimer = (p.slimedDoTTimer || 0); // DoT timer carries over
+                L.slimeProjectiles.splice(_spi, 1);
+                L.pointPopups.push({ text: 'SLIMED!', x: p.x + p.w / 2, y: p.y - 10, life: 1.0, color: '#44ff44' });
+                continue;
+            }
+        }
+    }
+
+    // ── Slime status effect on player ────────────────────────────
+    if (p.slimed > 0) {
+        p.slimed -= dt;
+        if (p.slimed < 0) p.slimed = 0;
+        // Slow DoT: 1 HP every 5 seconds while slimed
+        if (!p.slimedDoTTimer) p.slimedDoTTimer = 0;
+        p.slimedDoTTimer += dt;
+        if (p.slimedDoTTimer >= 5.0 && p.invTimer <= 0) {
+            p.slimedDoTTimer -= 5.0;
+            p.hp -= 1;
+            p.damageTaken++;
+            p.invTimer = 0.2;
+            if (p.hp <= 0 && !_levelSwitchOnDeath()) {
+                L.failed = true; game.levelState = 'FAIL';
+                setTimeout(exitLevel, 1500); return;
+            }
+        }
+    } else {
+        p.slimedDoTTimer = 0;
     }
 
     // ── Boss room clear → open victory door ─────────────────────
@@ -16232,10 +16504,16 @@ function updateLevel(dt) {
                     for (var _esi = 0; _esi < L.enemies.length; _esi++) {
                         var _ene = L.enemies[_esi];
                         if (_ene.alive) {
-                            _eSnap.push({ id: _ene.id,
-                                          x: Math.round(_ene.x), y: Math.round(_ene.y),
-                                          hp: _ene.hp, s: _ene.state, fd: _ene.facingDir,
-                                          rm: L.currentRoomId });
+                        var _eEntry = { id: _ene.id,
+                                      x: Math.round(_ene.x), y: Math.round(_ene.y),
+                                      hp: _ene.hp, s: _ene.state, fd: _ene.facingDir,
+                                      rm: L.currentRoomId };
+                        // Include barf hop state for smooth non-host rendering
+                        if (_ene.type === 'boss_barf') {
+                            _eEntry.ho = Math.round(_ene.hopOffset || 0);
+                            _eEntry.hs = _ene.hopState;
+                        }
+                        _eSnap.push(_eEntry);
                         }
                     }
                     if (_eSnap.length > 0) MP.sendLevelEnemySync(L._instanceId, _eSnap);
@@ -16256,6 +16534,8 @@ function updateLevel(dt) {
                                 if (_esync.hp !== undefined) _le.hp = _esync.hp;
                                 if (_esync.s)  _le.state = _esync.s;
                                 if (_esync.fd !== undefined) _le.facingDir = _esync.fd;
+                                if (_esync.ho !== undefined) _le.hopOffset = _esync.ho;
+                                if (_esync.hs) _le.hopState = _esync.hs;
                                 if (_le.hp <= 0 && _le.alive) {
                                     _le.alive = false;
                                     _le._syncedKill = true;
@@ -16334,6 +16614,15 @@ function _drawDungeonPlayer(L, cx, cy, ts) {
     if (weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
     NES.drawTurtleSprite(ctx, psx, psy, p.direction, p.animFrame, turtleId, turtleScale);
     if (!weaponBehind) NES.drawWeaponOverlay(ctx, psx, psy, p.direction, turtleId, turtleScale, p.atkPhase, atkFrame);
+    // Slime overlay: green drip effect when player is slimed
+    if (p.slimed > 0) {
+        var _slPulse = 0.25 + Math.sin(Date.now() / 180) * 0.1;
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.5, _slPulse * (p.slimed / 5.0));
+        ctx.fillStyle = '#44ee22';
+        ctx.fillRect(psx, psy, p.w, p.h);
+        ctx.restore();
+    }
 }
 
 function _drawDungeonEnemies(L, cx, cy, ts) {
@@ -16343,7 +16632,7 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
         var esx = e.x - cx, esy = e.y - cy;
         if (e.stunTimer > 0 && Math.floor(e.stunTimer * 10) % 2 === 0) continue;
 
-        // ── Boss (Puff or Technodrome) ──────────────────────────────
+        // ── Boss (Puff, Barf, or Technodrome) ──────────────────────
         if (e.boss) {
             var bossGlow = Math.sin(Date.now() / 150) * 0.2 + 0.6;
             var bossHpW  = e.w * 1.2;
@@ -16365,6 +16654,39 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
                 ctx.fillStyle = NES.PAL.K; ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW, 6);
                 ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? '#ff8800' : '#ff44dd';
                 ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW * (e.hp / e.maxHp), 6);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
+                ctx.fillText('PUFF', esx + e.w / 2, esy - 14); ctx.textAlign = 'left';
+            } else if (e.type === 'boss_barf') {
+                var _bh = e.hopOffset || 0;
+                var _bgY = esy + e.h;
+                // Shadow
+                var _bss = Math.max(0.2, 1 - _bh / (ts * 4));
+                ctx.save();
+                ctx.globalAlpha = 0.45 * _bss;
+                ctx.fillStyle = '#1a2a00';
+                ctx.beginPath();
+                ctx.ellipse(esx + e.w/2, _bgY - e.h*0.06, e.w*0.42*_bss, e.h*0.09*_bss, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.restore();
+                // Sprite with rock
+                var _bRock = (e.hopVy || 0) * 0.00025;
+                var _bDirK = (e.bossDir === 'back') ? 'barfBack' : (e.bossDir === 'front') ? 'barfFront' : 'barfSide';
+                var _bSp = game.sprites[_bDirK] || game.sprites['barfFront'];
+                ctx.save();
+                ctx.imageSmoothingEnabled = false;
+                if (e.bossPhase >= 3) { ctx.filter = 'hue-rotate(20deg) saturate(2.0) brightness(1.3)'; }
+                else if (e.bossPhase >= 2) { ctx.filter = 'saturate(1.5) brightness(1.1)'; }
+                ctx.translate(esx + e.w/2, _bgY - _bh);
+                ctx.rotate(_bRock);
+                if (e.bossDir === 'side' && e.facingDir < 0) ctx.scale(-1, 1);
+                if (_bSp) ctx.drawImage(_bSp, -e.w/2, -e.h, e.w, e.h);
+                ctx.restore();
+                // HP bar
+                ctx.fillStyle = NES.PAL.K; ctx.fillRect(esx + e.w/2 - bossHpW/2, esy - 10 - _bh, bossHpW, 6);
+                ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? '#88ff00' : '#44cc00';
+                ctx.fillRect(esx + e.w/2 - bossHpW/2, esy - 10 - _bh, bossHpW*(e.hp/e.maxHp), 6);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
+                ctx.fillText('BARF', esx + e.w/2, esy - 14 - _bh); ctx.textAlign = 'left';
             } else {
                 // Technodrome circle rendering
                 ctx.fillStyle = NES.PAL.G; ctx.beginPath(); ctx.arc(esx + e.w/2, esy + e.h/2, e.w*0.45, 0, Math.PI*2); ctx.fill();
@@ -17495,6 +17817,48 @@ function drawLevel() {
             }
         }
 
+        // ── Slime blobs (boss_barf) ─────────────────────────────────
+        if (L.slimeProjectiles) {
+            for (var _slr = 0; _slr < L.slimeProjectiles.length; _slr++) {
+                var _slp = L.slimeProjectiles[_slr];
+                var _slx = _slp.x - cx, _sly = _slp.y - cy;
+                var _slR = _slp.r || ts * 0.25;
+                var _slAge = 1 - (_slp.life / 2.5);
+                var _slWob = (_slp.wobble || 0) + Date.now() * 0.006;
+                // Trailing drip drops
+                var _slSpd2 = Math.hypot(_slp.vx, _slp.vy);
+                if (_slSpd2 > 0) {
+                    var _slNx = -_slp.vx / _slSpd2, _slNy = -_slp.vy / _slSpd2;
+                    for (var _slt = 1; _slt <= 3; _slt++) {
+                        ctx.fillStyle = 'rgba(50,200,20,' + (0.3 - _slt * 0.08) + ')';
+                        ctx.beginPath();
+                        ctx.ellipse(_slx + _slNx*_slt*6, _sly + _slNy*_slt*6, _slR*0.55, _slR*0.45, 0, 0, Math.PI*2);
+                        ctx.fill();
+                    }
+                }
+                // Main blob — slightly irregular ellipse that wobbles
+                var _slW = _slR * (1 + Math.sin(_slWob) * 0.18);
+                var _slH = _slR * (1 - Math.sin(_slWob) * 0.14);
+                ctx.fillStyle = '#33dd11';
+                ctx.beginPath();
+                ctx.ellipse(_slx, _sly, _slW, _slH, _slWob * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                // Highlight
+                ctx.fillStyle = 'rgba(160,255,80,0.55)';
+                ctx.beginPath();
+                ctx.ellipse(_slx - _slW*0.25, _sly - _slH*0.25, _slW*0.3, _slH*0.22, 0, 0, Math.PI*2);
+                ctx.fill();
+                // Small satellite drip blobs
+                for (var _sdp = 0; _sdp < 2; _sdp++) {
+                    var _sdA = _slWob + _sdp * Math.PI;
+                    ctx.fillStyle = 'rgba(40,180,10,0.7)';
+                    ctx.beginPath();
+                    ctx.ellipse(_slx + Math.cos(_sdA)*_slW*0.7, _sly + Math.sin(_sdA)*_slH*0.6, _slR*0.28, _slR*0.22, 0, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+        }
+
         // ── Boss projectiles in dungeon rooms ───────────────────────
         for (var _dpi = 0; _dpi < L.projectiles.length; _dpi++) {
             var _dproj = L.projectiles[_dpi];
@@ -17645,6 +18009,62 @@ function drawLevel() {
                 ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW, 6);
                 ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? '#ff8800' : '#ff44dd';
                 ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW * (e.hp / e.maxHp), 6);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
+                ctx.fillText('PUFF', esx + e.w / 2, esy - 14); ctx.textAlign = 'left';
+            } else if (e.type === 'boss_barf') {
+                // ── Barf (Bootleg Toy Co boss) — hop + rock + shadow rendering ──
+                var _bhop = e.hopOffset || 0;
+                var _bGroundY = esy + e.h; // ground reference (bottom of sprite when flat)
+
+                // Shadow — shrinks and fades as barf hops up
+                var _shadowScale = Math.max(0.2, 1 - _bhop / (ts * 4));
+                var _shadowW = e.w * 0.85 * _shadowScale;
+                var _shadowH = e.h * 0.18 * _shadowScale;
+                ctx.save();
+                ctx.globalAlpha = 0.45 * _shadowScale;
+                ctx.fillStyle = '#1a2a00';
+                ctx.beginPath();
+                ctx.ellipse(esx + e.w / 2, _bGroundY - e.h * 0.06, _shadowW / 2, _shadowH / 2, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // Rock angle — lean forward when rising, back when falling
+                var _rockAngle = (e.hopVy || 0) * 0.00025;
+
+                // Pick correct sprite by direction
+                var _bDir = e.bossDir || 'front';
+                var _bSprKey = _bDir === 'back' ? 'barfBack' : _bDir === 'front' ? 'barfFront' : 'barfSide';
+                var _bSpr = game.sprites[_bSprKey] || game.sprites['barfFront'];
+
+                // Phase tint: phase 2 = more saturated green, phase 3 = angry red tinge
+                ctx.save();
+                ctx.imageSmoothingEnabled = false;
+                if (e.bossPhase >= 3) {
+                    ctx.filter = 'hue-rotate(20deg) saturate(2.0) brightness(1.3)';
+                } else if (e.bossPhase >= 2) {
+                    ctx.filter = 'saturate(1.5) brightness(1.1)';
+                }
+
+                // Center of rotation = base of sprite (ground)
+                var _bcx = esx + e.w / 2;
+                var _bcy = _bGroundY - _bhop;
+                ctx.translate(_bcx, _bcy);
+                ctx.rotate(_rockAngle);
+                // Flip for side-facing left
+                if (_bDir === 'side' && e.facingDir < 0) ctx.scale(-1, 1);
+                if (_bSpr) ctx.drawImage(_bSpr, -e.w / 2, -e.h, e.w, e.h);
+                ctx.restore();
+
+                // HP bar (drawn at fixed screen pos, not affected by hop)
+                ctx.fillStyle = NES.PAL.K;
+                ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10 - _bhop, bossHpW, 6);
+                ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? '#88ff00' : '#44cc00';
+                ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10 - _bhop, bossHpW * (e.hp / e.maxHp), 6);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 7px "Press Start 2P", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('BARF', esx + e.w / 2, esy - 14 - _bhop);
+                ctx.textAlign = 'left';
             } else {
             // ── Technodrome boss — original circle rendering ──
             ctx.fillStyle = NES.PAL.G;
