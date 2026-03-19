@@ -1352,12 +1352,12 @@ var MP = (function () {
         ws.send(JSON.stringify({ t: 'chat_global', text: text }));
     }
 
-    function sendPm(toEntityId, text) {
+    function sendPm(toAccountId, text) {
         if (!ws || ws.readyState !== 1 || !authenticated) return;
-        if (typeof toEntityId !== 'string' || typeof text !== 'string') return;
+        if (typeof toAccountId !== 'string' || typeof text !== 'string') return;
         text = text.trim().substring(0, CHAT_MAX_LEN);
         if (text.length === 0) return;
-        ws.send(JSON.stringify({ t: 'chat_pm', to: toEntityId, text: text }));
+        ws.send(JSON.stringify({ t: 'chat_pm', to: toAccountId, text: text }));
     }
 
     function getChatBubbles() { return chatBubbles; }

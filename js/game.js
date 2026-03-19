@@ -6795,16 +6795,20 @@ function _chatUpdatePmSuggestions(query) {
     var lo = (query || '').toLowerCase();
 
     // Always build the online-players list immediately (no network wait)
-    var onlineIds = {};
+    // Use aid (accountId) as the stable address; fall back to entityId if aid not yet in snapshot
+    var onlineAccountIds = {};
     var combined = [];
+    var selfId = (typeof MP !== 'undefined') ? MP.userId : null;
     if (typeof MP !== 'undefined') {
         var remotes = MP.getRemotePlayers();
         for (var i = 0; i < remotes.length; i++) {
             var rp = remotes[i];
+            var rpId = rp.aid || rp.id;  // prefer accountId
+            if (rpId === selfId) continue;
             var dn = rp.dn || '';
             if (lo === '' || dn.toLowerCase().indexOf(lo) !== -1) {
-                onlineIds[rp.id] = true;
-                combined.push({ id: rp.id, dn: dn, online: true });
+                onlineAccountIds[rpId] = true;
+                combined.push({ id: rpId, dn: dn, online: true });
                 if (combined.length >= 9) break;
             }
         }
@@ -6821,40 +6825,39 @@ function _chatUpdatePmSuggestions(query) {
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(data) {
                 if (!data || !Array.isArray(data.players)) return;
-                // Check the query didn't change while we were fetching
                 if (_chatPmSearchQuery !== fetchQuery) return;
 
-                // Re-check current online set (may have changed)
-                var nowOnline = {};
+                // Re-check current online set (fresh pass)
+                var nowOnlineIds = {};
                 if (typeof MP !== 'undefined') {
                     var rs = MP.getRemotePlayers();
-                    for (var k = 0; k < rs.length; k++) nowOnline[rs[k].id] = true;
+                    for (var k = 0; k < rs.length; k++) {
+                        var rsId = rs[k].aid || rs[k].id;
+                        nowOnlineIds[rsId] = true;
+                    }
                 }
 
-                // Online first, then offline, skip self
-                var selfId = (typeof MP !== 'undefined') ? MP.userId : null;
+                var selfId2 = (typeof MP !== 'undefined') ? MP.userId : null;
                 var merged = [];
-                // Re-add online players (fresh pass)
-                var dbIds = {};
-                for (var d = 0; d < data.players.length; d++) dbIds[data.players[d].id] = data.players[d].dn;
-                // Online players that match (may or may not be in DB)
+                // Online players first
                 if (typeof MP !== 'undefined') {
                     var remotes2 = MP.getRemotePlayers();
                     for (var ri = 0; ri < remotes2.length; ri++) {
                         var rp2 = remotes2[ri];
-                        if (rp2.id === selfId) continue;
+                        var rp2Id = rp2.aid || rp2.id;
+                        if (rp2Id === selfId2) continue;
                         var dn2 = rp2.dn || '';
                         if (lo === '' || dn2.toLowerCase().indexOf(lo) !== -1) {
-                            merged.push({ id: rp2.id, dn: dn2, online: true });
+                            merged.push({ id: rp2Id, dn: dn2, online: true });
                         }
                         if (merged.length >= 9) break;
                     }
                 }
-                // Offline DB players (not already in merged)
+                // Offline DB players
                 for (var di = 0; di < data.players.length; di++) {
                     var p = data.players[di];
-                    if (p.id === selfId) continue;
-                    if (nowOnline[p.id]) continue; // already added above
+                    if (p.id === selfId2) continue;
+                    if (nowOnlineIds[p.id]) continue;
                     merged.push({ id: p.id, dn: p.dn, online: false });
                     if (merged.length >= 9) break;
                 }
@@ -20208,10 +20211,13 @@ if (typeof MP !== 'undefined') {
             }
             return;
         }
-        var senderId = msg.from;
-        if (!senderId || !msg.text) return;
+        if (!msg.text) return;
+        // Key threads by accountId (from_account) — falls back to entityId for old messages
+        var senderId = msg.from_account || msg.from;
+        if (!senderId) return;
         var senderDn = msg.dn || 'anon';
-        var isSelf   = (typeof MP !== 'undefined') && senderId === MP.entityId;
+        var isSelf = (typeof MP !== 'undefined') && (senderId === MP.userId || msg.from === MP.entityId);
+
         if (!_chatShell.pmThreads[senderId]) _chatShell.pmThreads[senderId] = [];
         if (!_chatShell.pmNames[senderId])   _chatShell.pmNames[senderId]   = senderDn;
         if (!_chatShell.pmUnread[senderId])  _chatShell.pmUnread[senderId]  = 0;
@@ -20230,21 +20236,25 @@ if (typeof MP !== 'undefined') {
                 _chatShell.activePmUserId === senderId;
 
             if (inActiveThread) {
-                // Thread is open — render immediately, no unread count
                 _chatShell.isScrolledToBottom = true;
                 _chatRenderPanel();
             } else {
-                // Increment unread for this thread and global badge
-                _chatShell.pmUnread[senderId]++;
-                _chatShell.unreadPmCount++;
-                _chatUpdateBadge();
-                // If PM inbox view is open, re-render it to show updated snippet
+                if (!msg.pending) {
+                    // Suppress badge/alert for pending (offline) messages loaded on connect
+                    _chatShell.pmUnread[senderId]++;
+                    _chatShell.unreadPmCount++;
+                    _chatUpdateBadge();
+                    if (_chatInputActive && _chatShell.mode !== 'PM') {
+                        _chatShowPanelPmAlert(senderDn);
+                    }
+                } else {
+                    // Pending messages: count as unread but don't pop an alert
+                    _chatShell.pmUnread[senderId]++;
+                    _chatShell.unreadPmCount++;
+                    _chatUpdateBadge();
+                }
                 if (_chatInputActive && _chatShell.mode === 'PM' && _chatShell.pmView === 'inbox') {
                     _chatRenderPanel();
-                }
-                // Show in-shell alert if chat is open on another mode
-                if (_chatInputActive && _chatShell.mode !== 'PM') {
-                    _chatShowPanelPmAlert(senderDn);
                 }
             }
         }

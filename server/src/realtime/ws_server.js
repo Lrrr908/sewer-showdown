@@ -17,6 +17,7 @@ const { wireSnapshot } = require('../zones/zone');
 const ugcValidate = require('../ugc/ugc_validate');
 const levelRoom = require('../level_room');
 const { resolveEmailByAccountId } = require('../auth/auth_routes');
+const pool = require('../db/pool');
 
 const AUTH_TIMEOUT_MS = 5000;
 const TRANSFER_IGNORE_NOTIFY_MS = 1000;
@@ -448,6 +449,37 @@ function initWsServer(wss) {
           try { ws.send(JSON.stringify({ t: 'chat_history', messages: _hist.slice(-50) })); } catch {}
         }
 
+        // Deliver pending (offline) PMs for this account
+        try {
+          const _pendingOk = await pool.query('SELECT 1').then(() => true).catch(() => false);
+          if (_pendingOk) {
+            const _pendingPms = await pool.query(
+              `SELECT msg_id, from_id, from_dn, text, sent_at
+               FROM private_messages
+               WHERE to_id = $1 AND delivered = FALSE
+               ORDER BY sent_at ASC
+               LIMIT 100`,
+              [accountId]
+            );
+            if (_pendingPms.rows.length > 0) {
+              const _pmIds = [];
+              for (const row of _pendingPms.rows) {
+                const _ts = new Date(row.sent_at).getTime();
+                const _msg = makePm(row.from_id, row.from_dn, accountId, row.text, _ts, row.from_id, true);
+                try { ws.send(_msg); } catch {}
+                _pmIds.push(row.msg_id);
+              }
+              // Mark as delivered
+              await pool.query(
+                `UPDATE private_messages SET delivered = TRUE WHERE msg_id = ANY($1::uuid[])`,
+                [_pmIds]
+              );
+            }
+          }
+        } catch (e) {
+          console.warn('[pm] pending delivery error:', e.message);
+        }
+
         console.log(`[ws] ${entityId} (${accountId}) joined ${zoneId} (resume: ${resumeResult.reason}) instance=${require('../config').INSTANCE_ID}`);
         return;
       }
@@ -716,21 +748,46 @@ function initWsServer(wss) {
           const _pmText = msg.text.trim().substring(0, CHAT_MAX_LEN);
           if (_pmText.length === 0) break;
           lastPmMs = _pmNow;
+
+          // msg.to is always accountId
+          const _pmToAccountId = msg.to;
           const _pmZone = sim.getZoneForAccount(accountId);
           if (!_pmZone) break;
           const _pmEntity = _pmZone.entities.get(entityId);
           const _pmDn = (_pmEntity && _pmEntity.displayName) || accountId.substring(0, 8);
-          const _pmMsg = makePm(entityId, _pmDn, msg.to, _pmText, _pmNow);
-          // Send to recipient if online in this zone
-          const _pmTargetWs = _pmZone.conns.get(msg.to);
-          if (_pmTargetWs && _pmTargetWs.readyState === 1) {
-            try { _pmTargetWs.send(_pmMsg); } catch {}
-          } else {
-            // Recipient not found — notify sender
-            try { ws.send(JSON.stringify({ t: 'chat_pm_error', reason: 'not_found', to: msg.to })); } catch {}
-            break;
+
+          // Store in DB (fire-and-forget; offline delivery relies on this)
+          let _pmDbOk = false;
+          try { await pool.query('SELECT 1'); _pmDbOk = true; } catch {}
+          if (_pmDbOk) {
+            pool.query(
+              `INSERT INTO private_messages (from_id, from_dn, to_id, text, sent_at)
+               VALUES ($1, $2, $3, $4, to_timestamp($5 / 1000.0))`,
+              [accountId, _pmDn, _pmToAccountId, _pmText, _pmNow]
+            ).catch(e => console.warn('[pm] db insert error:', e.message));
           }
-          // Echo back to sender
+
+          // Deliver to recipient if online (look up by accountId)
+          const _pmRecipZone = sim.getZoneForAccount(_pmToAccountId);
+          const _pmRecipEntityId = _pmRecipZone && _pmRecipZone.byAccount
+            ? _pmRecipZone.byAccount.get(_pmToAccountId)
+            : null;
+          const _pmRecipWs = _pmRecipEntityId ? _pmRecipZone.conns.get(_pmRecipEntityId) : null;
+
+          const _pmMsg = makePm(entityId, _pmDn, _pmToAccountId, _pmText, _pmNow, accountId);
+
+          if (_pmRecipWs && _pmRecipWs.readyState === 1) {
+            try { _pmRecipWs.send(_pmMsg); } catch {}
+            // Mark as delivered immediately
+            if (_pmDbOk) {
+              pool.query(
+                `UPDATE private_messages SET delivered = TRUE
+                 WHERE from_id = $1 AND to_id = $2 AND sent_at = to_timestamp($3 / 1000.0)`,
+                [accountId, _pmToAccountId, _pmNow]
+              ).catch(() => {});
+            }
+          }
+          // Always echo to sender
           try { ws.send(_pmMsg); } catch {}
           break;
         }

@@ -150,11 +150,14 @@ function makeGlobalChat(zoneId, entityId, displayName, text, timestamp) {
   });
 }
 
-function makePm(fromId, fromDn, toId, text, timestamp) {
-  return JSON.stringify({
+function makePm(fromId, fromDn, toId, text, timestamp, fromAccount, pending) {
+  const obj = {
     t: 'chat_pm', v: PROTOCOL_VERSION,
     from: fromId, dn: fromDn, to: toId, text, ts: timestamp,
-  });
+  };
+  if (fromAccount) obj.from_account = fromAccount;  // accountId for stable thread keying
+  if (pending) obj.pending = true;
+  return JSON.stringify(obj);
 }
 
 function makeError(code, msg, fatal) {

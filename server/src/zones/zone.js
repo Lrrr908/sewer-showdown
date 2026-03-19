@@ -460,6 +460,7 @@ class Zone {
 function wireSnapshot(entity) {
   const snap = {
     id: entity.id,
+    aid: entity.accountId || null,   // accountId — stable address for PM
     x: entity.x,
     y: entity.y,
     px: entity.px != null ? entity.px : entity.x * TILE_PX,
