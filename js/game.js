@@ -13841,18 +13841,13 @@ setInterval(saveGame, 10000);
         } else if (e.code === 'Tab') {
             e.preventDefault();
             _chatClearPmSuggestions();
-            // Cycle SAY → GLOBAL → PM (only if thread/unread exists) → SAY
-            var hasPm = _chatShell.unreadPmCount > 0 || Object.keys(_chatShell.pmThreads).length > 0;
-            var modes = ['SAY', 'GLOBAL'];
-            if (hasPm) modes.push('PM');
+            // Cycle SAY → GLOBAL → PM → SAY (PM always reachable so new convos can be started)
+            var modes = ['SAY', 'GLOBAL', 'PM'];
             var idx = modes.indexOf(_chatShell.mode);
             var next = modes[(idx + 1) % modes.length];
             if (next === 'PM') {
-                var pmTarget = _chatShell.activePmUserId;
-                if (!pmTarget) {
-                    var keys = Object.keys(_chatShell.pmThreads);
-                    if (keys.length > 0) pmTarget = keys[0];
-                }
+                // If there's an active thread open it directly, otherwise show inbox
+                var pmTarget = _chatShell.activePmUserId || null;
                 _chatSetMode('PM', pmTarget);
             } else {
                 _chatSetMode(next);
@@ -13894,8 +13889,9 @@ setInterval(saveGame, 10000);
     if (!badge) return;
     badge.addEventListener('click', function() {
         openChatInput();
-        var firstId = _chatShell.activePmUserId || Object.keys(_chatShell.pmThreads)[0];
-        if (firstId) _chatSetMode('PM', firstId);
+        // Open the thread with the most recent unread message, or just the inbox
+        var firstId = _chatShell.activePmUserId || Object.keys(_chatShell.pmThreads)[0] || null;
+        _chatSetMode('PM', firstId);
     });
 })();
 
