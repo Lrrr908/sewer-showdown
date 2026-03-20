@@ -193,7 +193,8 @@ async function exportFeeds(artists) {
         p.post_url,
         p.manual_thumb_url,
         p.is_pinned,
-        p.sort_order
+        p.sort_order,
+        p.ig_posted_at
       FROM ig_posts p
       WHERE p.artist_id = $1 AND p.is_active = TRUE
       ORDER BY p.is_pinned DESC, p.sort_order ASC, p.id ASC
@@ -214,6 +215,7 @@ async function exportFeeds(artists) {
         openUrl: r.post_url,
         status: localThumb ? 'local' : 'cdn',
         fetchedAt: new Date().toISOString(),
+        postedAt: r.ig_posted_at ? r.ig_posted_at.toISOString() : null,
       };
     });
 

@@ -297,12 +297,13 @@ async function run() {
         } else {
             allResults.push({ artistId: artist.id, handle: artist.ig_handle, ...result });
             await dbQuery(`
-                INSERT INTO ig_posts (artist_id, post_url, manual_thumb_url, created_at, updated_at)
-                VALUES ($1, $2, $3, now(), now())
+                INSERT INTO ig_posts (artist_id, post_url, manual_thumb_url, ig_posted_at, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, now(), now())
                 ON CONFLICT (post_url) DO UPDATE SET
                     manual_thumb_url = COALESCE(EXCLUDED.manual_thumb_url, ig_posts.manual_thumb_url),
-                    updated_at = now()
-            `, [artist.id, result.postUrl, result.thumbUrl]);
+                    ig_posted_at     = COALESCE(EXCLUDED.ig_posted_at, ig_posts.ig_posted_at),
+                    updated_at       = now()
+            `, [artist.id, result.postUrl, result.thumbUrl, result.datetime || null]);
             saved++;
         }
 

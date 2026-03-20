@@ -436,6 +436,32 @@
             background: #111;
         }
 
+        .feed-card--tonight {
+            border-color: #ff6a00;
+            grid-column: span 2;
+            box-shadow: 0 0 18px rgba(255, 106, 0, 0.45);
+            position: relative;
+        }
+
+        .feed-card--tonight:hover {
+            border-color: #ffaa44;
+            box-shadow: 0 0 28px rgba(255, 106, 0, 0.7);
+        }
+
+        .feed-card-date {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 6px 10px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.85));
+            color: #ff9955;
+            font-size: 10px;
+            font-family: 'Press Start 2P', monospace;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
         .feed-no-posts {
             color: #666;
             font-size: 10px;

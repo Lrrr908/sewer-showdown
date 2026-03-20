@@ -8068,32 +8068,61 @@ function renderOverlayForBuilding(buildingId) {
                 .then(function(data) {
                     if (!feedGrid) return;
                     var posts = data.items || data.posts || [];
-                    if (posts.length > 0) {
-                        feedGrid.innerHTML = '';
-                        posts.forEach(function(post) {
-                            var card = document.createElement('a');
-                            card.href = post.openUrl || post.postUrl || '#';
-                            card.target = '_blank';
-                            card.className = 'feed-card';
-                            if (post.imageUrl) {
-                                var img = document.createElement('img');
-                                img.referrerPolicy = 'no-referrer';
-                                img.crossOrigin = 'anonymous';
-                                img.src = post.imageUrl;
-                                img.alt = post.authorName || '';
-                                img.className = 'feed-card-img';
-                                card.appendChild(img);
-                            } else {
-                                var ph = document.createElement('div');
-                                ph.className = 'feed-card-placeholder';
-                                ph.textContent = 'NO IMG';
-                                card.appendChild(ph);
-                            }
-                            feedGrid.appendChild(card);
+                    if (posts.length === 0) { feedGrid.innerHTML = ''; return; }
+
+                    feedGrid.innerHTML = '';
+
+                    // Check if any post was from tonight (today, after 7 PM EST)
+                    function isTonight(isoStr) {
+                        if (!isoStr) return false;
+                        var d = new Date(isoStr);
+                        var fmt = new Intl.DateTimeFormat('en-US', {
+                            timeZone: 'America/New_York',
+                            year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', hour12: false
                         });
-                    } else {
-                        feedGrid.innerHTML = '';
+                        var parts = fmt.formatToParts(d).reduce(function(o, p) { o[p.type] = parseInt(p.value, 10); return o; }, {});
+                        var now = fmt.formatToParts(new Date()).reduce(function(o, p) { o[p.type] = parseInt(p.value, 10); return o; }, {});
+                        return parts.year === now.year && parts.month === now.month && parts.day === now.day && parts.hour >= 19;
                     }
+
+                    function fmtDate(isoStr) {
+                        return new Date(isoStr).toLocaleString('en-US', {
+                            timeZone: 'America/New_York',
+                            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+                        });
+                    }
+
+                    posts.forEach(function(post) {
+                        var tonight = isTonight(post.postedAt);
+                        var card = document.createElement('a');
+                        card.href = post.openUrl || post.postUrl || '#';
+                        card.target = '_blank';
+                        card.className = 'feed-card' + (tonight ? ' feed-card--tonight' : '');
+
+                        if (post.imageUrl) {
+                            var img = document.createElement('img');
+                            img.referrerPolicy = 'no-referrer';
+                            img.crossOrigin = 'anonymous';
+                            img.src = post.imageUrl;
+                            img.alt = post.authorName || '';
+                            img.className = 'feed-card-img';
+                            card.appendChild(img);
+                        } else {
+                            var ph = document.createElement('div');
+                            ph.className = 'feed-card-placeholder';
+                            ph.textContent = 'NO IMG';
+                            card.appendChild(ph);
+                        }
+
+                        if (tonight && post.postedAt) {
+                            var badge = document.createElement('div');
+                            badge.className = 'feed-card-date';
+                            badge.textContent = fmtDate(post.postedAt);
+                            card.appendChild(badge);
+                        }
+
+                        feedGrid.appendChild(card);
+                    });
                 })
                 .catch(function() {
                     feedGrid.innerHTML = '';
