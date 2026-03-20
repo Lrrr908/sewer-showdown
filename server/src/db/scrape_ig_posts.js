@@ -2,7 +2,7 @@
 // Fetches recent public posts from each artist's Instagram profile
 // and inserts them with manual_thumb_url into the database.
 
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const pool = require('./pool');
 
 const IG_APP_ID = '936619743392459';

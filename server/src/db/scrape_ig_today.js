@@ -15,7 +15,46 @@
 require('dotenv').config();
 const path   = require('path');
 const fs     = require('fs');
+const https  = require('https');
+const http   = require('http');
 const { chromium } = require('playwright');
+
+const ROOT       = path.resolve(__dirname, '../../../');
+const THUMBS_DIR = path.join(ROOT, 'data/ig-thumbs');
+const IG_DIR     = path.join(ROOT, 'data/ig');
+fs.mkdirSync(THUMBS_DIR, { recursive: true });
+
+function shortcode(postUrl) {
+    const m = postUrl.match(/\/p\/([^/]+)/);
+    return m ? m[1] : null;
+}
+
+function downloadFile(url, dest) {
+    return new Promise((resolve, reject) => {
+        const mod = url.startsWith('https') ? https : http;
+        const req = mod.get(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.instagram.com/' },
+            timeout: 20000,
+        }, res => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location)
+                return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
+            if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+            const ws = fs.createWriteStream(dest);
+            res.pipe(ws);
+            ws.on('finish', resolve); ws.on('error', reject);
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    });
+}
+
+function focusWindow() {
+    try {
+        const { execSync } = require('child_process');
+        const wid = execSync("DISPLAY=:0 wmctrl -l 2>/dev/null | grep -i 'chrome for testing' | awk '{print $1}'").toString().trim();
+        if (wid) execSync(`DISPLAY=:0 wmctrl -ir ${wid} -b remove,sticky 2>/dev/null; DISPLAY=:0 wmctrl -ia ${wid} 2>/dev/null`);
+    } catch {}
+}
 
 // DB is optional — results always written to scrape_results.json too
 let pool;
@@ -31,35 +70,35 @@ async function dbQuery(sql, params) {
 
 // ── Config ──────────────────────────────────────────────────
 const SESSION_DIR    = path.join(process.env.HOME || '/tmp', '.sewer-ig-session');
-const CUTOFF_HOUR_NY = 19;      // 7 PM America/New_York
-const DELAY_BASE_MS  = 1500;    // min pause between artists
-const DELAY_JITTER   = 1000;    // up to +1 s random extra
+const TARGET_DATE    = '2026-03-19';  // the event date (MM/DD doesn't matter, compare as string)
+const WINDOW_START   = 18.917;        // 6:55 PM America/New_York
+const WINDOW_END     = 19.75;         // 7:45 PM America/New_York
+const DELAY_BASE_MS  = 2000;    // min pause between artists
+const DELAY_JITTER   = 1500;    // up to +1.5 s random extra
 const PAGE_TIMEOUT   = 25000;
-const PAUSE_AFTER_MS = 1200;    // settle time after navigation
+const PAUSE_AFTER_MS = 1500;    // settle time after navigation
+const MAX_CANDIDATES = 9;       // how many posts to check per profile (skips pinned)
 // ────────────────────────────────────────────────────────────
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function jitter()  { return DELAY_BASE_MS + Math.random() * DELAY_JITTER; }
 
-// Returns { isToday, afterCutoff } in America/New_York time
+// Returns { isTargetDate, inWindow, hourDecimal } in America/New_York time
+// Target: March 19 2026, 6:55 PM – 7:45 PM EST
 function checkPostTime(isoStr) {
     const post = new Date(isoStr);
-    const fmt = (opts) =>
-        new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', ...opts })
-            .formatToParts(post)
-            .reduce((o, p) => { o[p.type] = parseInt(p.value, 10); return o; }, {});
+    const p = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(post).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
 
-    const nowFmt = (opts) =>
-        new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', ...opts })
-            .formatToParts(new Date())
-            .reduce((o, p) => { o[p.type] = parseInt(p.value, 10); return o; }, {});
-
-    const p = fmt({ year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false });
-    const n = nowFmt({ year: 'numeric', month: '2-digit', day: '2-digit' });
-
-    const isToday    = p.year === n.year && p.month === n.month && p.day === n.day;
-    const afterCutoff = p.hour >= CUTOFF_HOUR_NY;
-    return { isToday, afterCutoff };
+    // Build a comparable date string: YYYY-MM-DD
+    const postDate = `${p.year}-${p.month}-${p.day}`;
+    const isTargetDate = postDate === TARGET_DATE;
+    const hourDecimal  = parseInt(p.hour) + parseInt(p.minute) / 60;
+    const inWindow     = hourDecimal >= WINDOW_START && hourDecimal <= WINDOW_END;
+    return { isTargetDate, inWindow, hourDecimal };
 }
 
 // Navigate to a URL and wait for it to settle
@@ -70,7 +109,6 @@ async function goto(page, url) {
 
 // Collect up to MAX_CANDIDATES post links from the profile grid.
 // We gather several because the first slot(s) may be pinned (old) posts.
-const MAX_CANDIDATES = 9;
 
 async function getProfilePostUrls(page) {
     const strategies = [
@@ -104,26 +142,45 @@ async function getPostDatetime(page) {
     } catch { return null; }
 }
 
-// Get the best available image URL from the open post page
+// Get the full-res image URL from the open post page
+// div._aagv is Instagram's post image container — verified to give 1440x1800
 async function getPostThumb(page) {
-    // 1. OG image tag is most reliable — available before full JS render
     try {
-        const og = await page.locator('meta[property="og:image"]').getAttribute('content', { timeout: 6000 });
-        if (og && og.startsWith('http')) return og;
+        await page.waitForSelector('div._aagv img', { timeout: 10000 });
     } catch {}
 
-    // 2. Intercept the largest img inside the article
-    const selectors = [
-        'article div[role="button"] img',
-        'article img[srcset]',
-        'article img[src]',
-    ];
-    for (const sel of selectors) {
-        try {
-            const src = await page.locator(sel).first().getAttribute('src', { timeout: 4000 });
-            if (src && src.startsWith('http')) return src;
-        } catch {}
+    // Extract highest-res from div._aagv (only THIS post's images, never suggested content)
+    const result = await page.evaluate(() => {
+        const imgs = Array.from(document.querySelectorAll('div._aagv img'));
+        let bestUrl = null, bestW = 0;
+        for (const img of imgs) {
+            if (img.currentSrc && img.currentSrc.includes('cdninstagram')) {
+                const w = img.naturalWidth || 0;
+                if (w > bestW) { bestW = w; bestUrl = img.currentSrc; }
+            }
+            const srcset = img.getAttribute('srcset') || '';
+            for (const part of srcset.split(',')) {
+                const [url, wStr] = part.trim().split(/\s+/);
+                const w = parseInt(wStr) || 0;
+                if (url && url.includes('cdninstagram') && w > bestW) {
+                    bestW = w; bestUrl = url;
+                }
+            }
+        }
+        return bestUrl ? { url: bestUrl, width: bestW } : null;
+    }).catch(() => null);
+
+    if (result) {
+        process.stdout.write(`[${result.width}px] `);
+        return result.url;
     }
+
+    // Fallback: og:image (640x640 square crop — last resort)
+    try {
+        const og = await page.locator('meta[property="og:image"]').getAttribute('content', { timeout: 4000 });
+        if (og && og.startsWith('http')) { process.stdout.write('[og:fallback] '); return og; }
+    } catch {}
+
     return null;
 }
 
@@ -132,6 +189,7 @@ async function scrapeArtist(page, artist) {
     process.stdout.write(`[${artist.id}] @${artist.ig_handle} `);
 
     // ── Step 1: Load profile ─────────────────────────────
+    focusWindow();
     try {
         await goto(page, profileUrl);
     } catch (err) {
@@ -179,19 +237,23 @@ async function scrapeArtist(page, artist) {
             timeStyle: 'short',
         });
 
-        if (!check.isToday) {
-            // Pinned or simply old post — keep looking
-            process.stdout.write(`  [${i + 1}] pinned/old (${label}), trying next… `);
+        if (!check.isTargetDate) {
+            // Pinned or old post — keep looking
+            process.stdout.write(`  [${i + 1}] not Mar 19 (${label}), trying next… `);
             await sleep(800);
             continue;
         }
 
-        // Found a post from today
-        postUrl    = candidate;
-        datetime   = dt;
-        isToday    = check.isToday;
-        afterCutoff = check.afterCutoff;
-        timeLabel  = label;
+        if (!check.inWindow) {
+            const h = check.hourDecimal.toFixed(2);
+            console.log(`skip (today but outside 6:55–7:45 PM EST — ${label}, hour=${h})`);
+            return null;
+        }
+
+        // Found a post from today within the window
+        postUrl   = candidate;
+        datetime  = dt;
+        timeLabel = label;
         break;
     }
 
@@ -200,16 +262,50 @@ async function scrapeArtist(page, artist) {
         return null;
     }
 
-    if (!afterCutoff) {
-        console.log(`skip (today but before 7 PM EST — ${timeLabel})`);
-        return null;
-    }
-
-    // ── Step 5: Grab thumbnail ───────────────────────────
+    // ── Step 5: Grab full-res image ──────────────────────
     const thumbUrl = await getPostThumb(page);
 
+    // ── Step 6: Download image locally ──────────────────
+    let localImagePath = null;
+    if (thumbUrl) {
+        const sc = shortcode(postUrl);
+        if (sc) {
+            const dest = path.join(THUMBS_DIR, sc + '.jpg');
+            try {
+                await downloadFile(thumbUrl, dest);
+                const kb = Math.round(fs.statSync(dest).size / 1024);
+                localImagePath = 'data/ig-thumbs/' + sc + '.jpg';
+                process.stdout.write(`[saved ${kb}KB] `);
+            } catch (e) {
+                process.stdout.write(`[dl-fail: ${e.message}] `);
+            }
+        }
+    }
+
+    // ── Step 7: Update data/ig/<artistId>.json ───────────
+    const jsonFile = path.join(IG_DIR, artist.id + '.json');
+    if (fs.existsSync(jsonFile)) {
+        try {
+            const feed = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+            const newItem = {
+                postUrl,
+                openUrl: postUrl,
+                imageUrl: localImagePath || thumbUrl || '',
+                postedAt: datetime,
+                status: localImagePath ? 'local' : 'cdn',
+            };
+            // Remove any existing entry for this postUrl, then prepend
+            feed.items = feed.items.filter(i => i.postUrl !== postUrl);
+            feed.items.unshift(newItem);
+            fs.writeFileSync(jsonFile, JSON.stringify(feed));
+            process.stdout.write('[json ✓] ');
+        } catch (e) {
+            process.stdout.write(`[json-fail: ${e.message}] `);
+        }
+    }
+
     console.log(`✓  ${timeLabel}  →  ${postUrl}`);
-    return { postUrl, thumbUrl, datetime };
+    return { postUrl, thumbUrl: localImagePath || thumbUrl, datetime };
 }
 
 async function run() {
@@ -222,11 +318,12 @@ async function run() {
     // ── Launch headed persistent browser ────────────────
     const browser = await chromium.launchPersistentContext(SESSION_DIR, {
         headless: false,
-        viewport: { width: 1300, height: 920 },
+        viewport: { width: 1080, height: 900 },
+        deviceScaleFactor: 2,
         userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         locale: 'en-US',
         timezoneId: 'America/New_York',
-        slowMo: 120,   // slight slow-mo so pages feel natural
+        slowMo: 80,
     });
 
     const page = await browser.newPage();

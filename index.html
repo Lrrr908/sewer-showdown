@@ -293,8 +293,10 @@
         .thumb-btn img {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
+            object-position: center;
             display: block;
+            background: #111;
         }
 
 
@@ -436,29 +438,41 @@
             background: #111;
         }
 
-        .feed-card--tonight {
-            border-color: #ff6a00;
-            grid-column: span 2;
-            box-shadow: 0 0 18px rgba(255, 106, 0, 0.45);
+        /* Tonight's featured post — slot above the regular feed */
+        #overlayTonightPost:empty { display: none; }
+
+        .tonight-slot {
+            display: block;
             position: relative;
+            width: 20%;
+            margin: 0 auto 14px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #ff6a00;
+            box-shadow: 0 0 20px rgba(255, 106, 0, 0.5);
+            text-decoration: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
 
-        .feed-card--tonight:hover {
+        .tonight-slot:hover {
             border-color: #ffaa44;
-            box-shadow: 0 0 28px rgba(255, 106, 0, 0.7);
+            box-shadow: 0 0 32px rgba(255, 106, 0, 0.75);
         }
 
-        .feed-card-date {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            padding: 6px 10px;
-            background: linear-gradient(transparent, rgba(0,0,0,0.85));
-            color: #ff9955;
-            font-size: 10px;
-            font-family: 'Press Start 2P', monospace;
+        .tonight-slot img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            display: block;
+            background: #111;
+        }
+
+        .tonight-slot-label {
             text-align: center;
+            padding: 8px 4px 4px;
+            color: #ff9955;
+            font-size: 14px;
+            font-family: 'Press Start 2P', monospace;
             letter-spacing: 0.5px;
         }
 
@@ -584,6 +598,8 @@
     <div id="buildingOverlay" class="hidden">
         <h1 id="overlayArtistName">Artist Name</h1>
         <p class="overlay-bio" id="overlayArtistBio"></p>
+
+        <div id="overlayTonightPost"></div>
 
         <div id="overlayFeedGrid" class="feed-grid"></div>
 

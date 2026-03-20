@@ -8001,6 +8001,9 @@ function closeBuildingOverlay() {
     if (!overlay) { console.error('closeBuildingOverlay: #buildingOverlay not found'); return; }
     overlay.classList.add('hidden');
 
+    const tonightEl = document.getElementById('overlayTonightPost');
+    if (tonightEl) tonightEl.innerHTML = '';
+
     // Invalidate any in-flight hero load and clean up
     game.overlay.heroReqId++;
     const heroImg = document.getElementById('overlayHeroImg');
@@ -8014,6 +8017,25 @@ function closeBuildingOverlay() {
 // ============================================
 // GALLERY — render, hero swap, thumbs
 // ============================================
+
+function igIsTonight(isoStr) {
+    if (!isoStr) return false;
+    var d = new Date(isoStr);
+    var fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', hour12: false
+    });
+    var p = fmt.formatToParts(d).reduce(function(o, x) { o[x.type] = parseInt(x.value, 10); return o; }, {});
+    // Match Sewer Showdown event: March 19, 2026 at 7 PM EST or later
+    return p.year === 2026 && p.month === 3 && p.day === 19 && p.hour >= 19;
+}
+
+function igFmtDate(isoStr) {
+    return new Date(isoStr).toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+    });
+}
 
 function renderOverlayForBuilding(buildingId) {
     const building = BUILDING_BY_ID[buildingId];
@@ -8070,35 +8092,46 @@ function renderOverlayForBuilding(buildingId) {
                     var posts = data.items || data.posts || [];
                     if (posts.length === 0) { feedGrid.innerHTML = ''; return; }
 
+                    var tonightEl = document.getElementById('overlayTonightPost');
+                    if (tonightEl) tonightEl.innerHTML = '';
                     feedGrid.innerHTML = '';
 
-                    // Check if any post was from tonight (today, after 7 PM EST)
-                    function isTonight(isoStr) {
-                        if (!isoStr) return false;
-                        var d = new Date(isoStr);
-                        var fmt = new Intl.DateTimeFormat('en-US', {
-                            timeZone: 'America/New_York',
-                            year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', hour12: false
-                        });
-                        var parts = fmt.formatToParts(d).reduce(function(o, p) { o[p.type] = parseInt(p.value, 10); return o; }, {});
-                        var now = fmt.formatToParts(new Date()).reduce(function(o, p) { o[p.type] = parseInt(p.value, 10); return o; }, {});
-                        return parts.year === now.year && parts.month === now.month && parts.day === now.day && parts.hour >= 19;
+                    var tonightPost = null;
+                    for (var ti = 0; ti < posts.length; ti++) {
+                        if (igIsTonight(posts[ti].postedAt)) { tonightPost = posts[ti]; break; }
                     }
 
-                    function fmtDate(isoStr) {
-                        return new Date(isoStr).toLocaleString('en-US', {
-                            timeZone: 'America/New_York',
-                            month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
-                        });
+                    // Tonight slot — slightly bigger, above the feed
+                    if (tonightPost && tonightEl) {
+                        var slot = document.createElement('a');
+                        slot.href = tonightPost.openUrl || tonightPost.postUrl || '#';
+                        slot.target = '_blank';
+                        slot.className = 'tonight-slot';
+                        if (tonightPost.imageUrl) {
+                            var tImg = document.createElement('img');
+                            tImg.referrerPolicy = 'no-referrer';
+                            tImg.crossOrigin = 'anonymous';
+                            tImg.src = tonightPost.imageUrl;
+                            tImg.alt = tonightPost.authorName || '';
+                            slot.appendChild(tImg);
+                        }
+                        tonightEl.appendChild(slot);
+                        if (tonightPost.postedAt) {
+                            var labelEl = document.createElement('div');
+                            labelEl.className = 'tonight-slot-label';
+                            var d = new Date(tonightPost.postedAt);
+                            var dateStr = d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'long', day: 'numeric', year: 'numeric' });
+                            labelEl.textContent = 'SEWER SHOWDOWN - ' + dateStr.toUpperCase();
+                            tonightEl.appendChild(labelEl);
+                        }
                     }
 
-                    posts.forEach(function(post) {
-                        var tonight = isTonight(post.postedAt);
+                    // Regular feed — skip tonight's post since it's in the slot above
+                    posts.filter(function(p) { return !igIsTonight(p.postedAt); }).forEach(function(post) {
                         var card = document.createElement('a');
                         card.href = post.openUrl || post.postUrl || '#';
                         card.target = '_blank';
-                        card.className = 'feed-card' + (tonight ? ' feed-card--tonight' : '');
-
+                        card.className = 'feed-card';
                         if (post.imageUrl) {
                             var img = document.createElement('img');
                             img.referrerPolicy = 'no-referrer';
@@ -8113,14 +8146,6 @@ function renderOverlayForBuilding(buildingId) {
                             ph.textContent = 'NO IMG';
                             card.appendChild(ph);
                         }
-
-                        if (tonight && post.postedAt) {
-                            var badge = document.createElement('div');
-                            badge.className = 'feed-card-date';
-                            badge.textContent = fmtDate(post.postedAt);
-                            card.appendChild(badge);
-                        }
-
                         feedGrid.appendChild(card);
                     });
                 })
@@ -14828,7 +14853,7 @@ var DUNGEON_TILE_TYPES = {
 var DUNGEON_OPPOSITE = { n: 's', s: 'n', e: 'w', w: 'e' };
 var DUNGEON_TRANS_DURATION = 0.38; // seconds
 
-function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
+function generateDungeon(theme, seed, diff, artistId, artistName, peaceful, numRoomsOverride) {
     var rng    = mulberry32RT(seedHashRT(seed));
     var enemyHp = DIFF_HP_RT[diff] || 1;
 
@@ -14847,37 +14872,20 @@ function generateDungeon(theme, seed, diff, artistId, artistName, peaceful) {
     var numRooms, doorConfigs, itemRoomId;
 
     if (peaceful) {
-        // Hub layout: 3x3 grid (9 rooms)
-        //   [7]--[6]--[8]
-        //    |    |    |
-        //   [4]--[3]--[5]
-        //    |    |    |
-        //   [1]--[0]--[2]
-        // Room 0 = entry (bottom-center), south exit to world
-        numRooms = 9;
+        // Hub layout: linear chain sized to fit gallery images
+        // entry(0) -n-> room1 -n-> room2 -n-> ... -n-> roomN-1
+        numRooms = numRoomsOverride || 9;
         doorConfigs = [];
         for (var ri = 0; ri < numRooms; ri++) {
             doorConfigs.push({ n: null, s: null, e: null, w: null });
         }
-        // Grid positions: [col, row] for each room id
-        var gridPos = [
-            [1,0], [0,0], [2,0],  // bottom row: 0=center, 1=left, 2=right
-            [1,1], [0,1], [2,1],  // middle row: 3=center, 4=left, 5=right
-            [1,2], [0,2], [2,2]   // top row:    6=center, 7=left, 8=right
-        ];
-        // Build adjacency from grid positions
-        for (var gi = 0; gi < numRooms; gi++) {
-            for (var gj = gi + 1; gj < numRooms; gj++) {
-                var dx = gridPos[gj][0] - gridPos[gi][0];
-                var dy = gridPos[gj][1] - gridPos[gi][1];
-                if (dx === 1 && dy === 0) { doorConfigs[gi].e = gj; doorConfigs[gj].w = gi; }
-                if (dx === -1 && dy === 0) { doorConfigs[gi].w = gj; doorConfigs[gj].e = gi; }
-                if (dy === 1 && dx === 0) { doorConfigs[gi].n = gj; doorConfigs[gj].s = gi; }
-                if (dy === -1 && dx === 0) { doorConfigs[gi].s = gj; doorConfigs[gj].n = gi; }
-            }
+        // Linear chain: each room connects north to the next
+        doorConfigs[0].s = -1; // entry room exits south to world
+        for (var ci = 0; ci < numRooms - 1; ci++) {
+            doorConfigs[ci].n = ci + 1;
+            doorConfigs[ci + 1].s = ci;
         }
-        doorConfigs[0].s = -1;
-        itemRoomId = 6; // top-center room
+        itemRoomId = numRooms - 1; // last room
     } else if (theme === 'dimension_x') {
         // Dimension X maze:
         //   entry(0) → lower corridor(1) [side rooms 9,10] → upper corridor(8) [side rooms 11,12]
@@ -15413,16 +15421,18 @@ function _buildSewerArtSlots(L) {
         allSlots[ri] = roomSlots;
     }
 
-    // Distribute images round-robin across all rooms
+    // Assign each image exactly once — no repeating, stop when images run out
     var images = L.galleryImages;
     if (images.length === 0) return;
     var imgIdx = 0;
     for (var ri2 = 0; ri2 < d.rooms.length; ri2++) {
         var slots = allSlots[ri2];
         for (var si = 0; si < slots.length; si++) {
-            slots[si].img = images[imgIdx % images.length];
+            if (imgIdx >= images.length) break;
+            slots[si].img = images[imgIdx];
             imgIdx++;
         }
+        if (imgIdx >= images.length) break;
     }
 
     L.sewerArtSlots = allSlots;
@@ -15433,11 +15443,7 @@ async function startEnterLevelFromContext(ctx) {
     if (ctx.type === 'static') {
         await startEnterLevel(ctx.levelId, ctx.instanceId);
     } else if (ctx.type === 'hub') {
-        console.log('Generating hub dungeon: theme=' + ctx.theme + ' seed=' + ctx.seed);
-        var levelData = generateDungeon(ctx.theme, ctx.seed, 1, null, null, true);
-        levelData.instanceId = ctx.instanceId;
-
-        // Fetch newest IG image from every artist for sewer art gallery
+        // Fetch tonight's IG posts FIRST so we can size the dungeon to fit
         var _galleryImages = [];
         var _artistIds = Object.keys(ARTISTS);
         var _feedPromises = _artistIds.map(function(aid) {
@@ -15447,7 +15453,7 @@ async function startEnterLevelFromContext(ctx) {
                     if (!data) return null;
                     var posts = data.items || data.posts || [];
                     for (var pi = 0; pi < posts.length; pi++) {
-                        if (posts[pi].imageUrl) {
+                        if (posts[pi].imageUrl && igIsTonight(posts[pi].postedAt)) {
                             return { artistId: aid, artistName: data.artistName || ARTISTS[aid].name,
                                      imageUrl: posts[pi].imageUrl,
                                      postUrl: posts[pi].openUrl || posts[pi].postUrl || '#' };
@@ -15461,7 +15467,7 @@ async function startEnterLevelFromContext(ctx) {
         for (var _fi = 0; _fi < _feedResults.length; _fi++) {
             if (_feedResults[_fi]) _galleryImages.push(_feedResults[_fi]);
         }
-        console.log('[hub] loaded ' + _galleryImages.length + ' gallery images from ' + _artistIds.length + ' artists');
+        console.log('[hub] loaded ' + _galleryImages.length + ' tonight gallery images from ' + _artistIds.length + ' artists');
 
         // Preload image objects
         var _imgLoadPromises = _galleryImages.map(function(gi) {
@@ -15475,6 +15481,13 @@ async function startEnterLevelFromContext(ctx) {
         await Promise.all(_imgLoadPromises);
         _galleryImages = _galleryImages.filter(function(gi) { return gi._img; });
         console.log('[hub] preloaded ' + _galleryImages.length + ' images');
+
+        // Size rooms to fit images without repeating (~20 usable wall slots per room)
+        var _slotsPerRoom = 20;
+        var _hubRooms = Math.max(2, Math.ceil(_galleryImages.length / _slotsPerRoom));
+        console.log('[hub] generating hub dungeon: theme=' + ctx.theme + ' seed=' + ctx.seed + ' rooms=' + _hubRooms);
+        var levelData = generateDungeon(ctx.theme, ctx.seed, 1, null, null, true, _hubRooms);
+        levelData.instanceId = ctx.instanceId;
 
         levelData.galleryImages = _galleryImages;
         await startEnterLevelWithData(levelData);
