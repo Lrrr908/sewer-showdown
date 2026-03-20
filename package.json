@@ -12,7 +12,8 @@
     "migrate": "cd server && npm run migrate",
     "gen:map": "python3 scripts/urban_plan.py",
     "update-feed": "node server/src/db/update_feed.js",
-    "scrape-today": "node server/src/db/scrape_ig_today.js"
+    "scrape-today": "node server/src/db/scrape_ig_today.js",
+    "fix-thumbs": "node server/src/db/fix_ig_thumbs.js"
   },
   "devDependencies": {
     "xlsx": "^0.18.5"

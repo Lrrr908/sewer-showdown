@@ -14,8 +14,20 @@
 
 require('dotenv').config();
 const path   = require('path');
+const fs     = require('fs');
 const { chromium } = require('playwright');
-const pool   = require('./pool');
+
+// DB is optional — results always written to scrape_results.json too
+let pool;
+try { pool = require('./pool'); } catch { pool = null; }
+
+async function dbQuery(sql, params) {
+    if (!pool) return null;
+    try { return await pool.query(sql, params); } catch (e) {
+        console.log(`  [db skip] ${e.message}`);
+        return null;
+    }
+}
 
 // ── Config ──────────────────────────────────────────────────
 const SESSION_DIR    = path.join(process.env.HOME || '/tmp', '.sewer-ig-session');
@@ -56,12 +68,11 @@ async function goto(page, url) {
     await sleep(PAUSE_AFTER_MS + Math.random() * 1000);
 }
 
-// Try multiple selector strategies to find the first post link on a profile
-async function getFirstPostUrl(page, handle) {
-    // Instagram renders profile grids with different markup depending on login state / test variant.
-    // Try several approaches in order.
+// Collect up to MAX_CANDIDATES post links from the profile grid.
+// We gather several because the first slot(s) may be pinned (old) posts.
+const MAX_CANDIDATES = 9;
 
-    // 1. Standard post grid links
+async function getProfilePostUrls(page) {
     const strategies = [
         'article a[href*="/p/"]',
         'a[href*="/p/"][role]',
@@ -71,11 +82,17 @@ async function getFirstPostUrl(page, handle) {
 
     for (const sel of strategies) {
         try {
-            const href = await page.locator(sel).first().getAttribute('href', { timeout: 5000 });
-            if (href && href.includes('/p/')) return 'https://www.instagram.com' + href.split('?')[0];
+            const hrefs = await page.locator(sel).evaluateAll(
+                (els, max) => els.slice(0, max).map(el => el.getAttribute('href')).filter(Boolean),
+                MAX_CANDIDATES
+            );
+            const urls = hrefs
+                .filter(h => h.includes('/p/'))
+                .map(h => 'https://www.instagram.com' + h.split('?')[0]);
+            if (urls.length > 0) return [...new Set(urls)]; // deduplicate
         } catch {}
     }
-    return null;
+    return [];
 }
 
 // Get the datetime string from the post page
@@ -89,14 +106,21 @@ async function getPostDatetime(page) {
 
 // Get the best available image URL from the open post page
 async function getPostThumb(page) {
+    // 1. OG image tag is most reliable — available before full JS render
+    try {
+        const og = await page.locator('meta[property="og:image"]').getAttribute('content', { timeout: 6000 });
+        if (og && og.startsWith('http')) return og;
+    } catch {}
+
+    // 2. Intercept the largest img inside the article
     const selectors = [
-        'article div[role="button"] img',   // photo post
+        'article div[role="button"] img',
         'article img[srcset]',
         'article img[src]',
     ];
     for (const sel of selectors) {
         try {
-            const src = await page.locator(sel).first().getAttribute('src', { timeout: 3000 });
+            const src = await page.locator(sel).first().getAttribute('src', { timeout: 4000 });
             if (src && src.startsWith('http')) return src;
         } catch {}
     }
@@ -122,39 +146,60 @@ async function scrapeArtist(page, artist) {
         return null;
     }
 
-    // ── Step 2: Find first post ──────────────────────────
-    const postUrl = await getFirstPostUrl(page, artist.ig_handle);
-    if (!postUrl) {
+    // ── Step 2: Collect candidate post links ────────────
+    const candidates = await getProfilePostUrls(page);
+    if (candidates.length === 0) {
         console.log('✗ no post links found');
         return null;
     }
 
-    // ── Step 3: Open the post ────────────────────────────
-    try {
-        await goto(page, postUrl);
-    } catch (err) {
-        console.log(`✗ post load failed: ${err.message}`);
+    // ── Step 3 & 4: Walk candidates, skip pinned/old posts ──
+    let postUrl = null, datetime = null;
+    let isToday = false, afterCutoff = false, timeLabel = '';
+
+    for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i];
+        try {
+            await goto(page, candidate);
+        } catch (err) {
+            console.log(`  [${i + 1}/${candidates.length}] load failed: ${err.message}`);
+            continue;
+        }
+
+        const dt = await getPostDatetime(page);
+        if (!dt) {
+            console.log(`  [${i + 1}/${candidates.length}] no datetime, skipping`);
+            continue;
+        }
+
+        const check = checkPostTime(dt);
+        const label = new Date(dt).toLocaleString('en-US', {
+            timeZone: 'America/New_York',
+            dateStyle: 'short',
+            timeStyle: 'short',
+        });
+
+        if (!check.isToday) {
+            // Pinned or simply old post — keep looking
+            process.stdout.write(`  [${i + 1}] pinned/old (${label}), trying next… `);
+            await sleep(1500);
+            continue;
+        }
+
+        // Found a post from today
+        postUrl    = candidate;
+        datetime   = dt;
+        isToday    = check.isToday;
+        afterCutoff = check.afterCutoff;
+        timeLabel  = label;
+        break;
+    }
+
+    if (!postUrl) {
+        console.log('skip (no post from today found in top candidates)');
         return null;
     }
 
-    // ── Step 4: Get timestamp ────────────────────────────
-    const datetime = await getPostDatetime(page);
-    if (!datetime) {
-        console.log('✗ could not read post datetime');
-        return null;
-    }
-
-    const { isToday, afterCutoff } = checkPostTime(datetime);
-    const timeLabel = new Date(datetime).toLocaleString('en-US', {
-        timeZone: 'America/New_York',
-        dateStyle: 'short',
-        timeStyle: 'short',
-    });
-
-    if (!isToday) {
-        console.log(`skip (not today — ${timeLabel})`);
-        return null;
-    }
     if (!afterCutoff) {
         console.log(`skip (today but before 7 PM EST — ${timeLabel})`);
         return null;
@@ -219,15 +264,30 @@ async function run() {
 
     console.log('Logged in ✓\n');
 
-    // ── Load artists ─────────────────────────────────────
-    const { rows: artists } = await pool.query(
+    // ── Load artists — DB first, fall back to artists.json ───────────
+    const dbArtists = await dbQuery(
         `SELECT id, ig_handle FROM artists
          WHERE is_active = TRUE AND ig_handle IS NOT NULL
          ORDER BY sort_order, id`
     );
+    let artists = dbArtists ? dbArtists.rows : [];
+    if (artists.length === 0) {
+        console.log('DB unavailable — loading artists from data/artists.json\n');
+        const jsonPath = path.join(__dirname, '..', '..', '..', 'data', 'artists.json');
+        const raw = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+        artists = (raw.artists || [])
+            .filter(a => a.instagram)
+            .map(a => {
+                let handle = null;
+                try { handle = new URL(a.instagram).pathname.split('/').filter(Boolean)[0]; } catch {}
+                return { id: a.id, ig_handle: handle };
+            })
+            .filter(a => a.ig_handle);
+    }
     console.log(`${artists.length} artists to check\n`);
 
     let saved = 0, skipped = 0, errors = 0;
+    const allResults = [];
 
     for (const artist of artists) {
         const result = await scrapeArtist(page, artist);
@@ -235,30 +295,31 @@ async function run() {
         if (!result) {
             skipped++;
         } else {
-            try {
-                await pool.query(`
-                    INSERT INTO ig_posts (artist_id, post_url, manual_thumb_url, created_at, updated_at)
-                    VALUES ($1, $2, $3, now(), now())
-                    ON CONFLICT (post_url) DO UPDATE SET
-                        manual_thumb_url = COALESCE(EXCLUDED.manual_thumb_url, ig_posts.manual_thumb_url),
-                        updated_at = now()
-                `, [artist.id, result.postUrl, result.thumbUrl]);
-                saved++;
-            } catch (dbErr) {
-                console.log(`  ✗ DB error: ${dbErr.message}`);
-                errors++;
-            }
+            allResults.push({ artistId: artist.id, handle: artist.ig_handle, ...result });
+            await dbQuery(`
+                INSERT INTO ig_posts (artist_id, post_url, manual_thumb_url, created_at, updated_at)
+                VALUES ($1, $2, $3, now(), now())
+                ON CONFLICT (post_url) DO UPDATE SET
+                    manual_thumb_url = COALESCE(EXCLUDED.manual_thumb_url, ig_posts.manual_thumb_url),
+                    updated_at = now()
+            `, [artist.id, result.postUrl, result.thumbUrl]);
+            saved++;
         }
 
         // Slow down between artists
         await sleep(jitter());
     }
 
+    // Always write results to JSON regardless of DB status
+    const outFile = path.join(__dirname, '../../../../scrape_results_today.json');
+    fs.writeFileSync(outFile, JSON.stringify(allResults, null, 2));
+    console.log(`\nResults saved to: ${outFile}`);
+
     await browser.close();
     console.log(`\n═══════════════════════════════════════════════════`);
     console.log(` Done:  ${saved} saved   ${skipped} skipped   ${errors} errors`);
     console.log(`═══════════════════════════════════════════════════`);
-    await pool.end();
+    if (pool) await pool.end();
 }
 
 run().catch(err => {
