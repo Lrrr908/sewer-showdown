@@ -32,10 +32,10 @@ async function dbQuery(sql, params) {
 // ── Config ──────────────────────────────────────────────────
 const SESSION_DIR    = path.join(process.env.HOME || '/tmp', '.sewer-ig-session');
 const CUTOFF_HOUR_NY = 19;      // 7 PM America/New_York
-const DELAY_BASE_MS  = 5000;    // min pause between artists
-const DELAY_JITTER   = 3000;    // up to +3 s random extra
-const PAGE_TIMEOUT   = 35000;
-const PAUSE_AFTER_MS = 2500;    // settle time after navigation
+const DELAY_BASE_MS  = 1500;    // min pause between artists
+const DELAY_JITTER   = 1000;    // up to +1 s random extra
+const PAGE_TIMEOUT   = 25000;
+const PAUSE_AFTER_MS = 1200;    // settle time after navigation
 // ────────────────────────────────────────────────────────────
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -182,7 +182,7 @@ async function scrapeArtist(page, artist) {
         if (!check.isToday) {
             // Pinned or simply old post — keep looking
             process.stdout.write(`  [${i + 1}] pinned/old (${label}), trying next… `);
-            await sleep(1500);
+            await sleep(800);
             continue;
         }
 

@@ -87,7 +87,7 @@ async function getThumb(page, postUrl) {
             console.log('✗ no thumb found');
             fail++;
         }
-        await sleep(3000 + Math.random() * 2000);
+        await sleep(1200 + Math.random() * 800);
     }
 
     console.log(`\nDone: ${ok} updated, ${fail} failed`);
