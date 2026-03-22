@@ -4993,6 +4993,22 @@ const SPRITE_MANIFEST = {
     enemyShield:       'sprites/extracted/enemy_shield.png',
     enemyRunner:       'sprites/extracted/enemy_runner.png',
 
+    // Boss: God-Z (Bastards of the Multiverse building)
+    godzFront1:        'img/godz/godzfront1.png',
+    godzFront2:        'img/godz/godzfront2.png',
+    godzFront3:        'img/godz/godzfront3.png',
+    godzBack1:         'img/godz/godzback1.png',
+    godzBack2:         'img/godz/godzback2.png',
+    godzBack3:         'img/godz/godzback3.png',
+    godzSide1:         'img/godz/godzside1.png',
+    godzSide2:         'img/godz/godzside2.png',
+    godzSide3:         'img/godz/godzside3.png',
+    // God-Z fist projectile sprites
+    godzFistFront:     'img/godz/fistfront.png',
+    godzFistBack:      'img/godz/fistback.png',
+    godzFistSide1:     'img/godz/fistside1.png',
+    godzFistSide2:     'img/godz/fistside2.png',
+
     // Boss: Puff (SNZ Toys building)
     puffFront1:        'img/puff/pufffront1.png',
     puffFront2:        'img/puff/pufffront2.png',
@@ -15182,8 +15198,8 @@ function _loadDungeonRoom(L, room) {
         var isRanged = e.type === 'foot_ranged';
         var isShield = e.type === 'foot_shield';
         var isRunner = e.type === 'foot_runner';
-        var isBoss   = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf' || e.type === 'boss_epox';
-        var _bossSize = e.type === 'boss_puff' ? lts * 4 : e.type === 'boss_epox' ? lts * 1.0 : lts * 3;
+        var isBoss   = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf' || e.type === 'boss_epox' || e.type === 'boss_godz';
+        var _bossSize = e.type === 'boss_puff' ? lts * 4 : e.type === 'boss_epox' ? lts * 1.0 : e.type === 'boss_godz' ? lts * 6.5 : lts * 3;
         return {
             id:              'e_r' + room.id + '_' + idx,
             type:            e.type,
@@ -15236,7 +15252,12 @@ function _loadDungeonRoom(L, room) {
             hopVy:     e.type === 'boss_epox' ? 0 : undefined,
             hopVx:     e.type === 'boss_epox' ? 0 : undefined,
             hopVz:     e.type === 'boss_epox' ? 0 : undefined,
-            hopTimer:  e.type === 'boss_epox' ? 0.8 : undefined
+            hopTimer:  e.type === 'boss_epox' ? 0.8 : undefined,
+            // boss_godz-specific fields
+            godzFireTimer:  e.type === 'boss_godz' ? 2.5 : undefined,
+            godzSpawnTimer: e.type === 'boss_godz' ? 6.0 : undefined,
+            godzFistCount:  e.type === 'boss_godz' ? 0   : undefined,
+            godzWristIdx:   e.type === 'boss_godz' ? 0   : undefined
         };
     });
 
@@ -15261,6 +15282,7 @@ function _loadDungeonRoom(L, room) {
     L.camera.y = 0;
     L.projectiles = [];
     L.epoxiBlobs = [];
+    L.godzFists = [];
 }
 
 // ── Inject the persistent Technodrome Epox boss into the current room ──
@@ -15571,6 +15593,27 @@ async function startEnterLevelFromContext(ctx) {
             console.log('[epoxy_crusader] Epox boss injected into room ' + levelData.itemRoomId);
         }
 
+        // Bastards of the Multiverse: replace boss room enemies with God-Z
+        if (artistId === 'bastardsofthemultiverse' && levelData.rooms && levelData.itemRoomId != null) {
+            var _gzRoom = levelData.rooms[levelData.itemRoomId];
+            var _gzMX   = Math.floor(levelData.roomW / 2);
+            var _gzMY   = Math.floor(levelData.roomH / 2);
+            _gzRoom.enemies = [
+                { type: 'boss_godz', x: _gzMX, y: _gzMY - 2, hp: 35,
+                  patrol: { left: 3, right: levelData.roomW - 4 } }
+            ];
+            _gzRoom.itemSpawn = null;
+            // Clear interior pillars so fists have room to fly
+            var _gztm = _gzRoom.tilemap;
+            var _gzRW = levelData.roomW, _gzRH = levelData.roomH;
+            for (var _gzbr = 2; _gzbr < _gzRH - 2; _gzbr++) {
+                for (var _gzbc = 2; _gzbc < _gzRW - 2; _gzbc++) {
+                    if (_gztm[_gzbr][_gzbc] === 3) _gztm[_gzbr][_gzbc] = 4;
+                }
+            }
+            console.log('[bastardsofthemultiverse] God-Z boss injected into room ' + levelData.itemRoomId);
+        }
+
         await startEnterLevelWithData(levelData);
     }
 }
@@ -15681,8 +15724,8 @@ async function startEnterLevelWithData(levelData) {
             var isRanged = e.type === 'foot_ranged';
             var isShield = e.type === 'foot_shield';
             var isRunner = e.type === 'foot_runner';
-            var isBoss = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf' || e.type === 'boss_epox';
-            var _bossSize = e.type === 'boss_puff' ? lts * 4 : e.type === 'boss_epox' ? lts * 1.0 : lts * 3;
+            var isBoss = e.type === 'boss_technodrome' || e.type === 'boss_puff' || e.type === 'boss_barf' || e.type === 'boss_epox' || e.type === 'boss_godz';
+            var _bossSize = e.type === 'boss_puff' ? lts * 4 : e.type === 'boss_epox' ? lts * 1.0 : e.type === 'boss_godz' ? lts * 6.5 : lts * 3;
             return {
                 id: 'enemy_' + idx,
                 type: e.type,
@@ -15736,7 +15779,12 @@ async function startEnterLevelWithData(levelData) {
                 hopVy:     e.type === 'boss_epox' ? 0 : undefined,
                 hopVx:     e.type === 'boss_epox' ? 0 : undefined,
                 hopVz:     e.type === 'boss_epox' ? 0 : undefined,
-                hopTimer:  e.type === 'boss_epox' ? 0.8 : undefined
+                hopTimer:  e.type === 'boss_epox' ? 0.8 : undefined,
+                // boss_godz-specific fields
+                godzFireTimer:  e.type === 'boss_godz' ? 2.5 : undefined,
+                godzSpawnTimer: e.type === 'boss_godz' ? 6.0 : undefined,
+                godzFistCount:  e.type === 'boss_godz' ? 0   : undefined,
+                godzWristIdx:   e.type === 'boss_godz' ? 0   : undefined
             };
         }),
         projectiles: [],
@@ -15847,7 +15895,7 @@ async function startEnterLevelWithData(levelData) {
 // SCORING SYSTEM (Phase 2)
 // ============================================
 
-var SCORE_KILL = { foot: 100, foot_ranged: 150, foot_shield: 200, foot_runner: 120, boss_technodrome: 10000, boss_puff: 8000, boss_barf: 8000, boss_epox: 8000 };
+var SCORE_KILL = { foot: 100, foot_ranged: 150, foot_shield: 200, foot_runner: 120, boss_technodrome: 10000, boss_puff: 8000, boss_barf: 8000, boss_epox: 8000, boss_godz: 9000 };
 var SCORE_LEVEL_CLEAR = 500;
 var SCORE_SPECIAL_ITEM = 1000;
 var SCORE_SPEED_BONUS_PER_SEC = 50;
@@ -15994,15 +16042,15 @@ function recordHighScore() {
 // ============================================
 
 var SPECIAL_ITEMS = [
-    { id: 'mutagen_canister', name: 'Mutagen Canister',     color: '#00ff88', shape: 'canister',  themes: ['sewer'] },
-    { id: 'pizza_box',        name: 'Pizza Box',            color: '#ff8800', shape: 'box',       themes: ['gallery'] },
+    { id: 'mutagen_canister', name: 'Mutagen Canister',     color: '#00ff88', shape: 'canister',  themes: ['boss_barf_exclusive'] },
+    { id: 'pizza_box',        name: 'Pizza Box',            color: '#ff8800', shape: 'box',       themes: ['boss_epox_exclusive'] },
     { id: 'helmet_shard',     name: "Shredder's Helmet",    color: '#cc44cc', shape: 'shard',     themes: ['street'] },
     { id: 'shell_fragment',   name: 'Turtle Shell Fragment', color: '#44aa44', shape: 'fragment',  themes: ['dock'] },
     { id: 'power_cell',       name: "Krang's Power Cell",   color: '#ff44ff', shape: 'cell',      themes: ['boss_puff_exclusive'] },
     { id: 'microphone',       name: "April's Microphone",   color: '#ffdd44', shape: 'mic',       themes: ['gallery'] },
     { id: 'staff_piece',      name: "Splinter's Staff",     color: '#aa8844', shape: 'staff',     themes: ['street'] },
     { id: 'foot_scroll',      name: 'Foot Clan Scroll',     color: '#ff2222', shape: 'scroll',    themes: ['dock'] },
-    { id: 'dimension_crystal', name: 'Dimension X Crystal', color: '#8844ff', shape: 'crystal',   themes: ['sewer', 'street', 'dock', 'gallery'] },
+    { id: 'dimension_crystal', name: 'Dimension X Crystal', color: '#8844ff', shape: 'crystal',   themes: ['boss_godz_exclusive'] },
     { id: 'technodrome_key',  name: 'Technodrome Key',      color: '#ffffff', shape: 'key',       themes: ['sewer', 'street', 'dock', 'gallery'] }
 ];
 
@@ -16397,6 +16445,51 @@ function updateLevel(dt) {
                 }
             }
             if (_hitBarf) { L.toyProjectiles.splice(_tpj2, 1); }
+        }
+    }
+
+    // ── Toy projectile hits God-Z ───────────────────────────────
+    if (L.toyProjectiles) {
+        for (var _tpj3 = L.toyProjectiles.length - 1; _tpj3 >= 0; _tpj3--) {
+            var _tproj3 = L.toyProjectiles[_tpj3];
+            var _hitGodz = false;
+            for (var _tei3 = 0; _tei3 < L.enemies.length; _tei3++) {
+                var _te3 = L.enemies[_tei3];
+                if (!_te3.alive || _te3.type !== 'boss_godz') continue;
+                if (_tproj3.x > _te3.x && _tproj3.x < _te3.x + _te3.w &&
+                    _tproj3.y > _te3.y && _tproj3.y < _te3.y + _te3.h) {
+                    _te3.hp -= 4;
+                    L.screenShake = 4;
+                    L.hitSparks.push({ x: _tproj3.x, y: _tproj3.y, life: 0.15 });
+                    L.pointPopups.push({ text: '-4', x: _tproj3.x, y: _tproj3.y - 12, life: 0.8, color: '#ff6600' });
+                    if (_te3.hp <= 0) {
+                        _te3.alive = false;
+                        addKillScore(_te3.type, _te3.x + _te3.w / 2, _te3.y + _te3.h / 2);
+                        addLevelScore(SCORE_KILL['boss_godz'] || 9000, 'GOD-Z DEFEATED');
+                        game.progress.score += SCORE_KILL['boss_godz'] || 9000;
+                        saveGame();
+                        L.screenShake = 16;
+                        if (L.godzFists) L.godzFists = [];
+                        L.pointPopups.push({ text: 'GOD-Z DEFEATED!', x: _te3.x + _te3.w / 2, y: _te3.y - lts * 1.5, life: 2.5, color: '#ff6600' });
+                        // Drop Dimension X Crystal — always spawns on God-Z's defeat
+                        var _dcItem = null;
+                        for (var _dci = 0; _dci < SPECIAL_ITEMS.length; _dci++) {
+                            if (SPECIAL_ITEMS[_dci].id === 'dimension_crystal') { _dcItem = SPECIAL_ITEMS[_dci]; break; }
+                        }
+                        if (_dcItem) {
+                            L.specialItem = _dcItem;
+                            L.specialItemCollected = game.progress.collectedItems['dimension_crystal'] ? true : false;
+                            L.specialItemPos = { x: _te3.x + _te3.w / 2 - lts * 0.4, y: _te3.y + _te3.h / 2 - lts * 0.4, w: lts * 0.8, h: lts * 0.8 };
+                            if (!L.specialItemCollected) {
+                                L.pointPopups.push({ text: 'DIMENSION X CRYSTAL!', x: _te3.x + _te3.w / 2, y: _te3.y - lts * 2.5, life: 2.5, color: '#8844ff' });
+                            }
+                        }
+                    }
+                    _hitGodz = true;
+                    break;
+                }
+            }
+            if (_hitGodz) { L.toyProjectiles.splice(_tpj3, 1); }
         }
     }
 
@@ -17085,6 +17178,438 @@ function updateLevel(dt) {
             continue; // epox done
         }
 
+        // ── boss_godz AI ──────────────────────────────────────────────
+        if (e.type === 'boss_godz') {
+            // Safety init
+            if (e.godzFireTimer  === undefined) { e.godzFireTimer  = 2.5; }
+            if (e.godzSpawnTimer === undefined) { e.godzSpawnTimer = 6.0; }
+            if (e.godzFistCount  === undefined) { e.godzFistCount  = 0;   }
+            if (e.godzWristIdx   === undefined) { e.godzWristIdx   = 0;   }
+
+            // ══════════════════════════════════════════════════════════════
+            // WRIST SOCKET POSITIONS — tweak these to move each fist
+            //
+            // Values are FRACTIONS of entity width (ox) and height (oy)
+            // measured from the entity CENTER.
+            //   ox: negative = screen-left,  positive = screen-right
+            //   oy: negative = screen-up,    positive = screen-down
+            //
+            // Each direction has 3 frames (0 = first step, 1 = mid, 2 = far)
+            // For SIDE view, [0] = the NEAR (visible) arm,
+            //                [1] = the FAR  (tucked behind body) arm.
+            // When God-Z faces RIGHT the side sprite is flipped, so ox is
+            // automatically negated — you only need to edit the left-facing values.
+            // ══════════════════════════════════════════════════════════════
+
+            // Initialise the global mutable table ONCE from the literal defaults.
+            // After that the debug panel writes directly into this object, so
+            // tweaks survive across frames without resetting every tick.
+            if (!window._gzMutableTable) {
+                window._gzMutableTable = {
+                    // ── FRONT (God-Z facing toward player) ──────────────
+                    // index [0] = LEFT wrist    index [1] = RIGHT wrist
+                    front: [
+                        // frame 0  (godzfront1.png — arms hanging, neutral)
+                        [ {ox:-0.380, oy:0.150},   {ox:0.200, oy:0.240} ],
+                        // frame 1  (godzfront2.png — arms spread wider)
+                        [ {ox:-0.400, oy:0.190},   {ox:0.200, oy:0.190} ],
+                        // frame 2  (godzfront3.png — walking stride, arms offset)
+                        [ {ox:-0.400, oy:0.230},   {ox:0.190, oy:0.150} ]
+                    ],
+                    // ── BACK (God-Z facing away from player) ────────────
+                    // index [0] = LEFT wrist    index [1] = RIGHT wrist
+                    back: [
+                        // frame 0  (godzback1.png)
+                        [ {ox:-0.420, oy:-0.060},   {ox:0.260, oy:-0.170} ],
+                        // frame 1  (godzback2.png — arms spread wider)
+                        [ {ox:-0.430, oy:-0.120},   {ox:0.250, oy:-0.110} ],
+                        // frame 2  (godzback3.png)
+                        [ {ox:-0.440, oy:-0.160},   {ox:0.240, oy:-0.070} ]
+                    ],
+                    // ── SIDE (God-Z walking left — sprite auto-flips for right) ──
+                    // index [0] = NEAR arm (facing camera)
+                    // index [1] = FAR  arm (tucked behind body)
+                    side: [
+                        // frame 0  (godzside1.png — arm at rest)
+                        [ {ox:-0.320, oy:0.150},   {ox:-0.270, oy:0.090} ],
+                        // frame 1  (godzside2.png — arm tucked back in stride)
+                        [ {ox:-0.240, oy:0.200},   {ox:-0.300, oy:0.070} ],
+                        // frame 2  (godzside3.png — arm swung forward)
+                        [ {ox:-0.090, oy:0.250},   {ox:-0.420, oy:-0.050} ]
+                    ]
+                };
+            }
+            var _gzWristTable = window._gzMutableTable;
+
+            // ══════════════════════════════════════════════════════════════
+            // FIST POSITION DEBUG MODE
+            // true  → fists freeze at wrist, debug panel appears, God-Z
+            //         stands still but buttons control direction & frame.
+            // false → normal gameplay.
+            var _gzHoldFists = false;
+            // ══════════════════════════════════════════════════════════════
+
+            e._gzWristTable  = _gzWristTable;
+            e._gzHoldFists   = _gzHoldFists;
+
+            // ── DEBUG PANEL (injected once, driven by window._gzDbg) ──────
+            if (_gzHoldFists) {
+                if (!window._gzDbg) { window._gzDbg = {dir:'front', face:-1, frame:0}; }
+                if (!window._gzDbgStep) { window._gzDbgStep = 0.01; }
+
+                // Inject the HTML panel into the page the first time
+                if (!document.getElementById('gz-dbg')) {
+                    var _gzBs = 'display:inline-block;background:#2a2a3e;color:#ccc;border:1px solid #555;' +
+                                'border-radius:3px;padding:3px 9px;cursor:pointer;font-family:monospace;' +
+                                'font-size:11px;margin:2px;user-select:none;';
+
+                    window._gzDbgRefresh = function() {
+                        var d = window._gzDbg, t = window._gzMutableTable;
+                        if (!d || !t || !document.getElementById('gz-dbg')) return;
+                        // Direction button highlights
+                        var _dirs = ['front','back','side-l','side-r'];
+                        _dirs.forEach(function(k) {
+                            var b = document.getElementById('gz-d-'+k);
+                            if (!b) return;
+                            var on = (k==='front' && d.dir==='front') ||
+                                     (k==='back'  && d.dir==='back')  ||
+                                     (k==='side-l'&& d.dir==='side'&& d.face<0) ||
+                                     (k==='side-r'&& d.dir==='side'&& d.face>0);
+                            b.style.background = on ? '#5050bb' : '#2a2a3e';
+                            b.style.color      = on ? '#fff'    : '#ccc';
+                        });
+                        // Frame button highlights
+                        for (var _f=0;_f<3;_f++){
+                            var _fb=document.getElementById('gz-f-'+_f);
+                            if(_fb){ _fb.style.background=(_f===d.frame)?'#883010':'#2a2a3e';
+                                     _fb.style.color=(_f===d.frame)?'#fff':'#ccc'; }
+                        }
+                        // Step button highlights
+                        [0.005,0.01,0.02].forEach(function(s){
+                            var _sb=document.getElementById('gz-s-'+s);
+                            if(_sb){ _sb.style.background=(window._gzDbgStep===s)?'#205020':'#2a2a3e';
+                                     _sb.style.color=(window._gzDbgStep===s)?'#fff':'#ccc'; }
+                        });
+                        // Wrist value readouts
+                        var row = t[d.dir][d.frame];
+                        document.getElementById('gz-l-ox').textContent = row[0].ox.toFixed(3);
+                        document.getElementById('gz-l-oy').textContent = row[0].oy.toFixed(3);
+                        document.getElementById('gz-r-ox').textContent = row[1].ox.toFixed(3);
+                        document.getElementById('gz-r-oy').textContent = row[1].oy.toFixed(3);
+                    };
+
+                    window._gzDbgAdj = function(side, axis, sign) {
+                        var row = window._gzMutableTable[window._gzDbg.dir][window._gzDbg.frame];
+                        row[side][axis] = Math.round((row[side][axis] + sign * window._gzDbgStep) * 1000) / 1000;
+                        window._gzDbgRefresh();
+                    };
+
+                    window._gzDbgMove = function(axis, sign) {
+                        var b = window._gzDbgBoss;
+                        if (!b) return;
+                        var step = (window._gzDbg.lts || 32) * 0.5;
+                        if (axis === 'x') b.x += sign * step;
+                        else              b.y += sign * step;
+                    };
+
+                    window._gzDbgSave = function() {
+                        var t = window._gzMutableTable;
+                        var L = ['            if (!window._gzMutableTable) {',
+                                 '                window._gzMutableTable = {'];
+                        ['front','back','side'].forEach(function(dir, di) {
+                            var lbl = di===0 ? '// FRONT' : di===1 ? '// BACK' : '// SIDE';
+                            L.push('                    '+lbl);
+                            L.push('                    '+dir+': [');
+                            for (var fr=0; fr<3; fr++) {
+                                var r=t[dir][fr], c=fr<2?',':'';
+                                L.push('                        // frame '+fr);
+                                L.push('                        [ {ox:'+r[0].ox.toFixed(3)+', oy:'+r[0].oy.toFixed(3)+
+                                       '},   {ox:'+r[1].ox.toFixed(3)+', oy:'+r[1].oy.toFixed(3)+'} ]'+c);
+                            }
+                            L.push('                    ]'+(di<2?',':''));
+                        });
+                        L.push('                };');
+                        L.push('            }');
+                        var code = L.join('\n');
+                        document.getElementById('gz-out').value = code;
+                        var btn = document.getElementById('gz-save-btn');
+                        try {
+                            navigator.clipboard.writeText(code).then(function(){
+                                btn.textContent='✓ COPIED!'; btn.style.background='#206820';
+                                setTimeout(function(){ btn.textContent='💾 COPY CODE'; btn.style.background='#1a4a1a'; },2200);
+                            });
+                        } catch(ex) { btn.textContent='(select textarea & copy)'; }
+                    };
+
+                    var _gzP = document.createElement('div');
+                    _gzP.id = 'gz-dbg';
+                    _gzP.style.cssText = 'position:fixed;top:10px;right:10px;background:#12121f;color:#ddd;' +
+                        'padding:14px;border-radius:10px;font-family:monospace;font-size:12px;z-index:99999;' +
+                        'width:295px;border:2px solid #5050aa;box-shadow:0 6px 28px rgba(0,0,0,0.92);' +
+                        'max-height:calc(100vh - 20px);overflow-y:auto;';
+                    _gzP.innerHTML =
+                        '<div style="font-size:14px;font-weight:bold;color:#ff8080;margin-bottom:10px;'+
+                        'border-bottom:1px solid #333;padding-bottom:7px">⚙ GOD-Z FIST DEBUG</div>'+
+
+                        '<div style="color:#888;font-size:10px;margin-bottom:4px">DIRECTION</div>'+
+                        '<div style="margin-bottom:10px">'+
+                        '<button id="gz-d-front"  style="'+_gzBs+'" onclick="window._gzDbg.dir=\'front\'; window._gzDbgRefresh()">FRONT</button>'+
+                        '<button id="gz-d-back"   style="'+_gzBs+'" onclick="window._gzDbg.dir=\'back\';  window._gzDbgRefresh()">BACK</button>'+
+                        '<button id="gz-d-side-l" style="'+_gzBs+'" onclick="window._gzDbg.dir=\'side\'; window._gzDbg.face=-1; window._gzDbgRefresh()">◀ SIDE</button>'+
+                        '<button id="gz-d-side-r" style="'+_gzBs+'" onclick="window._gzDbg.dir=\'side\'; window._gzDbg.face=1;  window._gzDbgRefresh()">SIDE ▶</button>'+
+                        '</div>'+
+
+                        '<div style="color:#888;font-size:10px;margin-bottom:4px">WALK FRAME</div>'+
+                        '<div style="margin-bottom:12px">'+
+                        '<button id="gz-f-0" style="'+_gzBs+'" onclick="window._gzDbg.frame=0; window._gzDbgRefresh()">Frame 0</button>'+
+                        '<button id="gz-f-1" style="'+_gzBs+'" onclick="window._gzDbg.frame=1; window._gzDbgRefresh()">Frame 1</button>'+
+                        '<button id="gz-f-2" style="'+_gzBs+'" onclick="window._gzDbg.frame=2; window._gzDbgRefresh()">Frame 2</button>'+
+                        '</div>'+
+
+                        '<div style="border-top:1px solid #2a2a3e;padding-top:10px;margin-bottom:6px">'+
+                        '<span style="color:#8888ff;font-weight:bold">LEFT WRIST &nbsp;</span>'+
+                        '<span style="color:#555;font-size:10px">[0] near-arm on side view</span></div>'+
+                        '<div style="margin-bottom:4px">ox:&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgAdj(0,\'ox\',-1)">−</button>&nbsp;'+
+                        '<span id="gz-l-ox" style="display:inline-block;width:54px;text-align:center;color:#ffee44;font-weight:bold">0.000</span>&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgAdj(0,\'ox\',1)">+</button></div>'+
+                        '<div style="margin-bottom:12px">oy:&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgAdj(0,\'oy\',-1)">−</button>&nbsp;'+
+                        '<span id="gz-l-oy" style="display:inline-block;width:54px;text-align:center;color:#ffee44;font-weight:bold">0.000</span>&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgAdj(0,\'oy\',1)">+</button></div>'+
+
+                        '<div style="border-top:1px solid #2a2a3e;padding-top:10px;margin-bottom:6px">'+
+                        '<span style="color:#ff8888;font-weight:bold">RIGHT WRIST</span>'+
+                        '<span style="color:#555;font-size:10px"> [1] far-arm on side view</span></div>'+
+                        '<div style="margin-bottom:4px">ox:&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgAdj(1,\'ox\',-1)">−</button>&nbsp;'+
+                        '<span id="gz-r-ox" style="display:inline-block;width:54px;text-align:center;color:#ffee44;font-weight:bold">0.000</span>&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgAdj(1,\'ox\',1)">+</button></div>'+
+                        '<div style="margin-bottom:12px">oy:&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgAdj(1,\'oy\',-1)">−</button>&nbsp;'+
+                        '<span id="gz-r-oy" style="display:inline-block;width:54px;text-align:center;color:#ffee44;font-weight:bold">0.000</span>&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgAdj(1,\'oy\',1)">+</button></div>'+
+
+                        '<div style="border-top:1px solid #2a2a3e;padding-top:10px;margin-bottom:6px">'+
+                        '<span style="color:#aaffaa;font-weight:bold">MOVE GOD-Z</span>'+
+                        '<span style="color:#555;font-size:10px"> (½ tile per click)</span></div>'+
+                        '<div style="text-align:center;margin-bottom:4px">'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgMove(\'y\',-1)">▲</button></div>'+
+                        '<div style="text-align:center;margin-bottom:4px">'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgMove(\'x\',-1)">◀</button>&nbsp;&nbsp;'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgMove(\'x\',1)">▶</button></div>'+
+                        '<div style="text-align:center;margin-bottom:12px">'+
+                        '<button style="'+_gzBs+'" onclick="window._gzDbgMove(\'y\',1)">▼</button></div>'+
+
+                        '<div style="border-top:1px solid #2a2a3e;padding-top:10px;margin-bottom:6px">'+
+                        '<span style="color:#888;font-size:10px">STEP SIZE</span></div>'+
+                        '<div style="margin-bottom:12px">'+
+                        '<button id="gz-s-0.005" style="'+_gzBs+'" onclick="window._gzDbgStep=0.005;window._gzDbgRefresh()">fine 0.005</button>'+
+                        '<button id="gz-s-0.01"  style="'+_gzBs+'" onclick="window._gzDbgStep=0.01; window._gzDbgRefresh()">0.01</button>'+
+                        '<button id="gz-s-0.02"  style="'+_gzBs+'" onclick="window._gzDbgStep=0.02; window._gzDbgRefresh()">coarse 0.02</button>'+
+                        '</div>'+
+
+                        '<button id="gz-save-btn" onclick="window._gzDbgSave()" '+
+                        'style="background:#1a4a1a;color:#8f8;padding:6px 0;border-radius:5px;border:1px solid #3a7a3a;'+
+                        'cursor:pointer;font-weight:bold;font-family:monospace;font-size:12px;width:100%;margin-bottom:8px">'+
+                        '💾 COPY CODE</button>'+
+                        '<div style="color:#555;font-size:10px;margin-bottom:4px">Paste this block over the existing table in game.js</div>'+
+                        '<textarea id="gz-out" style="width:100%;height:110px;background:#060610;color:#00dd66;'+
+                        'font-size:9px;border:1px solid #2a2a3e;resize:vertical;box-sizing:border-box;padding:5px;'+
+                        'font-family:monospace" readonly></textarea>';
+
+                    document.body.appendChild(_gzP);
+                    window._gzDbgRefresh();
+                }
+
+                // Every tick: lock direction and frame to panel selection.
+                // Position freeze is handled by skipping the movement block below.
+                e.bossDir         = window._gzDbg.dir;
+                e.facingDir       = window._gzDbg.face;
+                e.animTimer       = window._gzDbg.frame * 0.55;
+                window._gzDbgBoss = e;   // expose entity so panel move buttons can update x/y
+                window._gzDbg.lts = lts; // expose tile size for position step calculation
+            }
+
+            // First tick: pre-load one fist on each wrist so they're visible immediately
+            if (!e._fistsReady) {
+                e._fistsReady = true;
+                if (!L.godzFists) L.godzFists = [];
+                // Front-view wrist sockets (God-Z starts facing front)
+                var _initWrists = [
+                    { ox: -e.w * 0.38, oy: e.h * 0.12, side: 'left'  },
+                    { ox:  e.w * 0.38, oy: e.h * 0.12, side: 'right' }
+                ];
+                for (var _iw = 0; _iw < 2; _iw++) {
+                    var _iwDur = 4.0 + _iw * 1.0;  // left at 4.0s, right at 5.0s — staggered entry
+                    e.godzFistCount++;
+                    L.godzFists.push({
+                        id:           'gf_init_' + _iw,
+                        state:        'LOADING',
+                        loadTimer:    _iwDur,
+                        _initLoadDur: _iwDur,
+                        wristOx:      _initWrists[_iw].ox,
+                        wristOy:      _initWrists[_iw].oy,
+                        wristSide:    _initWrists[_iw].side,
+                        x:            ecx + _initWrists[_iw].ox,
+                        y:            ecy + _initWrists[_iw].oy,
+                        vx: 0, vy: 0,
+                        life:         8.0,
+                        dirKey:       'front',
+                        animTimer:    0
+                    });
+                }
+                e.godzWristIdx = 0; // next fire starts from left wrist
+            }
+
+            var _gzhp = e.hp / e.maxHp;
+            if (_gzhp <= 0.25 && e.bossPhase < 3) { e.bossPhase = 3; e.state = 'BOSS_PHASE3'; L.screenShake = 8; }
+            else if (_gzhp <= 0.55 && e.bossPhase < 2) { e.bossPhase = 2; e.state = 'BOSS_PHASE2'; L.screenShake = 5; }
+
+            // Movement: slow chase toward player, speed scales with phase
+            // Skipped entirely in debug hold mode so God-Z stays frozen in place.
+            if (!_gzHoldFists) {
+                var _gzSpd = lts * (e.bossPhase >= 3 ? 1.7 : e.bossPhase >= 2 ? 1.1 : 0.55);
+                var _gzDx  = _nearTcx - ecx, _gzDy = _nearTcy - ecy;
+                var _gzLen = Math.hypot(_gzDx, _gzDy) || 1;
+                if (_gzLen > lts * 2.5) {
+                    var _gzNx = e.x + (_gzDx / _gzLen) * _gzSpd * dt;
+                    var _gzNy = e.y + (_gzDy / _gzLen) * _gzSpd * dt;
+                    if (!levelTileCollision(L, _gzNx, e.y, e.w, e.h)) e.x = _gzNx;
+                    if (!levelTileCollision(L, e.x, _gzNy, e.w, e.h)) e.y = _gzNy;
+                    e.facingDir = _gzDx > 0 ? 1 : -1;
+                    e.bossDir = Math.abs(_gzDx) >= Math.abs(_gzDy) ? 'side' : (_gzDy > 0 ? 'front' : 'back');
+                }
+            }
+
+            // Auto-reload handles the continuous fist cycle (one per wrist, always loading).
+            // This timer is a fallback only — fires if a wrist somehow ends up empty
+            // (e.g. player smashes both fists at once). Normal rate is very slow.
+            e.godzFireTimer -= dt;
+            if (e.godzFireTimer <= 0) {
+                var _gzFireRate = e.bossPhase >= 3 ? 4.0 : e.bossPhase >= 2 ? 5.0 : 6.0;
+                e.godzFireTimer = _gzFireRate;
+                if (!L.godzFists) L.godzFists = [];
+                if (e.godzWristIdx === undefined) e.godzWristIdx = 0;
+
+                // Read from the shared _gzWristTable defined at the top of the AI block
+                var _gzFrm   = Math.floor(e.animTimer / 0.55) % 3;
+                var _gzDirTbl = _gzWristTable[e.bossDir] || _gzWristTable.front;
+                var _gzRow   = _gzDirTbl[_gzFrm];
+                var _gzW0, _gzW1;
+                if (e.bossDir === 'side') {
+                    // [0]=near arm, [1]=far arm; flip x when facing right
+                    if (e.facingDir < 0) { // facing left: left=near, right=far
+                        _gzW0 = {ox: _gzRow[0].ox*e.w, oy: _gzRow[0].oy*e.h};
+                        _gzW1 = {ox: _gzRow[1].ox*e.w, oy: _gzRow[1].oy*e.h};
+                    } else {               // facing right (sprite flipped): negate x
+                        _gzW0 = {ox:-_gzRow[1].ox*e.w, oy: _gzRow[1].oy*e.h}; // left=far
+                        _gzW1 = {ox:-_gzRow[0].ox*e.w, oy: _gzRow[0].oy*e.h}; // right=near
+                    }
+                } else { // front / back: [0]=left, [1]=right
+                    _gzW0 = {ox: _gzRow[0].ox*e.w, oy: _gzRow[0].oy*e.h};
+                    _gzW1 = {ox: _gzRow[1].ox*e.w, oy: _gzRow[1].oy*e.h};
+                }
+                var _gzWrists = [_gzW0, _gzW1];
+
+                // Pick the next wrist; skip if already loading (auto-reload handles it)
+                var _gzWristSide = e.godzWristIdx % 2 === 0 ? 'left' : 'right';
+                var _gzAlreadyLoading = false;
+                for (var _gaLi = 0; _gaLi < L.godzFists.length; _gaLi++) {
+                    if (L.godzFists[_gaLi].state === 'LOADING' && L.godzFists[_gaLi].wristSide === _gzWristSide) {
+                        _gzAlreadyLoading = true; break;
+                    }
+                }
+                var _wrist = _gzWrists[e.godzWristIdx % 2];
+                e.godzWristIdx++;
+
+                if (!_gzAlreadyLoading) {
+                    // Initial sprite direction (will update each frame while loading)
+                    var _gzInitDir = (e.bossDir === 'back') ? 'back' :
+                                     (e.bossDir === 'side') ? (e.facingDir > 0 ? 'side_r' : 'side_l') : 'front';
+                    // Windup duration (visible charge time at wrist before firing)
+                    var _gzLoadDur = e.bossPhase >= 3 ? 2.5 : e.bossPhase >= 2 ? 3.5 : 5.0;
+                    e.godzFistCount++;
+                    L.godzFists.push({
+                        id:           'gf_' + e.id + '_' + e.godzFistCount,
+                        state:        'LOADING',
+                        loadTimer:    _gzLoadDur,
+                        _initLoadDur: _gzLoadDur,
+                        wristOx:      _wrist.ox,
+                        wristOy:      _wrist.oy,
+                        wristSide:    _gzWristSide,
+                        x:            ecx + _wrist.ox,
+                        y:            ecy + _wrist.oy,
+                        vx: 0, vy: 0,
+                        life:         8.0,
+                        dirKey:       _gzInitDir,
+                        animTimer:    0
+                    });
+                    L.screenShake = 2;
+                }
+            }
+
+            // Spawn pink (ranged) walker minions on a timer — disabled in debug hold mode
+            if (!_gzHoldFists) e.godzSpawnTimer -= dt;
+            if (!_gzHoldFists && e.godzSpawnTimer <= 0) {
+                var _gzSRate = e.bossPhase >= 3 ? 3.0 : e.bossPhase >= 2 ? 5.0 : 7.5;
+                e.godzSpawnTimer = _gzSRate;
+                var _gzMx = e.x + (Math.random() - 0.5) * lts * 4;
+                var _gzMy = e.y + e.h + lts;
+                if (!e._minionCount) e._minionCount = 0;
+                e._minionCount++;
+                if (!levelTileCollision(L, _gzMx, _gzMy, lts * 0.7, lts * 0.7)) {
+                    L.enemies.push({
+                        id: 'gm_' + e.id + '_' + e._minionCount,
+                        type: 'foot_ranged', ranged: true, shield: false, runner: false, boss: false,
+                        _pink: true,  // visual flag — pink tint in draw
+                        x: _gzMx, y: _gzMy, w: lts * 0.7, h: lts * 0.7,
+                        hp: 1, maxHp: 1, alive: true,
+                        patrolLeft: _gzMx - lts * 4, patrolRight: _gzMx + lts * 4,
+                        patrolCx: _gzMx, patrolCy: _gzMy,
+                        facingDir: _nearTcx > _gzMx ? 1 : -1,
+                        animTimer: 0, state: 'CHASE', stateTimer: 0, stunTimer: 0,
+                        kbVx: 0, kbVy: 0, kbTimer: 0,
+                        chaseRadius: lts * 10, attackRadius: lts * 4.5, attackCooldown: 0,
+                        shieldUp: false, bossPhase: 0, bossSpawnTimer: 0, bossFireTimer: 0,
+                        weakPointVisible: false, weakPointTimer: 0
+                    });
+                }
+            }
+
+            // Body contact damage to player
+            if (p.invTimer <= 0 && levelRectsOverlap(p.x, p.y, p.w, p.h, e.x, e.y, e.w, e.h)) {
+                p.hp -= 1; p.damageTaken++;
+                p.invTimer = 0.8;
+                var _gzCDir = Math.atan2(pcy - ecy, pcx - ecx);
+                p.kbVx = Math.cos(_gzCDir) * KB_PLAYER_DIST / KB_DURATION;
+                p.kbVy = Math.sin(_gzCDir) * KB_PLAYER_DIST / KB_DURATION;
+                p.kbTimer = KB_DURATION;
+                if (p.hp <= 0 && !_levelSwitchOnDeath()) {
+                    L.failed = true; game.levelState = 'FAIL';
+                    setTimeout(exitLevel, 1500); return;
+                }
+            }
+
+            // Normal melee CANNOT hurt God-Z — only toybox throws work
+            if (p.atkPhase === 'ACTIVE' && !p.atkHitIds.has(e.id)) {
+                var _gzAR = lts * 2.0;
+                var _gzADx = (p.direction === 'right') ? _gzAR : (p.direction === 'left') ? -_gzAR : 0;
+                var _gzADy = (p.direction === 'up') ? -_gzAR : (p.direction === 'down') ? _gzAR : 0;
+                var _gzAX  = p.x + p.w / 2 + _gzADx;
+                var _gzAY  = p.y + p.h / 2 + _gzADy;
+                if (Math.abs(_gzAX - ecx) < lts * 2 && Math.abs(_gzAY - ecy) < lts * 2) {
+                    // Block: immune — just spark
+                    p.atkHitIds.add(e.id);
+                    L.hitSparks.push({ x: (_gzAX + ecx) / 2, y: (_gzAY + ecy) / 2, life: 0.06 });
+                    L.pointPopups.push({ text: 'THROW TOYBOX!', x: ecx, y: ecy - lts, life: 1.0, color: '#ffee00' });
+                }
+            }
+
+            e.animTimer += dt;
+            continue; // godz done
+        }
+
             var hpPercent = e.hp / e.maxHp;
             // Phase transitions
             if (hpPercent <= 0.25 && e.bossPhase < 3) {
@@ -17312,7 +17837,7 @@ function updateLevel(dt) {
                         L.pizzaPickups.push({ id: 'lpz_' + Date.now() + '_w' + Math.random(), x: ecx, y: ecy, type: 'whole' });
                     }
                     // In Puff's or Barf's dungeon: walkers drop a throwable toy
-                    var _hasBoss = L.enemies.some(function(en) { return en.alive && (en.type === 'boss_puff' || en.type === 'boss_barf'); });
+                    var _hasBoss = L.enemies.some(function(en) { return en.alive && (en.type === 'boss_puff' || en.type === 'boss_barf' || en.type === 'boss_godz'); });
                     if (!e.boss && _hasBoss) {
                         if (!L.toyPickups) L.toyPickups = [];
                         L.toyPickups.push({ id: 'toy_' + Date.now() + '_' + Math.random(), x: ecx - lts * 0.25, y: ecy - lts * 0.25 });
@@ -17504,6 +18029,203 @@ function updateLevel(dt) {
                 }
             }
             if (_ebHit) { L.epoxiBlobs.splice(_ebi, 1); }
+        }
+    }
+
+    // ── God-Z fist projectile update (homing + player melee intercept) ──
+    if (L.godzFists && L.godzFists.length > 0) {
+        var _gfPcx = p.x + p.w / 2, _gfPcy = p.y + p.h / 2;
+
+        // Find the live God-Z boss so loading fists can track his wrist position
+        var _gzBossRef = null;
+        for (var _gzbi = 0; _gzbi < L.enemies.length; _gzbi++) {
+            if (L.enemies[_gzbi].alive && L.enemies[_gzbi].type === 'boss_godz') {
+                _gzBossRef = L.enemies[_gzbi]; break;
+            }
+        }
+
+        for (var _gfi = L.godzFists.length - 1; _gfi >= 0; _gfi--) {
+            var _gf = L.godzFists[_gfi];
+
+            // ── LOADING state: fist sits at wrist, winds up, then launches ──
+            if (_gf.state === 'LOADING') {
+                // Spawn-delay: wrist is visually empty for a moment after firing
+                if (_gf._spawnDelay > 0) {
+                    _gf._spawnDelay -= dt;
+                    continue; // invisible and frozen until delay expires
+                }
+                _gf.loadTimer -= dt;
+
+                // Anchor fist to boss wrist — reads the shared _gzWristTable (defined in AI block)
+                if (_gzBossRef && _gzBossRef._gzWristTable) {
+                    var _lfFrm = Math.floor(_gzBossRef.animTimer / 0.55) % 3;
+                    var _lfDir = _gzBossRef.bossDir || 'front';
+                    var _lfFd  = _gzBossRef.facingDir || -1;
+                    var _lfW   = _gzBossRef.w, _lfH = _gzBossRef.h;
+                    var _lfRow = (_gzBossRef._gzWristTable[_lfDir] || _gzBossRef._gzWristTable.front)[_lfFrm];
+                    var _lfOx, _lfOy;
+                    if (_lfDir === 'side') {
+                        var _lfIsNear = (_lfFd < 0) ? (_gf.wristSide === 'left') : (_gf.wristSide === 'right');
+                        var _lfEntry  = _lfRow[_lfIsNear ? 0 : 1];
+                        _lfOx = _lfEntry.ox * _lfW * (_lfFd > 0 ? -1 : 1);
+                        _lfOy = _lfEntry.oy * _lfH;
+                    } else {
+                        var _lfEntry  = _lfRow[_gf.wristSide === 'right' ? 1 : 0];
+                        _lfOx = _lfEntry.ox * _lfW;
+                        _lfOy = _lfEntry.oy * _lfH;
+                    }
+                    _gf.x = _gzBossRef.x + _gzBossRef.w / 2 + _lfOx;
+                    _gf.y = _gzBossRef.y + _gzBossRef.h / 2 + _lfOy;
+                    // Update dirKey so the correct fist sprite shows while loading
+                    if (_lfDir === 'side') {
+                        _gf.dirKey = _lfFd > 0 ? 'side_r' : 'side_l';
+                    } else {
+                        _gf.dirKey = _lfDir === 'back' ? 'back' : 'front';
+                    }
+                }
+
+                // Player melee can smash a loading fist — drops toybox, then reloads after a pause
+                if (p.atkPhase === 'ACTIVE') {
+                    var _gfLAR = lts * 1.4;
+                    var _gfLADx = (p.direction === 'right') ? _gfLAR : (p.direction === 'left') ? -_gfLAR : 0;
+                    var _gfLADy = (p.direction === 'up') ? -_gfLAR : (p.direction === 'down') ? _gfLAR : 0;
+                    if (Math.abs((p.x + p.w/2 + _gfLADx) - _gf.x) < lts * 1.1 &&
+                        Math.abs((p.y + p.h/2 + _gfLADy) - _gf.y) < lts * 1.1) {
+                        L.hitSparks.push({ x: _gf.x, y: _gf.y, life: 0.25 });
+                        L.pointPopups.push({ text: 'TOYBOX!', x: _gf.x, y: _gf.y - lts * 0.8, life: 1.2, color: '#ffee00' });
+                        if (!L.toyPickups) L.toyPickups = [];
+                        L.toyPickups.push({ id: 'gf_toy_' + Date.now() + '_' + _gfi, x: _gf.x, y: _gf.y });
+                        // Auto-reload after smash — longer windup as a penalty break
+                        if (_gzBossRef) {
+                            var _smRl = _gzBossRef.bossPhase >= 3 ? 3.0 : _gzBossRef.bossPhase >= 2 ? 4.5 : 6.0;
+                            var _smDK = (_gzBossRef.bossDir === 'back') ? 'back' :
+                                        (_gzBossRef.bossDir === 'side') ? (_gzBossRef.facingDir > 0 ? 'side_r' : 'side_l') : 'front';
+                            _gzBossRef.godzFistCount = (_gzBossRef.godzFistCount || 0) + 1;
+                            L.godzFists.push({
+                                id: 'gf_sm_' + _gzBossRef.godzFistCount,
+                                state: 'LOADING', loadTimer: _smRl, _initLoadDur: _smRl,
+                                wristOx: _gf.wristOx, wristOy: _gf.wristOy, wristSide: _gf.wristSide,
+                                x: _gf.x, y: _gf.y, vx: 0, vy: 0, life: 8.0, dirKey: _smDK, animTimer: 0
+                            });
+                        }
+                        L.godzFists.splice(_gfi, 1);
+                        continue;
+                    }
+                }
+
+                // Timer expired — launch toward player and immediately reload same wrist
+                if (_gf.loadTimer <= 0) {
+                    // DEBUG HOLD: freeze fist at wrist, never fire
+                    if (_gzBossRef && _gzBossRef._gzHoldFists) {
+                        _gf.loadTimer = _gf._initLoadDur; // reset wind-up so it loops
+                        continue;
+                    }
+                    _gf.state = 'FLYING';
+                    var _lfAngle = Math.atan2(_gfPcy - _gf.y, _gfPcx - _gf.x);
+                    var _lfSpd   = lts * (3.0 + Math.random() * 1.5);
+                    _gf.vx = Math.cos(_lfAngle) * _lfSpd;
+                    _gf.vy = Math.sin(_lfAngle) * _lfSpd;
+                    _gf.life = _gzBossRef && _gzBossRef.bossPhase >= 3 ? 5.0 : 4.0;
+                    _gf.dirKey = (Math.abs(Math.sin(_lfAngle)) > Math.abs(Math.cos(_lfAngle)))
+                        ? (_gf.vy > 0 ? 'front' : 'back')
+                        : (_gf.vx > 0 ? 'side_r' : 'side_l');
+                    // Auto-reload: queue a new fist on the SAME wrist after a short empty gap
+                    if (_gzBossRef) {
+                        var _rlDur    = _gzBossRef.bossPhase >= 3 ? 2.5 : _gzBossRef.bossPhase >= 2 ? 3.5 : 5.0;
+                        var _rlGap    = _gzBossRef.bossPhase >= 3 ? 1.0 : _gzBossRef.bossPhase >= 2 ? 1.5 : 2.0;
+                        var _rlDirKey = (_gzBossRef.bossDir === 'back') ? 'back' :
+                                        (_gzBossRef.bossDir === 'side') ? (_gzBossRef.facingDir > 0 ? 'side_r' : 'side_l') : 'front';
+                        _gzBossRef.godzFistCount = (_gzBossRef.godzFistCount || 0) + 1;
+                        L.godzFists.push({
+                            id:           'gf_rl_' + _gzBossRef.godzFistCount,
+                            state:        'LOADING',
+                            loadTimer:    _rlDur,
+                            _initLoadDur: _rlDur,
+                            _spawnDelay:  _rlGap,  // invisible gap before fist appears at wrist
+                            wristOx:      _gf.wristOx,
+                            wristOy:      _gf.wristOy,
+                            wristSide:    _gf.wristSide,
+                            x: _gf.x, y: _gf.y,
+                            vx: 0, vy: 0,
+                            life: 8.0,
+                            dirKey: _rlDirKey,
+                            animTimer: 0
+                        });
+                    }
+                }
+                continue; // don't do homing/collision while loading
+            }
+
+            // ── FLYING state ───────────────────────────────────────────
+            _gf.life -= dt;
+            if (_gf.life <= 0) { L.godzFists.splice(_gfi, 1); continue; }
+
+            // Homing: steer velocity toward player each tick
+            var _gfDx = _gfPcx - _gf.x, _gfDy = _gfPcy - _gf.y;
+            var _gfDist = Math.hypot(_gfDx, _gfDy) || 1;
+            var _gfTurnRate = lts * 4.5 * dt;
+            _gf.vx += (_gfDx / _gfDist) * _gfTurnRate;
+            _gf.vy += (_gfDy / _gfDist) * _gfTurnRate;
+            // Cap speed
+            var _gfSpd = Math.hypot(_gf.vx, _gf.vy);
+            var _gfMaxSpd = lts * 5.5;
+            if (_gfSpd > _gfMaxSpd) { _gf.vx = (_gf.vx / _gfSpd) * _gfMaxSpd; _gf.vy = (_gf.vy / _gfSpd) * _gfMaxSpd; }
+
+            // Move
+            var _gfNx = _gf.x + _gf.vx * dt;
+            var _gfNy = _gf.y + _gf.vy * dt;
+            if (!levelTileCollision(L, _gfNx - lts * 0.3, _gfNy - lts * 0.3, lts * 0.6, lts * 0.6)) {
+                _gf.x = _gfNx; _gf.y = _gfNy;
+            } else {
+                var _gfWx = !levelTileCollision(L, _gfNx - lts * 0.3, _gf.y - lts * 0.3, lts * 0.6, lts * 0.6);
+                var _gfWy = !levelTileCollision(L, _gf.x - lts * 0.3, _gfNy - lts * 0.3, lts * 0.6, lts * 0.6);
+                if (_gfWx) { _gf.x = _gfNx; _gf.vy = -_gf.vy * 0.7; }
+                else if (_gfWy) { _gf.y = _gfNy; _gf.vx = -_gf.vx * 0.7; }
+                else { _gf.vx = -_gf.vx * 0.7; _gf.vy = -_gf.vy * 0.7; }
+            }
+
+            // Update sprite direction from velocity
+            _gf.dirKey = (Math.abs(_gf.vx) >= Math.abs(_gf.vy))
+                ? (_gf.vx >= 0 ? 'side_r' : 'side_l')
+                : (_gf.vy > 0 ? 'front' : 'back');
+
+            // Player body hit: deals 1 damage
+            var _gfPx = p.x + p.w / 2, _gfPy = p.y + p.h / 2;
+            if (p.invTimer <= 0 &&
+                Math.abs(_gf.x - _gfPx) < lts * 0.7 &&
+                Math.abs(_gf.y - _gfPy) < lts * 0.7) {
+                p.hp -= 1; p.damageTaken++;
+                p.invTimer = 0.8;
+                var _gfKDir = Math.atan2(_gfPcy - _gf.y, _gfPcx - _gf.x);
+                p.kbVx = Math.cos(_gfKDir) * KB_PLAYER_DIST / KB_DURATION;
+                p.kbVy = Math.sin(_gfKDir) * KB_PLAYER_DIST / KB_DURATION;
+                p.kbTimer = KB_DURATION;
+                L.godzFists.splice(_gfi, 1);
+                L.hitSparks.push({ x: _gf.x, y: _gf.y, life: 0.2 });
+                if (p.hp <= 0 && !_levelSwitchOnDeath()) {
+                    L.failed = true; game.levelState = 'FAIL';
+                    setTimeout(exitLevel, 1500); return;
+                }
+                continue;
+            }
+
+            // Player ACTIVE melee hits fist → destroy fist, drop toybox pickup
+            if (p.atkPhase === 'ACTIVE') {
+                var _gfAR = lts * 1.4;
+                var _gfADx = (p.direction === 'right') ? _gfAR : (p.direction === 'left') ? -_gfAR : 0;
+                var _gfADy = (p.direction === 'up') ? -_gfAR : (p.direction === 'down') ? _gfAR : 0;
+                var _gfAX  = p.x + p.w / 2 + _gfADx;
+                var _gfAY  = p.y + p.h / 2 + _gfADy;
+                if (Math.abs(_gfAX - _gf.x) < lts * 1.1 && Math.abs(_gfAY - _gf.y) < lts * 1.1) {
+                    // Smash the fist — toybox drops here
+                    L.hitSparks.push({ x: _gf.x, y: _gf.y, life: 0.25 });
+                    L.pointPopups.push({ text: 'TOYBOX!', x: _gf.x, y: _gf.y - lts * 0.8, life: 1.2, color: '#ffee00' });
+                    if (!L.toyPickups) L.toyPickups = [];
+                    L.toyPickups.push({ id: 'gf_toy_' + Date.now() + '_' + _gfi, x: _gf.x, y: _gf.y });
+                    L.godzFists.splice(_gfi, 1);
+                    continue;
+                }
+            }
         }
     }
 
@@ -17971,6 +18693,118 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
                 ctx.fillRect(esx + e.w/2 - bossHpW/2, esy - 10 - _bh, bossHpW*(e.hp/e.maxHp), 6);
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
                 ctx.fillText('BARF', esx + e.w/2, esy - 14 - _bh); ctx.textAlign = 'left';
+            } else if (e.type === 'boss_godz') {
+                var _gzFrame = (Math.floor(e.animTimer / 0.55) % 3) + 1;
+                var _gzDir   = (e.bossDir === 'back') ? 'Back' : (e.bossDir === 'front') ? 'Front' : 'Side';
+                var _gzKey   = 'godz' + _gzDir + _gzFrame;
+                var _gzSpr   = game.sprites[_gzKey] || game.sprites['godzFront1'];
+
+                // Shared loading-fist draw helper — called twice:
+                //   pass onlyFront=false → draws back/side fists UNDER the body (body covers pin)
+                //   pass onlyFront=true  → draws front fists ON TOP of the body
+                var _gzDrawLoadingFists = function(onlyFront) {
+                    if (!L.godzFists) return;
+                    var _gzLfSz = ts * 1.1;
+                    var _gzLfBOff = {
+                        'front':  { dx: 0,               dy: -_gzLfSz * 0.09 },
+                        'back':   { dx: 0,               dy:  _gzLfSz * 0.13 },
+                        'side_r': { dx: -_gzLfSz * 0.12, dy: 0 },
+                        'side_l': { dx:  _gzLfSz * 0.11, dy: 0 }
+                    };
+                    for (var _gzLfi = 0; _gzLfi < L.godzFists.length; _gzLfi++) {
+                        var _gzLf = L.godzFists[_gzLfi];
+                        if (_gzLf.state !== 'LOADING') continue;
+                        if (_gzLf._spawnDelay > 0) continue; // wrist is empty during spawn gap
+                        var _gzLfDirK = _gzLf.dirKey || 'front';
+                        // "on top" layer: front fists, plus the near-arm side fist
+                        // (near arm = left wrist when facing left, right wrist when facing right)
+                        var _gzOnTop = (_gzLfDirK === 'front') ||
+                                       (_gzLfDirK === 'side_l' && _gzLf.wristSide === 'left') ||
+                                       (_gzLfDirK === 'side_r' && _gzLf.wristSide === 'right');
+                        if (onlyFront !== _gzOnTop) continue;
+                        var _gzLfDx = _gzLf.x - cx, _gzLfDy = _gzLf.y - cy;
+                        var _gzLfOff  = _gzLfBOff[_gzLfDirK] || { dx: 0, dy: 0 };
+                        var _gzLfSprK;
+                        if (_gzLfDirK === 'back') {
+                            _gzLfSprK = 'godzFistBack';
+                        } else if (_gzLfDirK === 'side_r') {
+                            // right-facing: left wrist (far arm) uses Side2, right wrist (near arm) uses Side1
+                            _gzLfSprK = (_gzLf.wristSide === 'left') ? 'godzFistSide2' : 'godzFistSide1';
+                        } else if (_gzLfDirK === 'side_l') {
+                            // left-facing: right wrist (far arm) uses Side1 flipped, left wrist (near arm) uses Side2
+                            _gzLfSprK = (_gzLf.wristSide === 'right') ? 'godzFistSide2' : 'godzFistSide1';
+                        } else {
+                            _gzLfSprK = 'godzFistFront';
+                        }
+                        var _gzLfSpr  = game.sprites[_gzLfSprK];
+                        var _gzLdPct  = Math.max(0, _gzLf.loadTimer / Math.max(0.01, _gzLf._initLoadDur || 0.55));
+                        var _gzLfShk  = (1 - _gzLdPct) * 2.5;
+                        var _gzLfSX   = (Math.random() - 0.5) * _gzLfShk;
+                        var _gzLfSY   = (Math.random() - 0.5) * _gzLfShk;
+                        var _gzLfPuls = 0.75 + 0.25 * Math.sin(Date.now() / 60 + _gzLfi * 2);
+                        var _gzDrX = _gzLfDx + _gzLfOff.dx - _gzLfSz / 2 + _gzLfSX;
+                        var _gzDrY = _gzLfDy + _gzLfOff.dy - _gzLfSz / 2 + _gzLfSY;
+                        // Flip: right wrist in front view, back right wrist, far-arm side fists, side_l near arm
+                        var _gzLfFlp = (_gzLf.wristSide === 'right' && _gzLfDirK === 'front') ||
+                                       (_gzLf.wristSide === 'right' && _gzLfDirK === 'back')  ||
+                                       (_gzLfDirK === 'side_r' && _gzLf.wristSide === 'left') ||
+                                       (_gzLfDirK === 'side_l' && _gzLf.wristSide === 'left');
+                        ctx.save();
+                        ctx.imageSmoothingEnabled = false;
+                        // Glow drawn FIRST in screen-space (before any flip transform is applied)
+                        ctx.globalAlpha = 0.12 * _gzLfPuls;
+                        ctx.fillStyle = '#ffdd00';
+                        ctx.fillRect(_gzDrX, _gzDrY, _gzLfSz, _gzLfSz);
+                        // Tail clip for on-top fists
+                        var _gzTailCrop = _gzLfSz * 0.25;
+                        if (_gzOnTop) {
+                            ctx.beginPath();
+                            if (_gzLfDirK === 'front') {
+                                ctx.rect(_gzDrX, _gzDrY + _gzTailCrop, _gzLfSz, _gzLfSz - _gzTailCrop);
+                            } else if (_gzLfDirK === 'side_r') {
+                                ctx.rect(_gzDrX + _gzTailCrop, _gzDrY, _gzLfSz - _gzTailCrop, _gzLfSz);
+                            } else {
+                                ctx.rect(_gzDrX, _gzDrY, _gzLfSz - _gzTailCrop, _gzLfSz);
+                            }
+                            ctx.clip();
+                        }
+                        ctx.globalAlpha = 0.80 + _gzLfPuls * 0.20;
+                        if (_gzLfSpr) {
+                            if (_gzLfFlp) {
+                                ctx.translate(_gzDrX + _gzLfSz, _gzDrY);
+                                ctx.scale(-1, 1);
+                                ctx.drawImage(_gzLfSpr, 0, 0, _gzLfSz, _gzLfSz);
+                            } else {
+                                ctx.drawImage(_gzLfSpr, _gzDrX, _gzDrY, _gzLfSz, _gzLfSz);
+                            }
+                        }
+                        ctx.restore();
+                    }
+                };
+
+                // Back/side fists first — body will cover the connector pin
+                _gzDrawLoadingFists(false);
+
+                ctx.save();
+                if (e.bossPhase >= 3) { ctx.filter = 'hue-rotate(0deg) saturate(3.0) brightness(1.5)'; }
+                else if (e.bossPhase >= 2) { ctx.filter = 'hue-rotate(270deg) saturate(2.0) brightness(1.2)'; }
+                if (_gzDir === 'Side' && e.facingDir > 0) {
+                    ctx.translate(esx + e.w, esy); ctx.scale(-1, 1);
+                    if (_gzSpr) ctx.drawImage(_gzSpr, 0, 0, e.w, e.h);
+                } else {
+                    if (_gzSpr) ctx.drawImage(_gzSpr, esx, esy, e.w, e.h);
+                }
+                ctx.restore();
+
+                // Front fists last — drawn on top of the body
+                _gzDrawLoadingFists(true);
+                // HP bar
+                ctx.fillStyle = NES.PAL.K;
+                ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW, 6);
+                ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? '#ff6600' : '#ff9900';
+                ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW * (e.hp / e.maxHp), 6);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
+                ctx.fillText('GOD-Z', esx + e.w / 2, esy - 14); ctx.textAlign = 'left';
             } else {
                 // Technodrome circle rendering
                 ctx.fillStyle = NES.PAL.G; ctx.beginPath(); ctx.arc(esx + e.w/2, esy + e.h/2, e.w*0.45, 0, Math.PI*2); ctx.fill();
@@ -17995,17 +18829,19 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
         var nesPat  = NES.PATTERNS[patKey];
         if (enemySprite) {
             ctx.save();
+            if (e._pink) ctx.filter = 'hue-rotate(290deg) saturate(2.2) brightness(1.1)';
             if (e.facingDir < 0) { ctx.translate(esx + e.w, esy); ctx.scale(-1, 1); ctx.drawImage(enemySprite, 0, 0, e.w, e.h); }
             else { ctx.drawImage(enemySprite, esx, esy, e.w, e.h); }
             ctx.restore();
         } else if (nesPat) {
             var nesScale = e.w / nesPat[0].length;
             ctx.save(); ctx.imageSmoothingEnabled = false;
+            if (e._pink) ctx.filter = 'hue-rotate(290deg) saturate(2.2) brightness(1.1)';
             if (e.facingDir < 0) { ctx.translate(esx + e.w, esy); ctx.scale(-1, 1); NES.drawSprite(ctx, 0, 0, patKey, nesScale); }
             else { NES.drawSprite(ctx, esx, esy, patKey, nesScale); }
             ctx.restore();
         } else {
-            ctx.fillStyle = bodyColor;
+            ctx.fillStyle = e._pink ? '#ff44cc' : bodyColor;
             ctx.fillRect(esx + 2, esy + 2, e.w - 4, e.h - 4);
             ctx.strokeStyle = NES.PAL.K; ctx.lineWidth = 2;
             ctx.strokeRect(esx + 2, esy + 2, e.w - 4, e.h - 4);
@@ -19138,6 +19974,75 @@ function drawLevel() {
                 ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
                 ctx.strokeRect(-6, -6, 12, 12);
                 ctx.restore();
+            }
+        }
+
+        // ── God-Z homing fists ────────────────────────────────────────
+        if (L.godzFists && L.godzFists.length > 0) {
+            for (var _gfdr = 0; _gfdr < L.godzFists.length; _gfdr++) {
+                var _gfd = L.godzFists[_gfdr];
+                var _gfdx = _gfd.x - cx, _gfdy = _gfd.y - cy;
+
+                // Pick one of the 4 directional sprites based on travel/facing direction
+                var _gfDirK = _gfd.dirKey || 'front';
+                var _gfSprKey;
+                if (_gfDirK === 'back') {
+                    _gfSprKey = 'godzFistBack';
+                } else if (_gfDirK === 'side_r') {
+                    _gfSprKey = (_gfd.wristSide === 'left') ? 'godzFistSide2' : 'godzFistSide1';
+                } else if (_gfDirK === 'side_l') {
+                    _gfSprKey = (_gfd.wristSide === 'right') ? 'godzFistSide2' : 'godzFistSide1';
+                } else {
+                    _gfSprKey = 'godzFistFront';
+                }
+
+                var _gfSpr = game.sprites[_gfSprKey];
+
+                if (_gfd.state === 'LOADING') {
+                    // Loading fists are drawn BEFORE God-Z in the enemy loop above (z-order fix).
+                    // Skip them here so they don't render on top of God-Z's body.
+                } else {
+                    // FLYING: mirror sprite for left-wrist fists so knuckles face outward
+                    var _gfSz    = ts * 1.1;
+                    var _gfAlpha = 0.82 + Math.sin(Date.now() / 120 + _gfdr) * 0.12;
+                    var _gfFlip  = (_gfd.wristSide === 'right' && _gfDirK === 'front') ||
+                                   (_gfd.wristSide === 'right' && _gfDirK === 'back')  ||
+                                   (_gfDirK === 'side_r' && _gfd.wristSide === 'left') ||
+                                   (_gfDirK === 'side_l' && _gfd.wristSide === 'left');
+                    ctx.save();
+                    ctx.globalAlpha = _gfAlpha;
+                    ctx.imageSmoothingEnabled = false;
+                    if (_gfSpr) {
+                        if (_gfFlip) {
+                            ctx.translate(_gfdx + _gfSz / 2, _gfdy - _gfSz / 2);
+                            ctx.scale(-1, 1);
+                            ctx.drawImage(_gfSpr, 0, 0, _gfSz, _gfSz);
+                        } else {
+                            ctx.drawImage(_gfSpr, _gfdx - _gfSz / 2, _gfdy - _gfSz / 2, _gfSz, _gfSz);
+                        }
+                    } else {
+                        ctx.fillStyle = '#ff6600';
+                        ctx.fillRect(_gfdx - _gfSz * 0.4, _gfdy - _gfSz * 0.4, _gfSz * 0.8, _gfSz * 0.8);
+                        ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2;
+                        ctx.strokeRect(_gfdx - _gfSz * 0.4, _gfdy - _gfSz * 0.4, _gfSz * 0.8, _gfSz * 0.8);
+                    }
+                    ctx.restore();
+
+                    // Motion trail — streak in the opposite direction of travel
+                    var _gfSpd2 = Math.hypot(_gfd.vx, _gfd.vy) || 1;
+                    ctx.save();
+                    ctx.globalAlpha = 0.22;
+                    ctx.fillStyle = '#ff4400';
+                    ctx.beginPath();
+                    var _gfTA = Math.atan2(_gfd.vy, _gfd.vx);
+                    ctx.ellipse(
+                        _gfdx - (_gfd.vx / _gfSpd2) * _gfSz * 0.5,
+                        _gfdy - (_gfd.vy / _gfSpd2) * _gfSz * 0.5,
+                        _gfSz * 0.42, _gfSz * 0.18, _gfTA, 0, Math.PI * 2
+                    );
+                    ctx.fill();
+                    ctx.restore();
+                }
             }
         }
 
