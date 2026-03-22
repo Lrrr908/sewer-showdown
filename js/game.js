@@ -5970,11 +5970,8 @@ function drawBuilding(b, index) {
         var galleryVisited = b.artistId && game.progress.galleriesVisited[b.artistId];
         const wallKey = BUILDING_WALL_KEYS[buildingHash(b.id)];
         const wallSprite = game.sprites[wallKey];
-        if (wallSprite) {
-            ctx.drawImage(wallSprite, bx, by, bw, bh);
-        } else {
-            NES.drawSprite(ctx, bx, by, 'bldgGrayBlue', 4);
-        }
+        if (!wallSprite) return; // sprite still loading — skip to avoid ugly placeholder flash
+        ctx.drawImage(wallSprite, bx, by, bw, bh);
         const entranceSprite = game.sprites.galleryEntrance;
         if (entranceSprite) {
             ctx.drawImage(entranceSprite, bx, by, bw, bh);
@@ -6007,6 +6004,8 @@ function drawBuilding(b, index) {
         var typeSprite = typeSpriteKey ? game.sprites[typeSpriteKey] : null;
         if (typeSprite) {
             ctx.drawImage(typeSprite, bx, by, bw, bh);
+        } else if (typeSpriteKey) {
+            return; // sprite expected but still loading — skip to avoid ugly placeholder flash
         } else {
             var drawer = BUILDING_TYPE_DRAWERS[bt];
             if (drawer) {
@@ -6015,11 +6014,8 @@ function drawBuilding(b, index) {
                 // Unknown type: pixel-perfect sprite fallback
                 const wallKey = BUILDING_WALL_KEYS[buildingHash(b.id)];
                 const wallSprite = game.sprites[wallKey];
-                if (wallSprite) {
-                    ctx.drawImage(wallSprite, bx, by, bw, bh);
-                } else {
-                    NES.drawSprite(ctx, bx, by, 'bldgGrayBlue', 4);
-                }
+                if (!wallSprite) return; // still loading — skip
+                ctx.drawImage(wallSprite, bx, by, bw, bh);
                 const entranceSprite = game.sprites.buildingEntrance;
                 if (entranceSprite) ctx.drawImage(entranceSprite, bx, by, bw, bh);
             }
@@ -11992,7 +11988,7 @@ function updateRegionEnemies(dt) {
     // ── C: Car → on-foot turtle ────────────────────────────────────────────
     if (isOnFoot) {
         var _cft = game.turtle;
-        if (_cft.invTimer <= 0) {
+        if (_cft.invTimer <= 0 && game.pizzaStar <= 0) {
             var _cftCx = _cft.x + _cft.width  / 2;
             var _cftCy = _cft.y + _cft.height / 2;
             for (var _cfi = 0; _cfi < game.regionEnemies.length; _cfi++) {
@@ -17426,7 +17422,7 @@ function updateLevel(dt) {
                 // Position freeze is handled by skipping the movement block below.
                 e.bossDir         = window._gzDbg.dir;
                 e.facingDir       = window._gzDbg.face;
-                e.animTimer       = window._gzDbg.frame * 0.55;
+                e.animTimer       = window._gzDbg.frame * 0.72;
                 window._gzDbgBoss = e;   // expose entity so panel move buttons can update x/y
                 window._gzDbg.lts = lts; // expose tile size for position step calculation
             }
@@ -17493,7 +17489,7 @@ function updateLevel(dt) {
                 if (e.godzWristIdx === undefined) e.godzWristIdx = 0;
 
                 // Read from the shared _gzWristTable defined at the top of the AI block
-                var _gzFrm   = Math.floor(e.animTimer / 0.55) % 3;
+                var _gzFrm   = Math.floor(e.animTimer / 0.72) % 3;
                 var _gzDirTbl = _gzWristTable[e.bossDir] || _gzWristTable.front;
                 var _gzRow   = _gzDirTbl[_gzFrm];
                 var _gzW0, _gzW1;
@@ -17788,6 +17784,26 @@ function updateLevel(dt) {
         }
         } // end _runEnemyAI
 
+        // ── Boss repulsion: push regular enemies outside boss collision areas ──
+        if (!e.boss && e.kbTimer <= 0) {
+            for (var _bri = 0; _bri < L.enemies.length; _bri++) {
+                var _br = L.enemies[_bri];
+                if (!_br.alive || !_br.boss) continue;
+                var _brCx = _br.x + _br.w / 2, _brCy = _br.y + _br.h / 2;
+                var _brDx = ecx - _brCx, _brDy = ecy - _brCy;
+                var _brDist = Math.hypot(_brDx, _brDy);
+                var _brMin = (_br.w + e.w) * 0.52; // min separation radius
+                if (_brDist < _brMin && _brDist > 0.1) {
+                    var _brPush = (_brMin - _brDist) / _brMin;
+                    var _brNx = _brDx / _brDist, _brNy = _brDy / _brDist;
+                    var _brMoveX = e.x + _brNx * _brPush * lts * 1.5 * dt;
+                    var _brMoveY = e.y + _brNy * _brPush * lts * 1.5 * dt;
+                    if (!levelTileCollision(L, _brMoveX, e.y, e.w, e.h)) e.x = _brMoveX;
+                    if (!levelTileCollision(L, e.x, _brMoveY, e.w, e.h)) e.y = _brMoveY;
+                }
+            }
+        }
+
         // ── Player ACTIVE hit detection against this enemy ──────
         if (p.atkPhase === 'ACTIVE' && !p.atkHitIds.has(e.id)) {
             var atkRange = e.boss ? lts * 2.0 : lts * 1.2;
@@ -18055,10 +18071,11 @@ function updateLevel(dt) {
                     continue; // invisible and frozen until delay expires
                 }
                 _gf.loadTimer -= dt;
+                if (_gzBossRef) _gf._bossPhase = _gzBossRef.bossPhase; // keep phase in sync for draw
 
                 // Anchor fist to boss wrist — reads the shared _gzWristTable (defined in AI block)
                 if (_gzBossRef && _gzBossRef._gzWristTable) {
-                    var _lfFrm = Math.floor(_gzBossRef.animTimer / 0.55) % 3;
+                    var _lfFrm = Math.floor(_gzBossRef.animTimer / 0.72) % 3;
                     var _lfDir = _gzBossRef.bossDir || 'front';
                     var _lfFd  = _gzBossRef.facingDir || -1;
                     var _lfW   = _gzBossRef.w, _lfH = _gzBossRef.h;
@@ -18595,9 +18612,13 @@ function _drawDungeonPlayer(L, cx, cy, ts) {
 }
 
 function _drawDungeonEnemies(L, cx, cy, ts) {
+    // Two passes: regular enemies drawn first, bosses drawn on top
+    for (var _drPass = 0; _drPass < 2; _drPass++) {
     for (var i = 0; i < L.enemies.length; i++) {
         var e = L.enemies[i];
         if (!e.alive) continue;
+        if (_drPass === 0 &&  e.boss) continue; // first pass: skip bosses
+        if (_drPass === 1 && !e.boss) continue; // second pass: skip non-bosses
         var esx = e.x - cx, esy = e.y - cy;
         if (e.stunTimer > 0 && Math.floor(e.stunTimer * 10) % 2 === 0) continue;
 
@@ -18694,7 +18715,7 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
                 ctx.fillText('BARF', esx + e.w/2, esy - 14 - _bh); ctx.textAlign = 'left';
             } else if (e.type === 'boss_godz') {
-                var _gzFrame = (Math.floor(e.animTimer / 0.55) % 3) + 1;
+                var _gzFrame = (Math.floor(e.animTimer / 0.72) % 3) + 1;
                 var _gzDir   = (e.bossDir === 'back') ? 'Back' : (e.bossDir === 'front') ? 'Front' : 'Side';
                 var _gzKey   = 'godz' + _gzDir + _gzFrame;
                 var _gzSpr   = game.sprites[_gzKey] || game.sprites['godzFront1'];
@@ -18751,6 +18772,9 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
                                        (_gzLfDirK === 'side_l' && _gzLf.wristSide === 'left');
                         ctx.save();
                         ctx.imageSmoothingEnabled = false;
+                        // Match God-Z's phase color filter on the fists
+                        if (e.bossPhase >= 3) { ctx.filter = 'hue-rotate(120deg) saturate(3.0) brightness(1.3)'; }
+                        else if (e.bossPhase >= 2) { ctx.filter = 'hue-rotate(270deg) saturate(2.0) brightness(1.2)'; }
                         // Glow drawn FIRST in screen-space (before any flip transform is applied)
                         ctx.globalAlpha = 0.12 * _gzLfPuls;
                         ctx.fillStyle = '#ffdd00';
@@ -18786,7 +18810,7 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
                 _gzDrawLoadingFists(false);
 
                 ctx.save();
-                if (e.bossPhase >= 3) { ctx.filter = 'hue-rotate(0deg) saturate(3.0) brightness(1.5)'; }
+                if (e.bossPhase >= 3) { ctx.filter = 'hue-rotate(120deg) saturate(3.0) brightness(1.3)'; }
                 else if (e.bossPhase >= 2) { ctx.filter = 'hue-rotate(270deg) saturate(2.0) brightness(1.2)'; }
                 if (_gzDir === 'Side' && e.facingDir > 0) {
                     ctx.translate(esx + e.w, esy); ctx.scale(-1, 1);
@@ -18801,7 +18825,7 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
                 // HP bar
                 ctx.fillStyle = NES.PAL.K;
                 ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW, 6);
-                ctx.fillStyle = e.bossPhase >= 3 ? NES.PAL.R : e.bossPhase >= 2 ? '#ff6600' : '#ff9900';
+                ctx.fillStyle = e.bossPhase >= 3 ? '#0088ff' : e.bossPhase >= 2 ? '#ff6600' : '#ff9900';
                 ctx.fillRect(esx + e.w / 2 - bossHpW / 2, esy - 10, bossHpW * (e.hp / e.maxHp), 6);
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 7px "Press Start 2P",monospace'; ctx.textAlign = 'center';
                 ctx.fillText('GOD-Z', esx + e.w / 2, esy - 14); ctx.textAlign = 'left';
@@ -18857,6 +18881,7 @@ function _drawDungeonEnemies(L, cx, cy, ts) {
             ctx.strokeRect(esx, esy, e.w, e.h);
         }
     }
+    } // end _drPass loop
     // Hit sparks
     for (var hi = 0; hi < L.hitSparks.length; hi++) {
         var spark = L.hitSparks[hi];
@@ -20012,6 +20037,9 @@ function drawLevel() {
                     ctx.save();
                     ctx.globalAlpha = _gfAlpha;
                     ctx.imageSmoothingEnabled = false;
+                    // Match God-Z's phase color on flying fists
+                    if (_gfd._bossPhase >= 3) { ctx.filter = 'hue-rotate(120deg) saturate(3.0) brightness(1.3)'; }
+                    else if (_gfd._bossPhase >= 2) { ctx.filter = 'hue-rotate(270deg) saturate(2.0) brightness(1.2)'; }
                     if (_gfSpr) {
                         if (_gfFlip) {
                             ctx.translate(_gfdx + _gfSz / 2, _gfdy - _gfSz / 2);
