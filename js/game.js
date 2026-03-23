@@ -18102,25 +18102,28 @@ function updateLevel(dt) {
                 }
 
                 // Player melee can smash a loading fist — drops toybox, then reloads after a pause
-                if (p.atkPhase === 'ACTIVE') {
+                if (p.atkPhase === 'ACTIVE' && !p.atkHitIds.has(_gf.id)) {
                     var _gfLAR = lts * 1.4;
                     var _gfLADx = (p.direction === 'right') ? _gfLAR : (p.direction === 'left') ? -_gfLAR : 0;
                     var _gfLADy = (p.direction === 'up') ? -_gfLAR : (p.direction === 'down') ? _gfLAR : 0;
                     if (Math.abs((p.x + p.w/2 + _gfLADx) - _gf.x) < lts * 1.1 &&
                         Math.abs((p.y + p.h/2 + _gfLADy) - _gf.y) < lts * 1.1) {
+                        p.atkHitIds.add(_gf.id);
                         L.hitSparks.push({ x: _gf.x, y: _gf.y, life: 0.25 });
                         L.pointPopups.push({ text: 'TOYBOX!', x: _gf.x, y: _gf.y - lts * 0.8, life: 1.2, color: '#ffee00' });
                         if (!L.toyPickups) L.toyPickups = [];
                         L.toyPickups.push({ id: 'gf_toy_' + Date.now() + '_' + _gfi, x: _gf.x, y: _gf.y });
-                        // Auto-reload after smash — longer windup as a penalty break
+                        // Auto-reload after smash — longer windup + spawn delay so it can't be re-smashed instantly
                         if (_gzBossRef) {
                             var _smRl = _gzBossRef.bossPhase >= 3 ? 3.0 : _gzBossRef.bossPhase >= 2 ? 4.5 : 6.0;
+                            var _smGap = _gzBossRef.bossPhase >= 3 ? 1.0 : _gzBossRef.bossPhase >= 2 ? 1.5 : 2.0;
                             var _smDK = (_gzBossRef.bossDir === 'back') ? 'back' :
                                         (_gzBossRef.bossDir === 'side') ? (_gzBossRef.facingDir > 0 ? 'side_r' : 'side_l') : 'front';
                             _gzBossRef.godzFistCount = (_gzBossRef.godzFistCount || 0) + 1;
                             L.godzFists.push({
                                 id: 'gf_sm_' + _gzBossRef.godzFistCount,
                                 state: 'LOADING', loadTimer: _smRl, _initLoadDur: _smRl,
+                                _spawnDelay: _smGap,
                                 wristOx: _gf.wristOx, wristOy: _gf.wristOy, wristSide: _gf.wristSide,
                                 x: _gf.x, y: _gf.y, vx: 0, vy: 0, life: 8.0, dirKey: _smDK, animTimer: 0
                             });
